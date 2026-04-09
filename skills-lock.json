@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-communication": {
+      "source": "aurelienbobenrieth/skills",
+      "sourceType": "github",
+      "computedHash": "a62c5cf37965ddd2685bdace6f209c6f34d0c03246fd64ce92e50d292f9df21d"
+    },
+    "git": {
+      "source": "aurelienbobenrieth/skills",
+      "sourceType": "github",
+      "computedHash": "c916c9c8c87f68f301bc5a0752bb38603f217b981a62d9ac9f4e8c30d01fe839"
+    }
+  }
+}

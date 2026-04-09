@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "error",
+    "suspicious": "error"
+  },
+  "env": {
+    "builtin": true,
+    "node": true
+  },
+  "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**"],
+  "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
+  "rules": {
+    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "jest/no-conditional-expect": "off",
+    "jest/valid-expect": "off",
+    "jest/no-standalone-expect": "off",
+    "jest/expect-expect": "off"
+  }
+}
