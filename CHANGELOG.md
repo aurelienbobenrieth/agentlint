@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+### Patch Changes
+
+- [#5](https://github.com/aurelienbobenrieth/agentlint/pull/5) [`f4c256d`](https://github.com/aurelienbobenrieth/agentlint/commit/f4c256d80917ed72b9def3fcc8b414436a99da95) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Update skills to recommend pnpm, add TanStack Intent CI workflows, and add skill validation to check script
+
 ## 0.1.1
 
 ### Patch Changes
