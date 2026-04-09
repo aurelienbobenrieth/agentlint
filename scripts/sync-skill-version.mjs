@@ -31,10 +31,7 @@ let updated = 0;
 
 for (const file of files) {
   const content = readFileSync(file, "utf8");
-  const replaced = content.replace(
-    /^(library_version:\s*").+(")/m,
-    `$1${version}$2`,
-  );
+  const replaced = content.replace(/^(library_version:\s*").+(")/m, `$1${version}$2`);
   if (replaced !== content) {
     writeFileSync(file, replaced);
     updated++;
