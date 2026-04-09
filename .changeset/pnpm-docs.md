@@ -2,4 +2,4 @@
 "@aurelienbbn/agentlint": patch
 ---
 
-Update skills and docs to recommend pnpm instead of npm/npx
+Update skills to recommend pnpm, add TanStack Intent CI workflows, and add skill validation to check script
