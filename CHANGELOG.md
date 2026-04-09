@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+### Patch Changes
+
+- [#2](https://github.com/aurelienbobenrieth/agentlint/pull/2) [`2a7316d`](https://github.com/aurelienbobenrieth/agentlint/commit/2a7316d4b27d4e2a5554f532e2e500b8f6ec6df9) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Upgrade effect to 4.0.0-beta.44 and migrate from removed `effect/ServiceMap` to `Context.Service`
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
