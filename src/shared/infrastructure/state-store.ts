@@ -17,8 +17,7 @@
  * @since 0.1.0
  */
 
-import { Effect, FileSystem, HashSet, Layer, Path } from "effect";
-import * as ServiceMap from "effect/ServiceMap";
+import { Context, Effect, FileSystem, HashSet, Layer, Path } from "effect";
 import { Env } from "../../config/env.js";
 
 /**
@@ -63,7 +62,7 @@ function serializeHashes(hashes: HashSet.HashSet<string>): string {
  * @since 0.1.0
  * @category services
  */
-export class StateStore extends ServiceMap.Service<
+export class StateStore extends Context.Service<
   StateStore,
   {
     /** Load reviewed hashes from `.agentlint-state`. Returns an empty set if the file is missing. */

@@ -12,8 +12,7 @@
  * @since 0.1.0
  */
 
-import { Effect, FileSystem, Layer, Path, Schema } from "effect";
-import * as ServiceMap from "effect/ServiceMap";
+import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import type { AgentReviewConfig } from "../../domain/config.js";
 
@@ -75,7 +74,7 @@ const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string)
  * @since 0.1.0
  * @category services
  */
-export class ConfigLoader extends ServiceMap.Service<
+export class ConfigLoader extends Context.Service<
   ConfigLoader,
   {
     /** Discover and import the config file from the working directory. */

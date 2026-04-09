@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.0.0-beta.43
-        version: 4.0.0-beta.43(effect@4.0.0-beta.43)(ioredis@5.10.1)
+        specifier: 4.0.0-beta.44
+        version: 4.0.0-beta.44(effect@4.0.0-beta.44)(ioredis@5.10.1)
       effect:
-        specifier: ^4.0.0-beta.43
-        version: 4.0.0-beta.43
+        specifier: 4.0.0-beta.44
+        version: 4.0.0-beta.44
       jiti:
         specifier: ^2.4.2
         version: 2.6.1
@@ -146,17 +146,17 @@ packages:
   '@changesets/write@0.4.0':
     resolution: {integrity: sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q==}
 
-  '@effect/platform-node-shared@4.0.0-beta.43':
-    resolution: {integrity: sha512-A9q0GEb61pYcQ06Dr6gXj1nKlDI3KHsar1sk3qb1ZY+kVSR64tBAylI8zGon23KY+NPtTUj/sEIToB7jc3Qt5w==}
+  '@effect/platform-node-shared@4.0.0-beta.44':
+    resolution: {integrity: sha512-ib1kQa0dASG85TlLHQ84+hgESigqCO0gZZ8KVgn8feyrAOnvxVtJDVxcwrbfUNIfDQCdjIZwpnFjcdkMJuiIYw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-beta.43
+      effect: ^4.0.0-beta.44
 
-  '@effect/platform-node@4.0.0-beta.43':
-    resolution: {integrity: sha512-Uq6E1rjaIpjHauzjwoB2HzAg3battYt2Boy8XO50GoHiWCXKE6WapYZ0/AnaBx5v5qg2sOfqpuiLsUf9ZgxOkA==}
+  '@effect/platform-node@4.0.0-beta.44':
+    resolution: {integrity: sha512-TptiMDRneDH96dwDlbrasU+5xyj1wWBFMVYQPB5gyFTT8siKnSQ6D4ZGL2OFUNGccCycwc1jM6gNdg7Pz/iJkA==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-beta.43
+      effect: ^4.0.0-beta.44
       ioredis: ^5.7.0
 
   '@emnapi/core@1.9.1':
@@ -959,8 +959,8 @@ packages:
       oxc-resolver:
         optional: true
 
-  effect@4.0.0-beta.43:
-    resolution: {integrity: sha512-AJYyDimIwJOn87uUz/JzmgDc5GfjxJbXvEbTvNzMa+M3Uer344bLo/O5mMRkqc1vBleA+Ygs4+dbE3QsqOkKTQ==}
+  effect@4.0.0-beta.44:
+    resolution: {integrity: sha512-xnhOHv0LXFYRbetB4EOvOgUhuxvermpghgnnj6XcCB62zPY8EL5GgSIyvcFA8A9Dk8QoyESavWy6DKzWD9r8zw==}
 
   empathic@2.0.0:
     resolution: {integrity: sha512-i6UzDscO/XfAcNYD75CfICkmfLedpyPDdozrLMmQc5ORaQcdMoc21OnlEylMIqI7U8eniKrPMxxtj8k0vhmJhA==}
@@ -1813,19 +1813,19 @@ snapshots:
       human-id: 4.1.3
       prettier: 2.8.8
 
-  '@effect/platform-node-shared@4.0.0-beta.43(effect@4.0.0-beta.43)':
+  '@effect/platform-node-shared@4.0.0-beta.44(effect@4.0.0-beta.44)':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-beta.43
+      effect: 4.0.0-beta.44
       ws: 8.20.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-beta.43(effect@4.0.0-beta.43)(ioredis@5.10.1)':
+  '@effect/platform-node@4.0.0-beta.44(effect@4.0.0-beta.44)(ioredis@5.10.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.43(effect@4.0.0-beta.43)
-      effect: 4.0.0-beta.43
+      '@effect/platform-node-shared': 4.0.0-beta.44(effect@4.0.0-beta.44)
+      effect: 4.0.0-beta.44
       ioredis: 5.10.1
       mime: 4.1.0
       undici: 7.24.6
@@ -2375,7 +2375,7 @@ snapshots:
 
   dts-resolver@2.1.3: {}
 
-  effect@4.0.0-beta.43:
+  effect@4.0.0-beta.44:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.6.0

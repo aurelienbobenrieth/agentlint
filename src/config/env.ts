@@ -14,8 +14,7 @@
  * @since 0.1.0
  */
 
-import { Layer } from "effect";
-import * as ServiceMap from "effect/ServiceMap";
+import { Context, Layer } from "effect";
 
 /**
  * Read-only snapshot of the runtime environment.
@@ -23,7 +22,7 @@ import * as ServiceMap from "effect/ServiceMap";
  * @since 0.1.0
  * @category services
  */
-export class Env extends ServiceMap.Service<
+export class Env extends Context.Service<
   Env,
   {
     /** Current working directory, captured at startup. */
