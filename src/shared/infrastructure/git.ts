@@ -5,8 +5,7 @@
  * @since 0.1.0
  */
 
-import { Effect, HashSet, Layer, Schema } from "effect";
-import * as ServiceMap from "effect/ServiceMap";
+import { Context, Effect, HashSet, Layer, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -105,7 +104,7 @@ const collectChangedFiles = (cwd: string, baseRef: string) =>
  *
  * @since 0.1.0
  */
-export class Git extends ServiceMap.Service<
+export class Git extends Context.Service<
   Git,
   {
     /** Detect whether the default branch is `main` or `master`. */

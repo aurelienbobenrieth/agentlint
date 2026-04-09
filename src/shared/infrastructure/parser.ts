@@ -8,8 +8,7 @@
  * @since 0.1.0
  */
 
-import { Effect, FileSystem, HashMap, Layer, Option, Path, Schema } from "effect";
-import * as ServiceMap from "effect/ServiceMap";
+import { Context, Effect, FileSystem, HashMap, Layer, Option, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
 
@@ -52,7 +51,7 @@ const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
  * @since 0.1.0
  * @category services
  */
-export class Parser extends ServiceMap.Service<
+export class Parser extends Context.Service<
   Parser,
   {
     parse(source: string, grammar: string): Effect.Effect<Tree, ParserError>;
