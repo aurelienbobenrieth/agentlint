@@ -33,5 +33,5 @@ Thumbs.db
 .agentlint-state
 
 # Internal
-.agents/ref-repos
+.agents/
 .claude/

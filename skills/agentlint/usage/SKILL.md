@@ -8,7 +8,7 @@ description: >
   inline suppression, and output interpretation.
 type: core
 library: agentlint
-library_version: "0.1.0"
+library_version: "0.1.1"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:src/bin.ts"
@@ -21,8 +21,8 @@ Stateless, deterministic linter whose output is designed for you (an AI coding a
 ## Setup
 
 ```bash
-npm install agentlint
-npx agentlint init
+pnpm add @aurelienbbn/agentlint
+pnpm agentlint init
 ```
 
 This creates `agentlint.config.ts` with a starter template. Add rules to the `rules` object.
@@ -33,22 +33,22 @@ This creates `agentlint.config.ts` with a starter template. Add rules to the `ru
 
 ```bash
 # Default: scan files changed in current branch
-npx agentlint check
+pnpm agentlint check
 
 # Scan specific files or globs
-npx agentlint check src/utils.ts "src/**/*.tsx"
+pnpm agentlint check src/utils.ts "src/**/*.tsx"
 
 # Scan all files
-npx agentlint check --all
+pnpm agentlint check --all
 
 # Only run a specific rule
-npx agentlint check --rule no-noise-comments
+pnpm agentlint check --rule no-noise-comments
 
 # Dry-run (counts only, no instruction blocks)
-npx agentlint check --dry-run
+pnpm agentlint check --dry-run
 
 # Diff against a specific branch
-npx agentlint check --base main
+pnpm agentlint check --base main
 ```
 
 ### Read and act on output
@@ -70,13 +70,13 @@ Process one rule section at a time:
 
 ```bash
 # Mark specific hashes as reviewed (they disappear from future output)
-npx agentlint review abc1234 def5678
+pnpm agentlint review abc1234 def5678
 
 # Mark all current flags as reviewed
-npx agentlint review --all
+pnpm agentlint review --all
 
 # Reset reviewed state (see all flags again)
-npx agentlint review --reset
+pnpm agentlint review --reset
 ```
 
 ### Suppress inline
@@ -123,14 +123,14 @@ Wrong:
 
 ```bash
 # Treating non-zero exit as a failure and stopping
-npx agentlint check || echo "agentlint failed"
+pnpm agentlint check || echo "agentlint failed"
 ```
 
 Correct:
 
 ```bash
 # Exit code 1 means findings exist — read and evaluate the output
-npx agentlint check
+pnpm agentlint check
 # Then process the stdout, don't treat it as a crash
 ```
 
