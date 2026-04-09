@@ -1,6 +1,6 @@
 {
   "name": "@aurelienbbn/agentlint",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Stateless, deterministic CLI that bridges traditional linters and AI-assisted code review",
   "keywords": [
     "agent",
