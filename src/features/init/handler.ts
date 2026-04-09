@@ -21,8 +21,8 @@ export default defineConfig({
 })
 `;
 
-const SKILLS_ADD_CMD = "npx skills@latest add aurelienbobenrieth/agentlint";
-const INTENT_INSTALL_CMD = "npx @tanstack/intent install";
+const SKILLS_ADD_CMD = "pnpm dlx skills@latest add aurelienbobenrieth/agentlint";
+const INTENT_INSTALL_CMD = "pnpm dlx @tanstack/intent install";
 
 /**
  * Detect which skill installation method is most likely appropriate.
@@ -102,7 +102,7 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
     "  1. Add rules to your config",
     `  2. Install the agentlint skill for your AI agents:`,
     `     ${skillCmd}`,
-    "  3. Run: npx agentlint check --all",
+    "  3. Run: pnpm agentlint check --all",
   );
 
   return new InitResult({

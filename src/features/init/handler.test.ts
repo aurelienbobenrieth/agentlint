@@ -41,7 +41,7 @@ describe("initHandler", () => {
     expect(result.message).toContain("Created agentlint.config.ts");
     expect(result.message).toContain(".agentlint-state to .gitignore");
     expect(result.message).toContain("Next steps:");
-    expect(result.message).toContain("npx skills@latest add");
+    expect(result.message).toContain("pnpm dlx skills@latest add");
 
     // Verify .gitignore was created
     const gitignore = await Effect.runPromise(
@@ -118,7 +118,7 @@ describe("initHandler", () => {
 
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
-    expect(result.message).toContain("npx @tanstack/intent install");
+    expect(result.message).toContain("pnpm dlx @tanstack/intent install");
 
     await Effect.runPromise(cleanup);
   });
@@ -139,7 +139,7 @@ describe("initHandler", () => {
 
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
-    expect(result.message).toContain("npx @tanstack/intent install");
+    expect(result.message).toContain("pnpm dlx @tanstack/intent install");
 
     await Effect.runPromise(cleanup);
   });
