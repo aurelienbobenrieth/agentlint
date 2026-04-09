@@ -7,7 +7,7 @@ description: >
   linting, improve their feedback loop, or asks "how do I make sure X."
 type: core
 library: agentlint
-library_version: "0.1.0"
+library_version: "0.1.1"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:CONTRIBUTING.md"
@@ -125,7 +125,7 @@ handling or propagation."
 ### Testing
 
 ```bash
-npx agentlint check --all --rule rule-name
-npx agentlint check src/handlers/checkout.ts --rule rule-name
-npx agentlint check --all --rule rule-name --dry-run
+pnpm agentlint check --all --rule rule-name
+pnpm agentlint check src/handlers/checkout.ts --rule rule-name
+pnpm agentlint check --all --rule rule-name --dry-run
 ```
