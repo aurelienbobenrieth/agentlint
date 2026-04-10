@@ -13,7 +13,7 @@ import { InitCommand, InitResult } from "./request.js";
  * @since 0.1.0
  * @category constants
  */
-const STARTER_CONFIG = `import { defineConfig } from "agentlint"
+const STARTER_CONFIG = `import { defineConfig } from "@aurelienbbn/agentlint"
 
 export default defineConfig({
   include: ["src/**/*.{ts,tsx}"],
