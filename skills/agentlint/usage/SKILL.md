@@ -8,7 +8,7 @@ description: >
   inline suppression, and output interpretation.
 type: core
 library: agentlint
-library_version: "0.1.2"
+library_version: "0.1.3"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:src/bin.ts"
