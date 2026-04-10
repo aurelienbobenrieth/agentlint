@@ -89,7 +89,7 @@ const delay = baseDelay * Math.pow(2, attempt);
 ### Write a rule
 
 ```typescript
-import { defineConfig, defineRule } from "agentlint";
+import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
 const noTodos = defineRule({
   meta: {

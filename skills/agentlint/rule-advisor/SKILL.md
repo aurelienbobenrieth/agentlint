@@ -70,7 +70,7 @@ Three scopes are available:
 ### Rule template
 
 ```typescript
-import { defineRule } from "agentlint";
+import { defineRule } from "@aurelienbbn/agentlint";
 
 const myRule = defineRule({
   meta: {
