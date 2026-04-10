@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+### Patch Changes
+
+- [#18](https://github.com/aurelienbobenrieth/agentlint/pull/18) [`0b1424d`](https://github.com/aurelienbobenrieth/agentlint/commit/0b1424d4a730ee64ba3e2df5c6e1b934790b58ad) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Update agentlint skills: rule-advisor adds check-existing-enforcement step and skills-vs-rules classification, usage adds list docs and deduplicates rule template
+
 ## 0.1.4
 
 ### Patch Changes
