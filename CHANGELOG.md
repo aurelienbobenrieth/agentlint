@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+### Patch Changes
+
+- [#7](https://github.com/aurelienbobenrieth/agentlint/pull/7) [`7dde9af`](https://github.com/aurelienbobenrieth/agentlint/commit/7dde9af19404076bbd09b4840d09f9a8738d2405) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Update `agentlint init` output to recommend pnpm instead of npx
+
 ## 0.1.2
 
 ### Patch Changes
