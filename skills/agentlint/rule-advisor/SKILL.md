@@ -19,11 +19,12 @@ Classify what the user wants to enforce, pick the right tool, act on it.
 
 ## How to use this skill
 
-1. Read the user's intent
-2. If the intent is too vague to classify, clarify with one targeted question
-3. Once clear, classify using the decision tree below
-4. State your classification and reasoning in one sentence
-5. Implement or guide the user to implement it
+1. Identify the specific pattern, practice, or constraint to enforce
+2. If unclear, clarify with one targeted question
+3. Check existing enforcement first: scan the project's lint rules, architecture tests, and agentlint config for overlap before creating anything new
+4. Classify using the decision tree below
+5. State your classification and reasoning in one sentence
+6. For agentlint rules: implement using the template below. For other tools: guide the user to the right one
 
 ## Decision tree
 
@@ -53,6 +54,46 @@ for import direction and boundaries.
 if it can be caught at compile time.
 → Tests (unit, integration, property-based) if it needs execution.
 → Monitoring if it needs production signals.
+
+## Skills vs rules vs both
+
+Skills and agentlint rules serve different roles. A **skill** teaches
+the agent how to approach a domain — patterns, trade-offs, when to use
+what. A **rule** scans code after the fact and flags specific instances
+for evaluation. They are not mutually exclusive.
+
+**Skill alone** — the concern is about workflow, tooling usage, or
+cannot be detected by looking at code structure. Example: "use pnpm
+instead of npm" as a team preference, or "how to structure API routes."
+
+**Rule alone** — the pattern is self-contained and the rule's
+instruction provides enough context to evaluate each finding. Example:
+"flag TODO comments for triage."
+
+**Skill + rule together** — a skill teaches the broader philosophy,
+a rule enforces specific instances. The skill shapes how the agent
+writes code. The rule catches what slipped through. They reinforce
+each other.
+
+Example: a skill explains "use server actions for mutations, not API
+routes" with reasoning and patterns. A companion rule scans for API
+route files with POST handlers doing database writes, flagging them
+for evaluation against the skill's guidance.
+
+Use this pairing when a skill contains statements like "never do X",
+"always use Y", or "avoid Z pattern" and the pattern is AST-detectable.
+
+### When to extract rules from skills
+
+Review existing skills for statements like "never do X", "always use Y",
+or "avoid Z pattern." If the pattern is AST-detectable, extract it into
+an agentlint rule. Keep the skill for the broader guidance and reasoning,
+move the specific enforcement to the rule. This gives you:
+
+- **Coverage** — the rule catches every instance, not just when the
+  agent happens to recall the skill
+- **Auditability** — flagged patterns are visible in agentlint output
+- **Separation** — the skill teaches, the rule verifies
 
 ## When the answer is agentlint
 
@@ -112,8 +153,9 @@ when it is a true positive.]`,
 
 ### Writing good instructions
 
-The instruction is what the AI agent reads to evaluate each finding.
-It determines whether findings are actionable or noise.
+The instruction determines whether findings are actionable or noise.
+A good instruction has three parts: what to evaluate, what's acceptable,
+and what action to take on true positives.
 
 Bad: "Review this code"
 
@@ -121,6 +163,10 @@ Good: "Evaluate each flagged catch block. If the error is logged and
 re-thrown, it is acceptable. If the error is silently swallowed - empty
 catch or catch with only a console.log - suggest adding proper error
 handling or propagation."
+
+The agent reads only the instruction, not the rule source. If the
+instruction is vague, every finding becomes noise. If it over-specifies,
+acceptable patterns get flagged as issues.
 
 ### Testing
 

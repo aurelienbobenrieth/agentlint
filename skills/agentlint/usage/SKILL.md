@@ -58,12 +58,12 @@ Output is grouped by rule. Each rule section contains:
 1. **Match listings** with `[hash] file:line:col  source-line`
 2. **Instruction block** explaining how to evaluate the matches
 
-Process one rule section at a time:
+Process one rule section at a time. Read the instruction block first — it defines the evaluation criteria. Not all findings are problems.
 
 1. Read the instruction block for the rule
 2. Evaluate each match against the criteria in the instruction
-3. For matches that are genuine issues: fix them
-4. For matches that are acceptable: move on
+3. For genuine issues: fix them
+4. For acceptable matches: move on (or `agentlint review <hash>` to suppress)
 5. Re-run `agentlint check` after fixes — resolved matches disappear
 
 ### Mark findings as reviewed
@@ -79,6 +79,14 @@ pnpm agentlint review --all
 pnpm agentlint review --reset
 ```
 
+### List registered rules
+
+```bash
+pnpm agentlint list
+```
+
+Shows all rules from the config: name, description, languages, and include/ignore patterns. Use this to check what rules exist before creating new ones.
+
 ### Suppress inline
 
 ```typescript
@@ -88,32 +96,9 @@ const delay = baseDelay * Math.pow(2, attempt);
 
 ### Write a rule
 
-```typescript
-import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
-
-const noTodos = defineRule({
-  meta: {
-    name: "no-todos",
-    description: "Flags TODO comments for evaluation",
-    languages: ["ts", "tsx"],
-    instruction: "Evaluate each TODO. Convert actionable ones to issues, remove stale ones.",
-  },
-  createOnce(context) {
-    return {
-      comment(node) {
-        if (node.text.includes("TODO")) {
-          context.flag({ node, message: node.text.trim() });
-        }
-      },
-    };
-  },
-});
-
-export default defineConfig({
-  include: ["src/**/*.{ts,tsx}"],
-  rules: { "no-todos": noTodos },
-});
-```
+To create a new agentlint rule, use the `rule-advisor` skill. It covers
+classification (is agentlint the right tool?), the rule template, visitor
+API, and instruction-writing guidance.
 
 ## Common Mistakes
 
