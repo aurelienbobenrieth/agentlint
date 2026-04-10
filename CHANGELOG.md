@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+### Patch Changes
+
+- [#14](https://github.com/aurelienbobenrieth/agentlint/pull/14) [`e131ec9`](https://github.com/aurelienbobenrieth/agentlint/commit/e131ec922e6f0a0fd1d4ac7247438ca28a953ea4) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Fix import path in scaffolded config and skill examples to use `@aurelienbbn/agentlint`
+
 ## 0.1.3
 
 ### Patch Changes
