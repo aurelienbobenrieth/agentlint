@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5
+
+### Patch Changes
+
+- [#22](https://github.com/aurelienbobenrieth/agentlint/pull/22) [`65f3598`](https://github.com/aurelienbobenrieth/agentlint/commit/65f3598555b4684e2be84ca0e7ffe761a86f7c24) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Detect the consumer's package manager in `agentlint init`, update skill guidance to recommend npm, pnpm, yarn, or bun commands that match the target repo, and fix packaged Tree-sitter WASM resolution so the published CLI loads grammars from `dist/wasm`
+
+- [#18](https://github.com/aurelienbobenrieth/agentlint/pull/18) [`0b1424d`](https://github.com/aurelienbobenrieth/agentlint/commit/0b1424d4a730ee64ba3e2df5c6e1b934790b58ad) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Update agentlint skills: rule-advisor adds check-existing-enforcement step and skills-vs-rules classification, usage adds list docs and deduplicates rule template
+
 ## 0.1.4
 
 ### Patch Changes
