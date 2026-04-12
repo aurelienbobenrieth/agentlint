@@ -8,7 +8,7 @@ description: >
   and output interpretation.
 type: core
 library: agentlint
-library_version: "0.1.4"
+library_version: "0.1.5"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:src/bin.ts"
