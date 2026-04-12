@@ -5,7 +5,7 @@ description: >
   Activate when finishing code modifications, before committing, or when
   the developer asks to lint, scan, or review code with agentlint. Covers
   agentlint check, agentlint list, agentlint review, agentlint init,
-  inline suppression, and output interpretation.
+  and output interpretation.
 type: core
 library: agentlint
 library_version: "0.1.4"
@@ -20,12 +20,21 @@ Stateless, deterministic linter whose output is designed for you (an AI coding a
 
 ## Setup
 
-```bash
-pnpm add @aurelienbbn/agentlint
-pnpm agentlint init
-```
+Use the package manager already used by the repo:
+
+- npm: `npm install -D @aurelienbbn/agentlint` then `npm exec agentlint -- init`
+- pnpm: `pnpm add -D @aurelienbbn/agentlint` then `pnpm agentlint init`
+- yarn: `yarn add -D @aurelienbbn/agentlint` then `yarn agentlint init`
+- bun: `bun add -d @aurelienbbn/agentlint` then `bun run agentlint init`
 
 This creates `agentlint.config.ts` with a starter template. Add rules to the `rules` object.
+
+Before running agentlint, resolve the repo's command prefix from `packageManager` in `package.json` or from lockfiles:
+
+- npm: `npm exec agentlint --`
+- pnpm: `pnpm agentlint`
+- yarn: `yarn agentlint`
+- bun: `bun run agentlint`
 
 ## Core Patterns
 
@@ -33,22 +42,22 @@ This creates `agentlint.config.ts` with a starter template. Add rules to the `ru
 
 ```bash
 # Default: scan files changed in current branch
-pnpm agentlint check
+<agentlint-cmd> check
 
 # Scan specific files or globs
-pnpm agentlint check src/utils.ts "src/**/*.tsx"
+<agentlint-cmd> check src/utils.ts "src/**/*.tsx"
 
 # Scan all files
-pnpm agentlint check --all
+<agentlint-cmd> check --all
 
 # Only run a specific rule
-pnpm agentlint check --rule no-noise-comments
+<agentlint-cmd> check --rule no-noise-comments
 
 # Dry-run (counts only, no instruction blocks)
-pnpm agentlint check --dry-run
+<agentlint-cmd> check --dry-run
 
 # Diff against a specific branch
-pnpm agentlint check --base main
+<agentlint-cmd> check --base main
 ```
 
 ### Read and act on output
@@ -70,19 +79,19 @@ Process one rule section at a time. Read the instruction block first — it defi
 
 ```bash
 # Mark specific hashes as reviewed (they disappear from future output)
-pnpm agentlint review abc1234 def5678
+<agentlint-cmd> review abc1234 def5678
 
 # Mark all current flags as reviewed
-pnpm agentlint review --all
+<agentlint-cmd> review --all
 
 # Reset reviewed state (see all flags again)
-pnpm agentlint review --reset
+<agentlint-cmd> review --reset
 ```
 
 ### List registered rules
 
 ```bash
-pnpm agentlint list
+<agentlint-cmd> list
 ```
 
 Shows all rules from the config: name, description, languages, and include/ignore patterns. Use this to check what rules exist before creating new ones.
@@ -101,14 +110,14 @@ Wrong:
 
 ```bash
 # Treating non-zero exit as a failure and stopping
-pnpm agentlint check || echo "agentlint failed"
+<agentlint-cmd> check || echo "agentlint failed"
 ```
 
 Correct:
 
 ```bash
 # Exit code 1 means findings exist — read and evaluate the output
-pnpm agentlint check
+<agentlint-cmd> check
 # Then process the stdout, don't treat it as a crash
 ```
 

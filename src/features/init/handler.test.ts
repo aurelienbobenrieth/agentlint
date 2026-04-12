@@ -31,7 +31,7 @@ const ensureDir = Effect.gen(function* () {
 }).pipe(Effect.provide(TestLayer));
 
 describe("initHandler", () => {
-  it("creates config and suggests skills add by default", async () => {
+  it("creates config and suggests npm commands by default", async () => {
     await Effect.runPromise(cleanup);
     await Effect.runPromise(ensureDir);
 
@@ -41,7 +41,8 @@ describe("initHandler", () => {
     expect(result.message).toContain("Created agentlint.config.ts");
     expect(result.message).toContain(".agentlint-state to .gitignore");
     expect(result.message).toContain("Next steps:");
-    expect(result.message).toContain("pnpm dlx skills@latest add");
+    expect(result.message).toContain("npx skills@latest add");
+    expect(result.message).toContain("npm exec agentlint -- check --all");
 
     // Verify .gitignore was created
     const gitignore = await Effect.runPromise(
@@ -118,7 +119,7 @@ describe("initHandler", () => {
 
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
-    expect(result.message).toContain("pnpm dlx @tanstack/intent install");
+    expect(result.message).toContain("npx @tanstack/intent install");
 
     await Effect.runPromise(cleanup);
   });
@@ -139,7 +140,45 @@ describe("initHandler", () => {
 
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
-    expect(result.message).toContain("pnpm dlx @tanstack/intent install");
+    expect(result.message).toContain("npx @tanstack/intent install");
+
+    await Effect.runPromise(cleanup);
+  });
+
+  it("uses packageManager from package.json when present", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(ensureDir);
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.writeFileString(`${TEST_CWD}/package.json`, JSON.stringify({ packageManager: "yarn@4.7.0" }));
+      }).pipe(Effect.provide(TestLayer)),
+    );
+
+    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
+
+    expect(result.message).toContain("yarn dlx skills@latest add");
+    expect(result.message).toContain("yarn agentlint check --all");
+
+    await Effect.runPromise(cleanup);
+  });
+
+  it("falls back to lockfiles when packageManager is missing", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(ensureDir);
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.writeFileString(`${TEST_CWD}/pnpm-lock.yaml`, "lockfileVersion: '9.0'");
+      }).pipe(Effect.provide(TestLayer)),
+    );
+
+    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
+
+    expect(result.message).toContain("pnpm dlx skills@latest add");
+    expect(result.message).toContain("pnpm agentlint check --all");
 
     await Effect.runPromise(cleanup);
   });
