@@ -121,5 +121,4 @@ describe("TreeWalker", () => {
       expect(ctx.flags.length).toBe(0);
     }
   });
-
 });
