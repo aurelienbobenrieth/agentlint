@@ -25,7 +25,7 @@ import type { RuleContext } from "./rule-context.js";
  * @category models
  */
 export const RuleMeta = Schema.Struct({
-  /** Unique identifier. kebab-case. Used in output, --rule filtering, agentlint-ignore. */
+  /** Unique identifier. kebab-case. Used in output and --rule filtering. */
   name: Schema.String,
   /** One-liner explaining what the rule checks. */
   description: Schema.String,

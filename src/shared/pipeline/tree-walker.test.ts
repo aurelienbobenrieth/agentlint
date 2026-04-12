@@ -122,32 +122,4 @@ describe("TreeWalker", () => {
     }
   });
 
-  it("suppresses flags via agentlint-ignore comments", async () => {
-    const source = `// agentlint-ignore test-rule\nfunction foo() {}\nfunction bar() {}\n`;
-    const tree = await parse(source);
-
-    const rule = defineRule({
-      meta: { name: "test-rule", description: "d", languages: ["ts"], instruction: "i" },
-      createOnce(context) {
-        return {
-          function_declaration(node) {
-            context.flag({ node, message: "func" });
-          },
-        };
-      },
-    });
-
-    const ctx = new RuleContextImpl("test-rule");
-    const visitors = rule.createOnce(ctx);
-    ctx.setFile("test.ts", source);
-
-    const flags = walkFile(tree, [{ ruleName: "test-rule", context: ctx, visitors }]);
-
-    // foo() is on line 2 (0-indexed row 1), the ignore comment is on line 1 (0-indexed row 0)
-    // The suppression should suppress line after the comment
-    // bar() on line 3 should NOT be suppressed
-    expect(flags.some((f) => f.message === "func")).toBe(true);
-    // At least bar() should be flagged
-    expect(flags.length).toBeGreaterThanOrEqual(1);
-  });
 });

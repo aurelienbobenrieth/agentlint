@@ -87,13 +87,6 @@ pnpm agentlint list
 
 Shows all rules from the config: name, description, languages, and include/ignore patterns. Use this to check what rules exist before creating new ones.
 
-### Suppress inline
-
-```typescript
-// agentlint-ignore no-noise-comments -- explains the retry formula
-const delay = baseDelay * Math.pow(2, attempt);
-```
-
 ### Write a rule
 
 To create a new agentlint rule, use the `rule-advisor` skill. It covers

@@ -138,13 +138,6 @@ Manages per-developer reviewed-flag state. When you run `agentlint check`, flags
    pnpm agentlint review --reset
    ```
 
-## Inline suppression
-
-```typescript
-// agentlint-ignore no-noise-comments -- explains the retry formula
-const delay = baseDelay * Math.pow(2, attempt);
-```
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup and how to write rules.

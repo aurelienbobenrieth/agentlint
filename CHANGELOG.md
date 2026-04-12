@@ -50,7 +50,6 @@ Initial public release of `agentlint` -- deterministic linting for AI agents.
   - `defineRule` helper for authoring rules with typed visitor callbacks (e.g. `comment`, `function_declaration`)
   - `defineConfig` helper for creating typed configuration files
   - Git-diff scoping: by default only files changed in the current branch are scanned
-  - Inline suppression via `// agentlint-ignore <rule>` comments
   - Deterministic flag hashing for stable deduplication across runs
   - Structured terminal reporter with per-rule instruction blocks
   - Dry-run mode for count-only output

@@ -16,18 +16,6 @@ import type { VisitorHandler, Visitors } from "../../domain/rule.js";
 import type { RuleContextImpl } from "../../domain/rule-context.js";
 
 /**
- * Regex matching `agentlint-ignore` comments.
- *
- * Captures an optional rule name after the directive:
- * - `// agentlint-ignore` → suppresses all rules on the next line
- * - `// agentlint-ignore my-rule` → suppresses only `my-rule`
- *
- * @since 0.1.0
- * @category constants
- */
-const IGNORE_PATTERN = /agentlint-ignore(?:\s+(\S+))?/;
-
-/**
  * Internal binding of a rule to its context and visitors for a walk pass.
  *
  * @since 0.1.0
@@ -48,20 +36,6 @@ interface RuleEntry {
 interface DispatchHandler {
   readonly ruleName: string;
   readonly handler: VisitorHandler;
-}
-
-/**
- * Records an `agentlint-ignore` comment that suppresses a specific
- * rule (or all rules) on the immediately following line.
- *
- * @since 0.1.0
- * @category models
- */
-interface Suppression {
-  /** Rule name, or `"*"` for all rules. */
-  readonly ruleName: string;
-  /** 0-indexed line number of the *comment* (the suppressed line is `line + 1`). */
-  readonly line: number;
 }
 
 /**
@@ -95,26 +69,11 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
     },
   );
 
-  const suppressions: Suppression[] = [];
-
   const cursor: TreeCursor = tree.walk();
   let reachedEnd = false;
 
   while (!reachedEnd) {
     const nodeType = cursor.nodeType;
-
-    if (nodeType === "comment") {
-      const node = cursor.currentNode;
-      const match = IGNORE_PATTERN.exec(node.text);
-      if (match) {
-        const ruleNameArg = match[1];
-        const ruleName = ruleNameArg?.split("--")[0]?.trim() ?? "*";
-        suppressions.push({
-          ruleName,
-          line: node.startPosition.row + 1,
-        });
-      }
-    }
 
     const handlers = Option.getOrUndefined(HashMap.get(dispatchTable, nodeType));
     if (handlers) {
@@ -138,12 +97,7 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
     allFlags.push(...entry.context.drainFlags());
   }
 
-  if (suppressions.length === 0) return allFlags;
-
-  return allFlags.filter((flag) => {
-    const flagLine0 = flag.line - 1;
-    return !suppressions.some((s) => (s.ruleName === "*" || s.ruleName === flag.ruleName) && s.line === flagLine0);
-  });
+  return allFlags;
 }
 
 /**
