@@ -35,6 +35,10 @@ const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
   ["javascript", "tree-sitter-javascript.wasm"],
 );
 
+export function resolvePackagedWasmPath(path: Pick<Path.Path, "resolve">, dir: string, filename: string): string {
+  return path.resolve(dir, "wasm", filename);
+}
+
 /**
  * @example
  * ```ts
@@ -67,8 +71,8 @@ export class Parser extends Context.Service<
 
       const resolveWasmPath = (filename: string): Effect.Effect<string, ParserError> =>
         Effect.gen(function* () {
-          const thisDir = path.dirname(path.resolve(import.meta.dirname ?? ".", ""));
-          const distPath = path.resolve(thisDir, "wasm", filename);
+          const thisDir = path.resolve(import.meta.dirname ?? ".");
+          const distPath = resolvePackagedWasmPath(path, thisDir, filename);
           if (yield* fs.exists(distPath).pipe(Effect.orElseSucceed(() => false))) return distPath;
 
           const nmBase = path.resolve(env.cwd, "node_modules");
