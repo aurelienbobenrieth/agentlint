@@ -1,12 +1,12 @@
 import { Effect, Layer } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import * as nodePath from "node:path";
 import { describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
-import { Parser } from "./parser.js";
+import { Parser, resolvePackagedWasmPath } from "./parser.js";
 
-const fixturesDir = resolve(import.meta.dirname, "../../__fixtures__");
+const fixturesDir = nodePath.resolve(import.meta.dirname, "../../__fixtures__");
 
 const ParserLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 
@@ -15,8 +15,16 @@ function runWithParser<A, E>(effect: Effect.Effect<A, E, Parser>) {
 }
 
 describe("Parser", () => {
+  it("resolves packaged WASM files inside the current directory wasm folder", () => {
+    const resolved = resolvePackagedWasmPath(nodePath, import.meta.dirname, "tree-sitter-typescript.wasm");
+    const normalized = resolved.replace(/\\/g, "/");
+
+    expect(normalized).toContain("/src/shared/infrastructure/wasm/tree-sitter-typescript.wasm");
+    expect(normalized).not.toContain("/src/shared/wasm/");
+  });
+
   it("parses TypeScript files", async () => {
-    const source = readFileSync(resolve(fixturesDir, "sample.ts"), "utf-8");
+    const source = readFileSync(nodePath.resolve(fixturesDir, "sample.ts"), "utf-8");
 
     await runWithParser(
       Effect.gen(function* () {
@@ -33,7 +41,7 @@ describe("Parser", () => {
   });
 
   it("parses TSX files", async () => {
-    const source = readFileSync(resolve(fixturesDir, "sample.tsx"), "utf-8");
+    const source = readFileSync(nodePath.resolve(fixturesDir, "sample.tsx"), "utf-8");
 
     await runWithParser(
       Effect.gen(function* () {

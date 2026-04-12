@@ -11,7 +11,7 @@ const noiseComments = defineRule({
     return {
       comment(node) {
         const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text === "" || text.startsWith("agentlint-ignore")) return;
+        if (text === "") return;
         context.flag({ node, message: `Comment: "${text.slice(0, 60)}"` });
       },
     };

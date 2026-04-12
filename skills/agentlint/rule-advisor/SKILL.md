@@ -171,7 +171,14 @@ acceptable patterns get flagged as issues.
 ### Testing
 
 ```bash
-pnpm agentlint check --all --rule rule-name
-pnpm agentlint check src/handlers/checkout.ts --rule rule-name
-pnpm agentlint check --all --rule rule-name --dry-run
+<agentlint-cmd> check --all --rule rule-name
+<agentlint-cmd> check src/handlers/checkout.ts --rule rule-name
+<agentlint-cmd> check --all --rule rule-name --dry-run
 ```
+
+Resolve `<agentlint-cmd>` from the repo's package manager before running these commands:
+
+- npm: `npm exec agentlint --`
+- pnpm: `pnpm agentlint`
+- yarn: `yarn agentlint`
+- bun: `bun run agentlint`
