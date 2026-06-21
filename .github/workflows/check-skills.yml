@@ -37,14 +37,15 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
 
-      - name: Install intent
-        run: npm install -g @tanstack/intent
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Check staleness
         id: stale
         run: |
-          OUTPUT=$(intent stale --json 2>&1) || true
+          OUTPUT=$(pnpm exec intent stale --json 2>&1) || true
           echo "$OUTPUT"
 
           # Check if any skills need review

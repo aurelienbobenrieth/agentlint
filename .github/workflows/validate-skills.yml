@@ -27,9 +27,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
 
-      - name: Install intent CLI
-        run: npm install -g @tanstack/intent
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Find and validate skills
         run: |
@@ -42,14 +43,14 @@ jobs:
             for dir in packages/*/skills; do
               if [ -d "$dir" ]; then
                 echo "Validating $dir..."
-                intent validate "$dir"
+                pnpm exec intent validate "$dir"
               fi
             done
             exit 0
           fi
 
           if [ -n "$SKILLS_DIR" ]; then
-            intent validate "$SKILLS_DIR"
+            pnpm exec intent validate "$SKILLS_DIR"
           else
             echo "No skills/ directory found — skipping validation."
           fi
