@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- [#28](https://github.com/aurelienbobenrieth/agentlint/pull/28) [`8fbcccd`](https://github.com/aurelienbobenrieth/agentlint/commit/8fbcccdf08b28c67b9588a24de4e943bdb345700) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Move the project config file to `.agentlint/config.ts`.
+
+  This is a breaking change: root-level `agentlint.config.*` files are no longer discovered, and `agentlint init` now creates `.agentlint/config.ts`.
+
 ## 0.1.5
 
 ### Patch Changes
