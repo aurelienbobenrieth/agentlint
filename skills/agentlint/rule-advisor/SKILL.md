@@ -7,7 +7,7 @@ description: >
   linting, improve their feedback loop, or asks "how do I make sure X."
 type: core
 library: agentlint
-library_version: "0.1.5"
+library_version: "0.2.0"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:CONTRIBUTING.md"
