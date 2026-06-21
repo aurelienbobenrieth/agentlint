@@ -27,7 +27,7 @@ Use the package manager already used by the repo:
 - yarn: `yarn add -D @aurelienbbn/agentlint` then `yarn agentlint init`
 - bun: `bun add -d @aurelienbbn/agentlint` then `bun run agentlint init`
 
-This creates `agentlint.config.ts` with a starter template. Add rules to the `rules` object.
+This creates `.agentlint/config.ts` with a starter template. Add rules to the `rules` object.
 
 Before running agentlint, resolve the repo's command prefix from `packageManager` in `package.json` or from lockfiles:
 

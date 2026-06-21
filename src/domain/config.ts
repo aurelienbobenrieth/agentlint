@@ -1,7 +1,7 @@
 /**
  * Configuration types and the `defineConfig` helper.
  *
- * A config file (`agentlint.config.ts`) default-exports an {@link AgentReviewConfig}
+ * A config file (`.agentlint/config.ts`) default-exports an {@link AgentReviewConfig}
  * object that maps rule names to rule definitions and optionally scopes which
  * files are scanned.
  *
@@ -14,7 +14,7 @@ import type { AgentReviewRule } from "./rule.js";
 import { RuleMeta } from "./rule.js";
 
 /**
- * Top-level configuration schema for `agentlint.config.ts`.
+ * Top-level configuration schema for `.agentlint/config.ts`.
  *
  * @since 0.1.0
  * @category models

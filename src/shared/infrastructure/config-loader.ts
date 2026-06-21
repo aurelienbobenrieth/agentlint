@@ -5,8 +5,7 @@
  * via `jiti` (for TypeScript support without pre-compilation), and
  * validates the exported shape.
  *
- * **Search order**: `agentlint.config.ts` → `.js` → `.mts` → `.mjs`.
- * The first match wins.
+ * The config file is loaded from `.agentlint/config.ts`.
  *
  * @module
  * @since 0.1.0
@@ -27,29 +26,27 @@ export class ConfigError extends Schema.TaggedErrorClass<ConfigError>()("ConfigE
 }) {}
 
 /**
- * Candidate config file names, checked in order.
+ * Project-relative config file path.
  *
  * @since 0.1.0
  * @category constants
  */
-const CONFIG_NAMES = ["agentlint.config.ts", "agentlint.config.js", "agentlint.config.mts", "agentlint.config.mjs"];
+const CONFIG_PATH = [".agentlint", "config.ts"] as const;
 
 /**
- * Discover the config file path by checking candidates in order.
+ * Discover the config file path.
  *
  * @since 0.1.0
  * @category internals
  */
 const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string): Effect.Effect<string, ConfigError> =>
   Effect.gen(function* () {
-    for (const name of CONFIG_NAMES) {
-      const candidate = path.resolve(cwd, name);
-      if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
-        return candidate;
-      }
+    const candidate = path.resolve(cwd, ...CONFIG_PATH);
+    if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
+      return candidate;
     }
     return yield* new ConfigError({
-      message: `No agentlint config found. Create agentlint.config.ts in ${cwd}`,
+      message: `No agentlint config found. Create .agentlint/config.ts in ${cwd}`,
     });
   });
 
