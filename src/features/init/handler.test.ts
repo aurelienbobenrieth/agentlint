@@ -6,7 +6,8 @@ import { initHandler } from "./handler.js";
 import { InitCommand } from "./request.js";
 
 const TEST_CWD = "/tmp/agentlint-test-init";
-const CONFIG_PATH = `${TEST_CWD}/agentlint.config.ts`;
+const CONFIG_DIR = `${TEST_CWD}/.agentlint`;
+const CONFIG_PATH = `${CONFIG_DIR}/config.ts`;
 
 const TestEnv = Layer.succeed(
   Env,
@@ -38,11 +39,19 @@ describe("initHandler", () => {
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
     expect(result.created).toBe(true);
-    expect(result.message).toContain("Created agentlint.config.ts");
+    expect(result.message).toContain("Created .agentlint/config.ts");
     expect(result.message).toContain(".agentlint-state to .gitignore");
     expect(result.message).toContain("Next steps:");
     expect(result.message).toContain("npx skills@latest add");
     expect(result.message).toContain("npm exec agentlint -- check --all");
+
+    const config = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        return yield* fs.readFileString(CONFIG_PATH);
+      }).pipe(Effect.provide(TestLayer)),
+    );
+    expect(config).toContain("defineConfig");
 
     // Verify .gitignore was created
     const gitignore = await Effect.runPromise(
@@ -94,6 +103,7 @@ describe("initHandler", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(CONFIG_DIR, { recursive: true });
         yield* fs.writeFileString(CONFIG_PATH, "existing");
       }).pipe(Effect.provide(TestLayer)),
     );

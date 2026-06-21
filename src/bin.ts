@@ -144,7 +144,7 @@ const init = Command.make("init", {}, () =>
     const result = yield* initHandler(new InitCommand({}));
     yield* Console.log(result.message);
   }),
-).pipe(Command.withDescription("Create agentlint.config.ts and set up agent skill discovery"));
+).pipe(Command.withDescription("Create .agentlint/config.ts and set up agent skill discovery"));
 
 /** The `review` subcommand — manage reviewed-flag state. */
 const review = Command.make(

@@ -26,7 +26,7 @@ agentlint owns Phase 1 only. It does not call any AI model. It does not require 
 pnpm add @aurelienbbn/agentlint
 ```
 
-Create `agentlint.config.ts`:
+Create `.agentlint/config.ts`:
 
 ```typescript
 import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
@@ -110,7 +110,7 @@ Lists all registered rules with their metadata.
 
 ### `agentlint init`
 
-Scaffolds a starter `agentlint.config.ts` file in the current directory.
+Scaffolds a starter `.agentlint/config.ts` file in the current directory.
 
 ### `agentlint review [hashes...] [options]`
 

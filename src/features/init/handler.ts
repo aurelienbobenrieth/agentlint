@@ -125,13 +125,15 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configPath = path.resolve(env.cwd, "agentlint.config.ts");
+  const configDir = path.resolve(env.cwd, ".agentlint");
+  const configPath = path.resolve(configDir, "config.ts");
 
   const gitignorePath = path.resolve(env.cwd, ".gitignore");
 
   // --- Step 1: Create config ---
   const configCreated = !(yield* fs.exists(configPath));
   if (configCreated) {
+    yield* fs.makeDirectory(configDir, { recursive: true });
     yield* fs.writeFileString(configPath, STARTER_CONFIG);
   }
 
@@ -153,9 +155,9 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
   const lines: Array<string> = [];
 
   if (configCreated) {
-    lines.push("✓ Created agentlint.config.ts");
+    lines.push("✓ Created .agentlint/config.ts");
   } else {
-    lines.push("· agentlint.config.ts already exists — skipped");
+    lines.push("· .agentlint/config.ts already exists - skipped");
   }
 
   if (gitignoreUpdated) {
