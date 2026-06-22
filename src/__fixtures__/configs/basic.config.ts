@@ -1,18 +1,15 @@
 import { defineConfig, defineRule } from "../../../src/index.js";
 
-const noiseComments = defineRule({
-  meta: {
-    name: "no-noise-comments",
-    description: "Flags comments for AI evaluation",
-    languages: ["ts", "tsx"],
-    instruction: `Evaluate each comment. Remove noise, keep valuable ones.`,
-  },
+const noNoiseComments = defineRule({
+  id: "comments/no-noise",
+  description: "Flags comments for guidance.",
+  guidance: "Comments should add durable context beyond the code.",
   createOnce(context) {
     return {
       comment(node) {
         const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text === "") return;
-        context.flag({ node, message: `Comment: "${text.slice(0, 60)}"` });
+        if (text.length === 0) return;
+        context.report({ node, message: `Comment: "${text.slice(0, 60)}"` });
       },
     };
   },
@@ -20,6 +17,7 @@ const noiseComments = defineRule({
 
 export default defineConfig({
   rules: {
-    "no-noise-comments": noiseComments,
+    "comments/no-noise": noNoiseComments,
   },
+  files: ["src/**/*.{ts,tsx}"],
 });

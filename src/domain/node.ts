@@ -38,7 +38,7 @@ export type Position = Schema.Schema.Type<typeof Position>;
  * @since 0.1.0
  * @category models
  */
-export interface AgentReviewNode {
+export interface AgentlintNode {
   /** tree-sitter grammar node type (e.g. `"function_declaration"`, `"comment"`) */
   readonly type: string;
   /** Full source text covered by this node. */
@@ -50,22 +50,22 @@ export interface AgentReviewNode {
   /** Whether this is a named node in the grammar. */
   readonly isNamed: boolean;
   /** Direct child nodes (lazily wrapped). */
-  readonly children: ReadonlyArray<AgentReviewNode>;
+  readonly children: ReadonlyArray<AgentlintNode>;
   /** Parent node, or null for the root. */
-  readonly parent: AgentReviewNode | null;
+  readonly parent: AgentlintNode | null;
   /** Number of direct children. */
   readonly childCount: number;
 
   /** Get a child by its grammar field name (e.g. `"name"`, `"body"`). */
-  childByFieldName(name: string): AgentReviewNode | null;
+  childByFieldName(name: string): AgentlintNode | null;
   /** All direct children matching the given node type. */
-  childrenByType(type: string): ReadonlyArray<AgentReviewNode>;
+  childrenByType(type: string): ReadonlyArray<AgentlintNode>;
   /** Recursively collect all descendants matching the given node type. */
-  descendantsOfType(type: string): ReadonlyArray<AgentReviewNode>;
+  descendantsOfType(type: string): ReadonlyArray<AgentlintNode>;
 }
 
 /**
- * Private implementation of {@link AgentReviewNode}.
+ * Private implementation of {@link AgentlintNode}.
  *
  * Wraps a tree-sitter `Node` and lazily creates child/parent wrappers
  * on first access. Nodes that are never traversed incur zero allocation.
@@ -73,10 +73,10 @@ export interface AgentReviewNode {
  * @since 0.1.0
  * @category internals
  */
-class AgentReviewNodeImpl implements AgentReviewNode {
+class AgentlintNodeImpl implements AgentlintNode {
   readonly #inner: TSNode;
-  #children: ReadonlyArray<AgentReviewNode> | undefined;
-  #parent: AgentReviewNode | null | undefined;
+  #children: ReadonlyArray<AgentlintNode> | undefined;
+  #parent: AgentlintNode | null | undefined;
 
   constructor(inner: TSNode) {
     this.#inner = inner;
@@ -106,49 +106,49 @@ class AgentReviewNodeImpl implements AgentReviewNode {
     return this.#inner.childCount;
   }
 
-  get children(): ReadonlyArray<AgentReviewNode> {
+  get children(): ReadonlyArray<AgentlintNode> {
     if (this.#children === undefined) {
-      const result: AgentReviewNode[] = [];
+      const result: AgentlintNode[] = [];
       for (const c of this.#inner.children) {
-        if (c !== null) result.push(new AgentReviewNodeImpl(c));
+        if (c !== null) result.push(new AgentlintNodeImpl(c));
       }
       this.#children = result;
     }
     return this.#children;
   }
 
-  get parent(): AgentReviewNode | null {
+  get parent(): AgentlintNode | null {
     if (this.#parent === undefined) {
       const p = this.#inner.parent;
-      this.#parent = p ? new AgentReviewNodeImpl(p) : null;
+      this.#parent = p ? new AgentlintNodeImpl(p) : null;
     }
     return this.#parent;
   }
 
-  childByFieldName(name: string): AgentReviewNode | null {
+  childByFieldName(name: string): AgentlintNode | null {
     const child = this.#inner.childForFieldName(name);
-    return child ? new AgentReviewNodeImpl(child) : null;
+    return child ? new AgentlintNodeImpl(child) : null;
   }
 
-  childrenByType(type: string): ReadonlyArray<AgentReviewNode> {
-    const result: AgentReviewNode[] = [];
+  childrenByType(type: string): ReadonlyArray<AgentlintNode> {
+    const result: AgentlintNode[] = [];
     for (const c of this.#inner.children) {
-      if (c !== null && c.type === type) result.push(new AgentReviewNodeImpl(c));
+      if (c !== null && c.type === type) result.push(new AgentlintNodeImpl(c));
     }
     return result;
   }
 
-  descendantsOfType(type: string): ReadonlyArray<AgentReviewNode> {
-    const result: AgentReviewNode[] = [];
+  descendantsOfType(type: string): ReadonlyArray<AgentlintNode> {
+    const result: AgentlintNode[] = [];
     for (const c of this.#inner.descendantsOfType(type)) {
-      if (c !== null) result.push(new AgentReviewNodeImpl(c));
+      if (c !== null) result.push(new AgentlintNodeImpl(c));
     }
     return result;
   }
 }
 
 /**
- * Wrap a raw tree-sitter node in the public {@link AgentReviewNode} interface.
+ * Wrap a raw tree-sitter node in the public {@link AgentlintNode} interface.
  *
  * This is the only bridge between the internal tree-sitter dependency
  * and the consumer-facing API. All child/parent nodes are lazily wrapped
@@ -157,6 +157,6 @@ class AgentReviewNodeImpl implements AgentReviewNode {
  * @since 0.1.0
  * @category constructors
  */
-export function wrapNode(inner: TSNode): AgentReviewNode {
-  return new AgentReviewNodeImpl(inner);
+export function wrapNode(inner: TSNode): AgentlintNode {
+  return new AgentlintNodeImpl(inner);
 }

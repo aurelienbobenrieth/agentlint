@@ -1,77 +1,49 @@
 /**
- * Rule context — the interface rules use to interact with the runner.
- *
- * Provides file metadata, source access, and the {@link RuleContext.flag}
- * method for recording matches.
+ * Rule context - the interface rules use to report findings.
  *
  * @module
- * @since 0.1.0
+ * @since 0.2.0
  */
 
 import { fnv1a7 } from "./hash.js";
-import { type FlagOptions, FlagRecord } from "./flag.js";
+import { type FindingOptions, FindingRecord } from "./finding.js";
 
-/**
- * Context object passed to `createOnce`. Available throughout the rule's lifecycle.
- *
- * @since 0.1.0
- * @category models
- */
 export interface RuleContext {
-  /** Absolute path of the current file being analyzed. */
   getFilename(): string;
-  /** Full source content of the current file. */
+  getFilePath(): string;
   getSourceCode(): string;
-  /**
-   * Lines around the given 1-based line number, formatted with line numbers.
-   * @param line 1-based line number
-   * @param radius number of lines above/below to include (default 10)
-   */
   getLinesAround(line: number, radius?: number): string;
-  /** Record a match for the output report. */
-  flag(options: FlagOptions): void;
+  report(options: FindingOptions): void;
 }
 
-/**
- * Internal implementation of {@link RuleContext}.
- *
- * Tracks the current file, accumulates flags, and provides source
- * access helpers. The check command calls {@link setFile} before each
- * file and {@link drainFlags} after the tree walk to collect results.
- *
- * @since 0.1.0
- * @category internals
- */
 export class RuleContextImpl implements RuleContext {
-  readonly ruleName: string;
-  readonly flags: FlagRecord[] = [];
+  readonly ruleId: string;
+  readonly findings: FindingRecord[] = [];
 
-  #filename = "";
+  #absolutePath = "";
+  #file = "";
   #source = "";
 
-  constructor(ruleName: string) {
-    this.ruleName = ruleName;
+  constructor(ruleId: string) {
+    this.ruleId = ruleId;
   }
 
-  /**
-   * Set the current file context. Called by the check command before
-   * each file is walked.
-   */
-  setFile(filename: string, source: string): void {
-    this.#filename = filename;
+  setFile(absolutePath: string, file: string, source: string): void {
+    this.#absolutePath = absolutePath;
+    this.#file = file.replace(/\\/g, "/");
     this.#source = source;
   }
 
-  /**
-   * Remove and return all accumulated flags. Called after the tree
-   * walk for each file to collect results.
-   */
-  drainFlags(): FlagRecord[] {
-    return this.flags.splice(0);
+  drainFindings(): FindingRecord[] {
+    return this.findings.splice(0);
   }
 
   getFilename(): string {
-    return this.#filename;
+    return this.#absolutePath;
+  }
+
+  getFilePath(): string {
+    return this.#file;
   }
 
   getSourceCode(): string {
@@ -88,27 +60,30 @@ export class RuleContextImpl implements RuleContext {
       .join("\n");
   }
 
-  flag(options: FlagOptions): void {
+  report(options: FindingOptions): void {
     const line = options.node.startPosition.row + 1;
-    const col = options.node.startPosition.column + 1;
+    const column = options.node.startPosition.column + 1;
     const sourceLines = this.#source.split("\n");
     const rawLine = sourceLines[line - 1] ?? "";
-    const trimmed = rawLine.trim();
-    const sourceSnippet = trimmed.length > 100 ? trimmed.slice(0, 97) + "..." : trimmed;
+    const nodeSnippet = options.node.text.split("\n")[0]?.trim() ?? "";
+    const rawSnippet = nodeSnippet.length > 0 ? nodeSnippet : rawLine.trim();
+    const sourceSnippet = rawSnippet.length > 100 ? rawSnippet.slice(0, 97) + "..." : rawSnippet;
+    const normalizedNodeText = options.node.text.replace(/\s+/g, " ").trim();
 
-    const hash = fnv1a7(`${this.ruleName}:${this.#filename}:${line}:${col}:${options.message}`);
+    const hash = fnv1a7(`${this.ruleId}:${this.#file}:${options.node.type}:${normalizedNodeText}:${options.message}`);
 
-    this.flags.push(
-      new FlagRecord({
-        ruleName: this.ruleName,
-        filename: this.#filename,
+    this.findings.push(
+      new FindingRecord({
+        selector: undefined,
+        ruleId: this.ruleId,
+        file: this.#file,
+        absolutePath: this.#absolutePath,
+        nodeType: options.node.type,
         line,
-        col,
+        column,
         message: options.message,
         sourceSnippet,
         hash,
-        instruction: options.instruction,
-        suggest: options.suggest,
       }),
     );
   }

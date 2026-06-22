@@ -10,8 +10,8 @@
 
 import { Effect, HashMap, Option } from "effect";
 import type { Tree, TreeCursor } from "web-tree-sitter";
-import { type AgentReviewNode, wrapNode } from "../../domain/node.js";
-import type { FlagRecord } from "../../domain/flag.js";
+import { type AgentlintNode, wrapNode } from "../../domain/node.js";
+import type { FindingRecord } from "../../domain/finding.js";
 import type { VisitorHandler, Visitors } from "../../domain/rule.js";
 import type { RuleContextImpl } from "../../domain/rule-context.js";
 
@@ -22,7 +22,7 @@ import type { RuleContextImpl } from "../../domain/rule-context.js";
  * @category models
  */
 interface RuleEntry {
-  readonly ruleName: string;
+  readonly ruleId: string;
   readonly context: RuleContextImpl;
   readonly visitors: Visitors;
 }
@@ -34,7 +34,6 @@ interface RuleEntry {
  * @category models
  */
 interface DispatchHandler {
-  readonly ruleName: string;
   readonly handler: VisitorHandler;
 }
 
@@ -48,21 +47,25 @@ interface DispatchHandler {
  *
  * @internal
  */
-export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyArray<FlagRecord> {
+export function visitorKeys(visitors: Visitors): ReadonlyArray<string> {
+  return Object.keys(visitors).filter(
+    (key) => key !== "before" && key !== "after" && typeof visitors[key] === "function",
+  );
+}
+
+export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyArray<FindingRecord> {
   const dispatchTable: HashMap.HashMap<string, DispatchHandler[]> = HashMap.mutate(
     HashMap.empty<string, DispatchHandler[]>(),
     (m) => {
       for (const entry of rules) {
-        for (const key of Object.keys(entry.visitors)) {
-          if (key === "before" || key === "after") continue;
+        for (const key of visitorKeys(entry.visitors)) {
           const handler = entry.visitors[key];
-          if (typeof handler !== "function") continue;
 
           const existing = Option.getOrUndefined(HashMap.get(m, key));
           if (existing) {
-            existing.push({ ruleName: entry.ruleName, handler: handler as VisitorHandler });
+            existing.push({ handler: handler as VisitorHandler });
           } else {
-            HashMap.set(m, key, [{ ruleName: entry.ruleName, handler: handler as VisitorHandler }]);
+            HashMap.set(m, key, [{ handler: handler as VisitorHandler }]);
           }
         }
       }
@@ -77,7 +80,7 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
 
     const handlers = Option.getOrUndefined(HashMap.get(dispatchTable, nodeType));
     if (handlers) {
-      const wrapped: AgentReviewNode = wrapNode(cursor.currentNode);
+      const wrapped: AgentlintNode = wrapNode(cursor.currentNode);
       for (const { handler } of handlers) {
         handler(wrapped);
       }
@@ -92,12 +95,12 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
     }
   }
 
-  const allFlags: FlagRecord[] = [];
+  const allFindings: FindingRecord[] = [];
   for (const entry of rules) {
-    allFlags.push(...entry.context.drainFlags());
+    allFindings.push(...entry.context.drainFindings());
   }
 
-  return allFlags;
+  return allFindings;
 }
 
 /**
@@ -109,6 +112,9 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
  * @since 0.1.0
  * @category constructors
  */
-export function walkFileEffect(tree: Tree, rules: ReadonlyArray<RuleEntry>): Effect.Effect<ReadonlyArray<FlagRecord>> {
+export function walkFileEffect(
+  tree: Tree,
+  rules: ReadonlyArray<RuleEntry>,
+): Effect.Effect<ReadonlyArray<FindingRecord>> {
   return Effect.sync(() => walkFile(tree, rules));
 }

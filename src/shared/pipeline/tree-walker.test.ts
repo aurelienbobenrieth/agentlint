@@ -5,7 +5,7 @@ import { Env } from "../../config/env.js";
 import { defineRule } from "../../domain/rule.js";
 import { RuleContextImpl } from "../../domain/rule-context.js";
 import { Parser } from "../infrastructure/parser.js";
-import { walkFile } from "./tree-walker.js";
+import { visitorKeys, walkFile } from "./tree-walker.js";
 
 const ParserLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 
@@ -19,104 +19,101 @@ function parse(source: string, grammar = "typescript") {
 }
 
 describe("TreeWalker", () => {
-  it("dispatches to comment visitors", async () => {
+  it("dispatches only to registered visitor keys", async () => {
     const source = `// hello\nconst x = 1\n// world\n`;
     const tree = await parse(source);
 
     const rule = defineRule({
-      meta: {
-        name: "test-comments",
-        description: "Test",
-        languages: ["ts"],
-        instruction: "Check comments",
-      },
+      id: "test/comments",
+      description: "Test comments",
+      guidance: "Comments should be evaluated.",
       createOnce(context) {
         return {
           comment(node) {
-            context.flag({ node, message: `Found: ${node.text}` });
+            context.report({ node, message: `Found: ${node.text}` });
           },
         };
       },
     });
 
-    const context = new RuleContextImpl("test-comments");
+    const context = new RuleContextImpl("test/comments");
     const visitors = rule.createOnce(context);
-    context.setFile("test.ts", source);
+    context.setFile("test.ts", "test.ts", source);
 
-    const flags = walkFile(tree, [{ ruleName: "test-comments", context, visitors }]);
-    expect(flags.length).toBe(2);
-    expect(flags[0]!.message).toContain("hello");
-    expect(flags[1]!.message).toContain("world");
+    const findings = walkFile(tree, [{ ruleId: "test/comments", context, visitors }]);
+    expect(visitorKeys(visitors)).toEqual(["comment"]);
+    expect(findings).toHaveLength(2);
+    expect(findings[0]!.message).toContain("hello");
+    expect(findings[1]!.message).toContain("world");
   });
 
-  it("dispatches to multiple rules in a single pass", async () => {
+  it("dispatches multiple rules in a single pass", async () => {
     const source = `// a comment\nfunction foo() {}\n`;
     const tree = await parse(source);
 
     const commentRule = defineRule({
-      meta: { name: "r1", description: "d1", languages: ["ts"], instruction: "i1" },
+      id: "r/comment",
+      description: "d1",
+      guidance: "i1",
       createOnce(context) {
         return {
           comment(node) {
-            context.flag({ node, message: "comment found" });
+            context.report({ node, message: "comment found" });
           },
         };
       },
     });
 
-    const funcRule = defineRule({
-      meta: { name: "r2", description: "d2", languages: ["ts"], instruction: "i2" },
+    const functionRule = defineRule({
+      id: "r/function",
+      description: "d2",
+      guidance: "i2",
       createOnce(context) {
         return {
           function_declaration(node) {
-            context.flag({ node, message: "function found" });
+            context.report({ node, message: "function found" });
           },
         };
       },
     });
 
-    const ctx1 = new RuleContextImpl("r1");
-    const ctx2 = new RuleContextImpl("r2");
+    const ctx1 = new RuleContextImpl("r/comment");
+    const ctx2 = new RuleContextImpl("r/function");
     const v1 = commentRule.createOnce(ctx1);
-    const v2 = funcRule.createOnce(ctx2);
-    ctx1.setFile("test.ts", source);
-    ctx2.setFile("test.ts", source);
+    const v2 = functionRule.createOnce(ctx2);
+    ctx1.setFile("test.ts", "test.ts", source);
+    ctx2.setFile("test.ts", "test.ts", source);
 
-    const flags = walkFile(tree, [
-      { ruleName: "r1", context: ctx1, visitors: v1 },
-      { ruleName: "r2", context: ctx2, visitors: v2 },
+    const findings = walkFile(tree, [
+      { ruleId: "r/comment", context: ctx1, visitors: v1 },
+      { ruleId: "r/function", context: ctx2, visitors: v2 },
     ]);
 
-    expect(flags.length).toBe(2);
-    expect(flags.some((f) => f.ruleName === "r1")).toBe(true);
-    expect(flags.some((f) => f.ruleName === "r2")).toBe(true);
+    expect(findings).toHaveLength(2);
+    expect(findings.some((finding) => finding.ruleId === "r/comment")).toBe(true);
+    expect(findings.some((finding) => finding.ruleId === "r/function")).toBe(true);
   });
 
-  it("respects before() returning false to skip file", async () => {
+  it("supports before returning false before traversal", async () => {
     const source = `// skip me\n`;
     await parse(source);
 
-    const rule = defineRule({
-      meta: { name: "skip", description: "d", languages: ["ts"], instruction: "i" },
-      createOnce(context) {
-        return {
-          before() {
-            return false;
-          },
-          comment(node) {
-            context.flag({ node, message: "should not fire" });
-          },
-        };
+    const context = new RuleContextImpl("skip/file");
+    let beforeCalls = 0;
+    const visitors = {
+      before() {
+        beforeCalls++;
+        return false;
       },
-    });
+      comment(node) {
+        context.report({ node, message: "should not fire" });
+      },
+    };
+    context.setFile("test.ts", "test.ts", source);
 
-    const ctx = new RuleContextImpl("skip");
-    const visitors = rule.createOnce(ctx);
-    ctx.setFile("test.ts", source);
-
-    // Simulate the before() check like check.ts does
-    const shouldRun = visitors.before?.("test.ts");
+    const shouldRun = visitors.before("test.ts");
     expect(shouldRun).toBe(false);
-    expect(ctx.flags.length).toBe(0);
+    expect(beforeCalls).toBe(1);
+    expect(context.findings).toHaveLength(0);
   });
 });

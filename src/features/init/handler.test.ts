@@ -13,6 +13,8 @@ const TestEnv = Layer.succeed(
   Env,
   Env.of({
     cwd: TEST_CWD,
+    argv: [],
+    actor: "test",
     noColor: true,
     isTTY: false,
     setExitCode: () => {},
@@ -40,7 +42,8 @@ describe("initHandler", () => {
 
     expect(result.created).toBe(true);
     expect(result.message).toContain("Created .agentlint/config.ts");
-    expect(result.message).toContain(".agentlint-state to .gitignore");
+    expect(result.message).toContain("Created .agentlint/rules/");
+    expect(result.message).toContain("Added .agentlint/.cache/ to .gitignore");
     expect(result.message).toContain("Next steps:");
     expect(result.message).toContain("npx skills@latest add");
     expect(result.message).toContain("npm exec agentlint -- check --all");
@@ -60,7 +63,7 @@ describe("initHandler", () => {
         return yield* fs.readFileString(`${TEST_CWD}/.gitignore`);
       }).pipe(Effect.provide(TestLayer)),
     );
-    expect(gitignore).toContain(".agentlint-state");
+    expect(gitignore).toContain(".agentlint/.cache/");
 
     await Effect.runPromise(cleanup);
   });
@@ -78,7 +81,7 @@ describe("initHandler", () => {
 
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
 
-    expect(result.message).toContain(".agentlint-state to .gitignore");
+    expect(result.message).toContain("Added .agentlint/.cache/ to .gitignore");
 
     const gitignore = await Effect.runPromise(
       Effect.gen(function* () {
@@ -87,11 +90,11 @@ describe("initHandler", () => {
       }).pipe(Effect.provide(TestLayer)),
     );
     expect(gitignore).toContain("node_modules/");
-    expect(gitignore).toContain(".agentlint-state");
+    expect(gitignore).toContain(".agentlint/.cache/");
 
     // Run again — should not duplicate
     const result2 = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-    expect(result2.message).not.toContain(".agentlint-state to .gitignore");
+    expect(result2.message).not.toContain("Added .agentlint/.cache/ to .gitignore");
 
     await Effect.runPromise(cleanup);
   });

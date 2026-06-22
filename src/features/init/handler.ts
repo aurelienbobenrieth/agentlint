@@ -18,8 +18,9 @@ type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 const STARTER_CONFIG = `import { defineConfig } from "@aurelienbbn/agentlint"
 
 export default defineConfig({
-  include: ["src/**/*.{ts,tsx}"],
   rules: {},
+  files: ["src/**/*.{ts,tsx,js,jsx}"],
+  ignores: ["**/*.test.*", "**/*.spec.*"],
 })
 `;
 
@@ -126,29 +127,37 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const configDir = path.resolve(env.cwd, ".agentlint");
+  const rulesDir = path.resolve(configDir, "rules");
   const configPath = path.resolve(configDir, "config.ts");
 
   const gitignorePath = path.resolve(env.cwd, ".gitignore");
 
-  // --- Step 1: Create config ---
   const configCreated = !(yield* fs.exists(configPath));
   if (configCreated) {
     yield* fs.makeDirectory(configDir, { recursive: true });
     yield* fs.writeFileString(configPath, STARTER_CONFIG);
   }
 
-  // --- Step 2: Ensure .agentlint-state is gitignored ---
+  const rulesCreated = !(yield* fs.exists(rulesDir));
+  if (rulesCreated) {
+    yield* fs.makeDirectory(rulesDir, { recursive: true });
+  }
+
+  // --- Step 2: Ensure selector cache is gitignored ---
   let gitignoreUpdated = false;
   const gitignoreExists = yield* fs.exists(gitignorePath);
   if (gitignoreExists) {
     const content = yield* fs.readFileString(gitignorePath);
-    if (!content.includes(".agentlint-state")) {
+    if (!content.includes(".agentlint/.cache/")) {
       const separator = content.endsWith("\n") ? "" : "\n";
-      yield* fs.writeFileString(gitignorePath, content + separator + "\n# agentlint local state\n.agentlint-state\n");
+      yield* fs.writeFileString(
+        gitignorePath,
+        content + separator + "\n# agentlint ephemeral selector cache\n.agentlint/.cache/\n",
+      );
       gitignoreUpdated = true;
     }
   } else {
-    yield* fs.writeFileString(gitignorePath, "# agentlint local state\n.agentlint-state\n");
+    yield* fs.writeFileString(gitignorePath, "# agentlint ephemeral selector cache\n.agentlint/.cache/\n");
     gitignoreUpdated = true;
   }
 
@@ -160,8 +169,12 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
     lines.push("· .agentlint/config.ts already exists - skipped");
   }
 
+  if (rulesCreated) {
+    lines.push("✓ Created .agentlint/rules/");
+  }
+
   if (gitignoreUpdated) {
-    lines.push("✓ Added .agentlint-state to .gitignore");
+    lines.push("✓ Added .agentlint/.cache/ to .gitignore");
   }
 
   // --- Step 2: Next steps ---
