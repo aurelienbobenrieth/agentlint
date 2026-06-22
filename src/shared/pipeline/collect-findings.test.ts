@@ -1,6 +1,8 @@
 import { Effect, Layer } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { resolve } from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
 import { defineConfig, defineRule } from "../../index.js";
@@ -50,27 +52,36 @@ describe("collectFindings", () => {
   it("collects findings with stable hashes independent of line shifts", async () => {
     const config = defineConfig({ rules: { "comments/no-noise": commentRule } });
     const layer = testLayer(config);
+    const dir = await mkdtemp(join(tmpdir(), "agentlint-hash-"));
+    const file = join(dir, "sample.ts");
 
-    const first = await Effect.runPromise(
-      collectFindings({
-        all: false,
-        rules: [],
-        base: undefined,
-        files: [resolve(fixturesDir, "sample.ts")],
-      }).pipe(Effect.provide(layer)),
-    );
-    const shifted = await Effect.runPromise(
-      collectFindings({
-        all: false,
-        rules: [],
-        base: undefined,
-        files: [resolve(fixturesDir, "sample-line-shift.ts")],
-      }).pipe(Effect.provide(layer)),
-    );
+    try {
+      await writeFile(file, "export const value = 1;\n// useful context\n");
+      const first = await Effect.runPromise(
+        collectFindings({
+          all: false,
+          rules: [],
+          base: undefined,
+          files: [file],
+        }).pipe(Effect.provide(layer)),
+      );
 
-    expect(first.findings[0]?.hash).toBeDefined();
-    expect(shifted.findings[0]?.hash).toBeDefined();
-    expect(first.findings[0]?.hash).not.toBe(shifted.findings[0]?.hash);
+      await writeFile(file, "\n\nexport const value = 1;\n// useful context\n");
+      const shifted = await Effect.runPromise(
+        collectFindings({
+          all: false,
+          rules: [],
+          base: undefined,
+          files: [file],
+        }).pipe(Effect.provide(layer)),
+      );
+
+      expect(first.findings[0]?.hash).toBeDefined();
+      expect(shifted.findings[0]?.hash).toBeDefined();
+      expect(first.findings[0]?.hash).toBe(shifted.findings[0]?.hash);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("applies overrides in array order", async () => {
