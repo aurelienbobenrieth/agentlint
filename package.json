@@ -1,7 +1,7 @@
 {
   "name": "@aurelienbbn/agentlint",
   "version": "0.1.5",
-  "description": "Stateless, deterministic CLI that bridges traditional linters and AI-assisted code review",
+  "description": "Deterministic triggers for contextual agent guidance and accountable resolution",
   "keywords": [
     "agent",
     "ai",
