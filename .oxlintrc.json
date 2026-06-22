@@ -12,6 +12,7 @@
   "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**"],
   "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
   "rules": {
+    "eslint/no-underscore-dangle": ["error", { "allow": ["_tag", "_tree", "__dirname", "__AGENTLINT_VERSION__"] }],
     "unicorn/filename-case": ["error", { "case": "kebabCase" }],
     "jest/no-conditional-expect": "off",
     "jest/valid-expect": "off",

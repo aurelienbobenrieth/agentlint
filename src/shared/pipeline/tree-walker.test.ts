@@ -94,7 +94,7 @@ describe("TreeWalker", () => {
 
   it("respects before() returning false to skip file", async () => {
     const source = `// skip me\n`;
-    const _tree = await parse(source);
+    await parse(source);
 
     const rule = defineRule({
       meta: { name: "skip", description: "d", languages: ["ts"], instruction: "i" },
@@ -116,9 +116,7 @@ describe("TreeWalker", () => {
 
     // Simulate the before() check like check.ts does
     const shouldRun = visitors.before?.("test.ts");
-    if (shouldRun === false) {
-      // Don't walk
-      expect(ctx.flags.length).toBe(0);
-    }
+    expect(shouldRun).toBe(false);
+    expect(ctx.flags.length).toBe(0);
   });
 });

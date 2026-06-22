@@ -79,6 +79,9 @@ export class Parser extends Context.Service<
           if (filename === "tree-sitter.wasm") {
             const p = path.resolve(nmBase, "web-tree-sitter", filename);
             if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
+
+            const renamed = path.resolve(nmBase, "web-tree-sitter", "web-tree-sitter.wasm");
+            if (yield* fs.exists(renamed).pipe(Effect.orElseSucceed(() => false))) return renamed;
           } else {
             const p = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
             if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;

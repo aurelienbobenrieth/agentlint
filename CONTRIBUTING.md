@@ -10,6 +10,7 @@
 - Node 22+, pnpm 10+
 - `pnpm install`
 - `pnpm check` runs the full validation suite (typecheck, lint, format check, test)
+- The repo uses `@effect/language-service` in `tsconfig.json`. Set your editor to the workspace TypeScript version so Effect diagnostics and refactors are available.
 
 ```bash
 pnpm typecheck    # Type check
