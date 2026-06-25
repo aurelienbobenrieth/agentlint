@@ -42,11 +42,20 @@ export function resolveFindingSelector(
 
   const fileLineMatch = normalized.match(/^(.+):(\d+)$/);
   if (fileLineMatch) {
-    const file = fileLineMatch[1]!.replace(/\\/g, "/");
-    const line = Number(fileLineMatch[2]);
+    const [, rawFile, rawLine] = fileLineMatch;
+    if (!rawFile || !rawLine) {
+      return {
+        ok: false,
+        message: `No current finding matches "${selector}". Rerun agentlint check if the selector is stale.`,
+      };
+    }
+
+    const file = rawFile.replace(/\\/g, "/");
+    const line = Number(rawLine);
     const matches = findings.filter((finding) => finding.file === file && finding.line === line);
-    if (matches.length === 1) {
-      return { ok: true, finding: matches[0]! };
+    const [match] = matches;
+    if (matches.length === 1 && match) {
+      return { ok: true, finding: match };
     }
     if (matches.length > 1) {
       return {

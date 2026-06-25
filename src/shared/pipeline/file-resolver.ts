@@ -104,7 +104,7 @@ function listAllFiles(dir: string, base: string, fs: FileSystem.FileSystem, path
 export function resolveFiles(
   options: ResolveOptions,
   gitService: {
-    changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, any>;
+    changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, unknown>;
   },
 ): Effect.Effect<ReadonlyArray<string>, FileResolverError, FileSystem.FileSystem | Path.Path | Env> {
   return Effect.gen(function* () {

@@ -55,8 +55,8 @@ function parseLedger(content: string): LedgerRecord[] {
   const records: LedgerRecord[] = [];
   const lines = content.split(/\r?\n/);
 
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]!.trim();
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.trim();
     if (line.length === 0) continue;
 
     try {

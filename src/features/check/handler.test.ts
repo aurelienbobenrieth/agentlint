@@ -145,7 +145,9 @@ describe("checkHandler", () => {
     try {
       await Effect.runPromise(setup(cwd).pipe(Effect.provide(layer)));
       const first = await Effect.runPromise(check().pipe(Effect.provide(layer)));
-      await Effect.runPromise(appendRecord(first.findings[0]!, "accepted").pipe(Effect.provide(layer)));
+      const [finding] = first.findings;
+      expect(finding).toBeDefined();
+      await Effect.runPromise(appendRecord(finding, "accepted").pipe(Effect.provide(layer)));
 
       const result = await Effect.runPromise(check().pipe(Effect.provide(layer)));
 
@@ -164,7 +166,9 @@ describe("checkHandler", () => {
     try {
       await Effect.runPromise(setup(cwd).pipe(Effect.provide(layer)));
       const first = await Effect.runPromise(check().pipe(Effect.provide(layer)));
-      await Effect.runPromise(appendRecord(first.findings[0]!, "deferred").pipe(Effect.provide(layer)));
+      const [finding] = first.findings;
+      expect(finding).toBeDefined();
+      await Effect.runPromise(appendRecord(finding, "deferred").pipe(Effect.provide(layer)));
 
       const local = await Effect.runPromise(check(false).pipe(Effect.provide(layer)));
       const ci = await Effect.runPromise(check(true).pipe(Effect.provide(layer)));

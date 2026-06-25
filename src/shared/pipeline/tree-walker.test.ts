@@ -43,8 +43,9 @@ describe("TreeWalker", () => {
     const findings = walkFile(tree, [{ ruleId: "test/comments", context, visitors }]);
     expect(visitorKeys(visitors)).toEqual(["comment"]);
     expect(findings).toHaveLength(2);
-    expect(findings[0]!.message).toContain("hello");
-    expect(findings[1]!.message).toContain("world");
+    const [first, second] = findings;
+    expect(first?.message).toContain("hello");
+    expect(second?.message).toContain("world");
   });
 
   it("dispatches multiple rules in a single pass", async () => {

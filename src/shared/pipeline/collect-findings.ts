@@ -82,9 +82,7 @@ function sortFindings(findings: ReadonlyArray<FindingRecord>): FindingRecord[] {
   );
 }
 
-export const collectFindings = Effect.fn("collectFindings")(function* (
-  options: CollectOptions,
-): Generator<any, CollectResult> {
+export const collectFindings = Effect.fn("collectFindings")(function* (options: CollectOptions) {
   const configLoader = yield* ConfigLoader;
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;

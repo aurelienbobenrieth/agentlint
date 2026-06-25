@@ -120,8 +120,11 @@ export class Parser extends Context.Service<
               languageCache = HashMap.set(languageCache, grammar, lang);
             }
 
-            parserInstance!.setLanguage(lang);
-            const tree = parserInstance!.parse(source);
+            const parser = parserInstance;
+            if (!parser) return yield* new ParserError({ message: "Parser failed to initialize" });
+
+            parser.setLanguage(lang);
+            const tree = parser.parse(source);
             if (!tree) return yield* new ParserError({ message: "Parser returned null tree" });
             return tree;
           }),

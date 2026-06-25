@@ -44,7 +44,8 @@ function parseFlags(args: ReadonlyArray<string>): ParsedFlags {
   const positionals: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
-    const arg = args[index]!;
+    const arg = args[index];
+    if (!arg) continue;
     if (!arg.startsWith("--")) {
       positionals.push(arg);
       continue;
