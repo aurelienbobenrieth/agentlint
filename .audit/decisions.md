@@ -20,3 +20,10 @@
 - Mechanism: oxlint rule plus existing TypeScript strict mode.
 - Rule id: `typescript/no-explicit-any`; implicit `any` remains enforced by `strict: true`.
 - Outcome: Accepted with modification and enforced as an error in `.oxlintrc.json`; both existing explicit `any` sites were fixed.
+
+## 2026-06-26 - ACCEPTED - Require schema decoding for JSON parsing
+
+- Issue: JSON strings were parsed without schema decoding at package metadata and test boundaries.
+- Mechanism: oxlint JS custom rule.
+- Rule id: `agentlint/no-raw-json-parse`.
+- Outcome: Accepted and enforced as an error via `scripts/oxlint-plugin-agentlint.js`; raw package metadata and JSONL parses now use `Schema.fromJsonString`.

@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "vitest";
 import { Env } from "../config/env.js";
@@ -37,6 +37,12 @@ const finding = new FindingRecord({
   hash: "abc1234",
 });
 
+const JsonlFinding = Schema.Struct({
+  selector: Schema.String,
+  detailCommand: Schema.String,
+});
+const JsonlFindingFromString = Schema.decodeUnknownSync(Schema.fromJsonString(JsonlFinding));
+
 describe("reporter", () => {
   it("prints compact text with commands", async () => {
     const result = await Effect.runPromise(
@@ -53,7 +59,7 @@ describe("reporter", () => {
 
   it("prints JSONL finding lines", () => {
     const result = formatCheckJsonl([finding], config);
-    const parsed = JSON.parse(result) as { selector: string; detailCommand: string };
+    const parsed = JsonlFindingFromString(result);
     expect(parsed.selector).toBe("1");
     expect(parsed.detailCommand).toBe("agentlint explain 1");
   });

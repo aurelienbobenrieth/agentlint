@@ -8,9 +8,14 @@
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { Schema } from "effect";
 
 const root = resolve(import.meta.dirname, "..");
-const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const PackageJson = Schema.Struct({
+  version: Schema.String,
+});
+const PackageJsonFromString = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson));
+const version = PackageJsonFromString(readFileSync(join(root, "package.json"), "utf8")).version;
 
 function findSkillFiles(dir) {
   const results = [];

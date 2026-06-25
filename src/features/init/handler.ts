@@ -3,11 +3,16 @@
  * @since 0.1.0
  */
 
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import { InitCommand, InitResult } from "./request.js";
 
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+const PackageJson = Schema.Struct({
+  packageManager: Schema.optional(Schema.String),
+});
+const PackageJsonFromString = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson));
 
 /**
  * Minimal starter config written by `agentlint init`.
@@ -70,7 +75,7 @@ const detectPackageManager = Effect.fn("detectPackageManager")(function* (cwd: s
   if (yield* fs.exists(packageJsonPath)) {
     const packageJson = yield* fs.readFileString(packageJsonPath).pipe(Effect.orElseSucceed(() => ""));
     try {
-      const parsed = JSON.parse(packageJson) as { packageManager?: string };
+      const parsed = PackageJsonFromString(packageJson);
       const detected = packageManagerFromValue(parsed.packageManager);
       if (detected) return detected;
     } catch {
