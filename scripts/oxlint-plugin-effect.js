@@ -1,4 +1,5 @@
-const message = "Decode JSON.parse results with an Effect Schema decoder.";
+const message =
+  "Parse JSON through an Effect Schema decoder, such as Schema.fromJsonString(...), before using the value.";
 
 function isJsonParse(node) {
   return (
@@ -11,7 +12,7 @@ function isJsonParse(node) {
   );
 }
 
-function isSchemaDecoderCall(node, jsonParseNode) {
+function isEffectSchemaDecoderCall(node, jsonParseNode) {
   if (node?.type !== "CallExpression") return false;
   if (!node.arguments?.includes(jsonParseNode)) return false;
 
@@ -21,7 +22,7 @@ function isSchemaDecoderCall(node, jsonParseNode) {
 
 export default {
   meta: {
-    name: "agentlint",
+    name: "effect",
   },
   rules: {
     "no-raw-json-parse": {
@@ -38,7 +39,7 @@ export default {
         return {
           CallExpression(node) {
             if (!isJsonParse(node)) return;
-            if (isSchemaDecoderCall(node.parent, node)) return;
+            if (isEffectSchemaDecoderCall(node.parent, node)) return;
 
             context.report({
               node,

@@ -25,5 +25,5 @@
 
 - Issue: JSON strings were parsed without schema decoding at package metadata and test boundaries.
 - Mechanism: oxlint JS custom rule.
-- Rule id: `agentlint/no-raw-json-parse`.
-- Outcome: Accepted and enforced as an error via `scripts/oxlint-plugin-agentlint.js`; raw package metadata and JSONL parses now use `Schema.fromJsonString`.
+- Rule id: `effect/no-raw-json-parse`.
+- Outcome: Accepted and enforced as an error via `scripts/oxlint-plugin-effect.js`; raw package metadata and JSONL parses now use `Schema.fromJsonString`.

@@ -11,9 +11,9 @@
   },
   "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**"],
   "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
-  "jsPlugins": ["./scripts/oxlint-plugin-agentlint.js"],
+  "jsPlugins": ["./scripts/oxlint-plugin-effect.js"],
   "rules": {
-    "agentlint/no-raw-json-parse": "error",
+    "effect/no-raw-json-parse": "error",
     "eslint/no-underscore-dangle": ["error", { "allow": ["_tag", "_tree", "__dirname", "__AGENTLINT_VERSION__"] }],
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",
