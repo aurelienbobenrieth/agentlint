@@ -29,9 +29,11 @@ Thumbs.db
 # Logs
 *.log
 
-# agentlint local state
-.agentlint-state
+# agentlint ephemeral selector cache
+.agentlint/.cache/
 
 # Internal
-.agents/
+.agents/*
+!.agents/learn/
+!.agents/learn/**
 .claude/

@@ -1,10 +1,15 @@
 import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Schema } from "effect";
 import { defineConfig } from "tsdown";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8"));
+const PackageJson = Schema.Struct({
+  version: Schema.String,
+});
+const PackageJsonFromString = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson));
+const pkg = PackageJsonFromString(readFileSync(resolve(__dirname, "package.json"), "utf-8"));
 
 export default defineConfig({
   entry: {

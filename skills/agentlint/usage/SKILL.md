@@ -1,11 +1,9 @@
 ---
 name: agentlint/usage
 description: >
-  Run agentlint CLI after code changes to catch patterns for AI evaluation.
-  Activate when finishing code modifications, before committing, or when
-  the developer asks to lint, scan, or review code with agentlint. Covers
-  agentlint check, agentlint list, agentlint review, agentlint init,
-  and output interpretation.
+  Run agentlint after code changes and resolve every finding through the v0
+  guidance and ledger loop. Activate before completion, before commits, or when
+  the developer asks to scan code with agentlint.
 type: core
 library: agentlint
 library_version: "0.1.5"
@@ -16,129 +14,43 @@ sources:
 
 # agentlint
 
-Stateless, deterministic linter whose output is designed for you (an AI coding agent) to evaluate. It uses tree-sitter to parse code, runs visitor-based rules that flag suspicious patterns, and outputs structured reports with natural language instructions.
-
-## Setup
-
-Use the package manager already used by the repo:
-
-- npm: `npm install -D @aurelienbbn/agentlint` then `npm exec agentlint -- init`
-- pnpm: `pnpm add -D @aurelienbbn/agentlint` then `pnpm agentlint init`
-- yarn: `yarn add -D @aurelienbbn/agentlint` then `yarn agentlint init`
-- bun: `bun add -d @aurelienbbn/agentlint` then `bun run agentlint init`
-
-This creates `.agentlint/config.ts` with a starter template. Add rules to the `rules` object.
-
-Before running agentlint, resolve the repo's command prefix from `packageManager` in `package.json` or from lockfiles:
+Use the repo package manager and resolve `<agentlint-cmd>` first:
 
 - npm: `npm exec agentlint --`
 - pnpm: `pnpm agentlint`
 - yarn: `yarn agentlint`
 - bun: `bun run agentlint`
 
-## Core Patterns
+Loop:
 
-### Run after code changes
+1. Run `<agentlint-cmd> check` after code changes; use `--all` when validating the whole repo and `--ci` for CI-equivalent gating.
+2. Treat every finding as mandatory work: fix it, or record `--accept`, `--defer`, or `--no-fix` with a concrete reason.
+3. Use the finding message, standard, and checks from `check` as the normal action guidance.
+4. Run `<agentlint-cmd> explain <selector>` when you need examples, refs, ledger context, or boundary-case calibration.
+5. Run `<agentlint-cmd> explain <rule-id>` once when multiple findings share a rule and the first one needs detailed guidance.
+6. Use latest-check selectors such as `1` or `[1]`; rerun `check` if a selector is stale.
+7. Never accept a finding without understanding the rule guidance and the local code.
+8. Stop only after `<agentlint-cmd> check` reports no unresolved blocking findings.
+
+Commands:
 
 ```bash
-# Default: scan files changed in current branch
 <agentlint-cmd> check
-
-# Scan specific files or globs
-<agentlint-cmd> check src/utils.ts "src/**/*.tsx"
-
-# Scan all files
-<agentlint-cmd> check --all
-
-# Only run a specific rule
-<agentlint-cmd> check --rule no-noise-comments
-
-# Dry-run (counts only, no instruction blocks)
-<agentlint-cmd> check --dry-run
-
-# Diff against a specific branch
-<agentlint-cmd> check --base main
+<agentlint-cmd> check --format jsonl
+<agentlint-cmd> explain 1
+<agentlint-cmd> resolve 1 --accept --reason "..."
+<agentlint-cmd> resolve 1 --defer --reason "..."
+<agentlint-cmd> resolve 1 --no-fix --reason "..."
+<agentlint-cmd> ledger list
+<agentlint-cmd> ledger gc
 ```
 
-### Read and act on output
+Use `<agentlint-cmd> rules list` to see configured rule ids and compact standards. Use `<agentlint-cmd> rules list --files path/to/file.tsx` to see file-specific enablement.
 
-Output is grouped by rule. Each rule section contains:
+Guidance shape:
 
-1. **Match listings** with `[hash] file:line:col  source-line`
-2. **Instruction block** explaining how to evaluate the matches
+- `standard` and `checks` are normal `check` feedback and should be enough for straightforward fixes.
+- `examples` calibrate edge cases and acceptable fixes; load them through `explain`.
+- `refs` identify the source of truth for rules tied to external docs or platform contracts; load them through `explain` when verifying current authority.
 
-Process one rule section at a time. Read the instruction block first — it defines the evaluation criteria. Not all findings are problems.
-
-1. Read the instruction block for the rule
-2. Evaluate each match against the criteria in the instruction
-3. For genuine issues: fix them
-4. For acceptable matches: move on (or `agentlint review <hash>` to suppress)
-5. Re-run `agentlint check` after fixes — resolved matches disappear
-
-### Mark findings as reviewed
-
-```bash
-# Mark specific hashes as reviewed (they disappear from future output)
-<agentlint-cmd> review abc1234 def5678
-
-# Mark all current flags as reviewed
-<agentlint-cmd> review --all
-
-# Reset reviewed state (see all flags again)
-<agentlint-cmd> review --reset
-```
-
-### List registered rules
-
-```bash
-<agentlint-cmd> list
-```
-
-Shows all rules from the config: name, description, languages, and include/ignore patterns. Use this to check what rules exist before creating new ones.
-
-### Write a rule
-
-To create a new agentlint rule, use the `rule-advisor` skill. It covers
-classification (is agentlint the right tool?), the rule template, visitor
-API, and instruction-writing guidance.
-
-## Common Mistakes
-
-### HIGH Exit code 1 is not an error
-
-Wrong:
-
-```bash
-# Treating non-zero exit as a failure and stopping
-<agentlint-cmd> check || echo "agentlint failed"
-```
-
-Correct:
-
-```bash
-# Exit code 1 means findings exist — read and evaluate the output
-<agentlint-cmd> check
-# Then process the stdout, don't treat it as a crash
-```
-
-agentlint exits with code 1 when findings exist. This is expected behavior, not a crash. Read the output and evaluate each finding.
-
-### HIGH Fixing all findings without reading instructions
-
-Wrong: Blindly "fixing" every flagged line without reading the rule's instruction block.
-
-Correct: Read the instruction block first. It tells you the evaluation criteria. Some findings are intentionally acceptable — the instruction explains which.
-
-### MEDIUM Looping on already-evaluated findings
-
-Wrong: Re-evaluating the same findings across multiple agentlint runs in one session.
-
-Correct: Evaluate each finding once. If it persists after your fix, tell the developer rather than retrying. Use `agentlint review <hash>` to mark evaluated findings.
-
-## Constraints
-
-- Process one rule section at a time, not all findings at once
-- Never attempt more than one fix per finding
-- If agentlint still flags something after your fix, tell the developer
-- When the instruction says "ask the developer," do that instead of guessing
-- Do not loop on findings you already evaluated in this session
+When stuck on a weird, repeated, dependency-specific, or platform-specific issue, search `.agents/learn/` with `rg` before rediscovering the same fix. Write a short learned note only after non-obvious investigation that would plausibly save a future session.

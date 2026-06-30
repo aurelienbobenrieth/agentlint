@@ -79,6 +79,9 @@ export class Parser extends Context.Service<
           if (filename === "tree-sitter.wasm") {
             const p = path.resolve(nmBase, "web-tree-sitter", filename);
             if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
+
+            const renamed = path.resolve(nmBase, "web-tree-sitter", "web-tree-sitter.wasm");
+            if (yield* fs.exists(renamed).pipe(Effect.orElseSucceed(() => false))) return renamed;
           } else {
             const p = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
             if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
@@ -117,8 +120,11 @@ export class Parser extends Context.Service<
               languageCache = HashMap.set(languageCache, grammar, lang);
             }
 
-            parserInstance!.setLanguage(lang);
-            const tree = parserInstance!.parse(source);
+            const parser = parserInstance;
+            if (!parser) return yield* new ParserError({ message: "Parser failed to initialize" });
+
+            parser.setLanguage(lang);
+            const tree = parser.parse(source);
             if (!tree) return yield* new ParserError({ message: "Parser returned null tree" });
             return tree;
           }),

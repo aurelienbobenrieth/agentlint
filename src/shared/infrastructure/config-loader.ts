@@ -13,7 +13,7 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
-import type { AgentReviewConfig } from "../../domain/config.js";
+import type { AgentlintConfig } from "../../domain/config.js";
 
 /**
  * Raised when the config file is missing, malformed, or fails to import.
@@ -75,7 +75,7 @@ export class ConfigLoader extends Context.Service<
   ConfigLoader,
   {
     /** Discover and import the config file from the working directory. */
-    load(): Effect.Effect<AgentReviewConfig, ConfigError>;
+    load(): Effect.Effect<AgentlintConfig, ConfigError>;
   }
 >()("agentlint/ConfigLoader") {
   static readonly layer: Layer.Layer<ConfigLoader, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
@@ -97,7 +97,7 @@ export class ConfigLoader extends Context.Service<
                   interopDefault: true,
                 });
                 const loaded = await jiti.import(configPath);
-                return (loaded as { default?: AgentReviewConfig }).default ?? (loaded as AgentReviewConfig);
+                return (loaded as { default?: AgentlintConfig }).default ?? (loaded as AgentlintConfig);
               },
               catch: (error) =>
                 new ConfigError({
@@ -105,9 +105,9 @@ export class ConfigLoader extends Context.Service<
                 }),
             });
 
-            if (!config || typeof config !== "object" || !("rules" in config)) {
+            if (!config || typeof config !== "object") {
               return yield* new ConfigError({
-                message: `Invalid config at ${configPath}: must export an object with a "rules" field`,
+                message: `Invalid config at ${configPath}: must export an agentlint config object`,
               });
             }
 

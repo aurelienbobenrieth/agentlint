@@ -1,11 +1,9 @@
 /**
  * File resolution service.
  *
- * Determines which files to lint by applying the filter pipeline:
+ * Determines which files to scan by applying the filter pipeline:
  * 1. Candidate files (from git diff or all files)
- * 2. Config include/ignore
- *
- * Per-rule filtering (languages, include, ignore) is done by the check command.
+ * 2. Config files/ignores
  *
  * @module
  */
@@ -36,10 +34,10 @@ export const ResolveOptions = Schema.Struct({
   all: Schema.Boolean,
   /** Git ref to diff against. Defaults to the detected default branch. */
   baseRef: Schema.optional(Schema.String),
-  /** Global include globs from the config file. */
-  configInclude: Schema.optional(Schema.Array(Schema.String)),
+  /** Global file globs from the config file. */
+  configFiles: Schema.optional(Schema.Array(Schema.String)),
   /** Global ignore globs from the config file. */
-  configIgnore: Schema.optional(Schema.Array(Schema.String)),
+  configIgnores: Schema.optional(Schema.Array(Schema.String)),
   /** Explicit file paths passed as CLI positional arguments. */
   positionalFiles: Schema.optional(Schema.Array(Schema.String)),
 });
@@ -47,8 +45,17 @@ export const ResolveOptions = Schema.Struct({
 /** @since 0.1.0 */
 export type ResolveOptions = Schema.Schema.Type<typeof ResolveOptions>;
 
-/** Directories that are always skipped during recursive listing. */
-const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make("node_modules", ".git", "dist");
+const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make("node_modules", ".git", "dist", ".cache");
+
+function hasGlobSyntax(value: string): boolean {
+  return /[*?[\]{}()!+@]/.test(value);
+}
+
+function toProjectPath(file: string, cwd: string, path: Path.Path): string {
+  const resolved = path.resolve(cwd, file);
+  const relative = path.relative(cwd, resolved);
+  return relative.startsWith("..") ? file.replace(/\\/g, "/") : relative.replace(/\\/g, "/");
+}
 
 /**
  * Recursively list all files under `dir`, returning paths relative to `base`.
@@ -97,7 +104,7 @@ function listAllFiles(dir: string, base: string, fs: FileSystem.FileSystem, path
 export function resolveFiles(
   options: ResolveOptions,
   gitService: {
-    changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, any>;
+    changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, unknown>;
   },
 ): Effect.Effect<ReadonlyArray<string>, FileResolverError, FileSystem.FileSystem | Path.Path | Env> {
   return Effect.gen(function* () {
@@ -108,7 +115,19 @@ export function resolveFiles(
     let candidates: string[];
 
     if (options.positionalFiles && options.positionalFiles.length > 0) {
-      candidates = [...options.positionalFiles];
+      const literalFiles: string[] = [];
+      const globPatterns: string[] = [];
+      for (const file of options.positionalFiles) {
+        if (hasGlobSyntax(file)) {
+          globPatterns.push(file);
+        } else {
+          literalFiles.push(toProjectPath(file, cwd, path));
+        }
+      }
+
+      const globMatcher = globPatterns.length > 0 ? picomatch(globPatterns) : undefined;
+      const globbed = globMatcher ? (yield* listAllFiles(cwd, cwd, fs, path)).filter((file) => globMatcher(file)) : [];
+      candidates = [...literalFiles, ...globbed];
     } else if (options.all) {
       candidates = yield* listAllFiles(cwd, cwd, fs, path);
     } else {
@@ -119,11 +138,13 @@ export function resolveFiles(
       candidates = [...changed];
     }
 
-    const includeMatcher = options.configInclude?.length ? picomatch(options.configInclude as string[]) : undefined;
-    const ignoreMatcher = options.configIgnore?.length ? picomatch(options.configIgnore as string[]) : undefined;
+    const filesMatcher = options.configFiles?.length ? picomatch(options.configFiles as string[]) : undefined;
+    const ignoreMatcher = options.configIgnores?.length ? picomatch(options.configIgnores as string[]) : undefined;
 
     return candidates
-      .filter((f) => !includeMatcher || includeMatcher(f))
+      .map((f) => toProjectPath(f, cwd, path))
+      .filter((f, index, files) => files.indexOf(f) === index)
+      .filter((f) => !filesMatcher || filesMatcher(f))
       .filter((f) => !ignoreMatcher || !ignoreMatcher(f))
       .filter((f) => path.extname(f).length > 0)
       .toSorted();

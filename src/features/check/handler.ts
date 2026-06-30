@@ -3,59 +3,86 @@
  * @since 0.1.0
  */
 
-import { Effect, HashSet } from "effect";
+import { Effect } from "effect";
+import { withSelector } from "../../domain/finding.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { StateStore } from "../../shared/infrastructure/state-store.js";
-import { collectFlags } from "../../shared/pipeline/collect-flags.js";
+import { ledgerKey, LedgerStore } from "../../shared/infrastructure/ledger-store.js";
+import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
+import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { CheckCommand, CheckResult } from "./request.js";
 
 /** @since 0.1.0 */
 export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckCommand) {
   const configLoader = yield* ConfigLoader;
-  const stateStore = yield* StateStore;
+  const ledgerStore = yield* LedgerStore;
+  const selectorCache = yield* SelectorCache;
 
   const config = yield* configLoader.load();
-  const availableRules = Object.keys(config.rules);
-
-  const result = yield* collectFlags({
+  const availableRules = Object.keys(config.rules ?? {}).toSorted();
+  const result = yield* collectFindings({
     all: command.all,
     rules: command.rules,
-    dryRun: command.dryRun,
     base: command.base,
     files: command.files,
   });
 
   if (result.noMatchingRules) {
     return new CheckResult({
-      flags: [],
-      totalFlags: 0,
-      filteredCount: 0,
+      findings: [],
+      displayedFindings: [],
+      unresolvedCount: 0,
+      resolvedCount: 0,
+      deferredCount: 0,
+      staleCount: 0,
+      exitCode: 2,
       noMatchingRules: true,
       availableRules,
     });
   }
 
-  const allFlags = result.flags;
+  const snapshot = yield* ledgerStore.read();
+  const currentKeys = new Set(result.findings.map((finding) => ledgerKey(finding.ruleId, finding.hash)));
+  const staleCount = [...snapshot.latestByKey.keys()].filter((key) => !currentKeys.has(key)).length;
 
-  if (allFlags.length === 0) {
-    return new CheckResult({
-      flags: [],
-      totalFlags: 0,
-      filteredCount: 0,
-      noMatchingRules: false,
-      availableRules,
-    });
+  const unresolved = [];
+  const resolved = [];
+  const deferred = [];
+
+  for (const finding of result.findings) {
+    const disposition = snapshot.latestByKey.get(ledgerKey(finding.ruleId, finding.hash));
+    if (!disposition) {
+      unresolved.push(finding);
+    } else {
+      resolved.push(finding);
+      if (disposition.status === "deferred") {
+        deferred.push(finding);
+      }
+    }
   }
 
-  const reviewed = yield* stateStore.load();
-  const reviewedSize = HashSet.size(reviewed);
-  const filteredCount = reviewedSize > 0 ? allFlags.filter((f) => HashSet.has(reviewed, f.hash)).length : 0;
-  const unreviewedFlags = reviewedSize > 0 ? allFlags.filter((f) => !HashSet.has(reviewed, f.hash)) : allFlags;
+  const blocking = command.ci ? [...unresolved, ...deferred] : unresolved;
+  const displayedFindings = blocking.map((finding, index) => withSelector(finding, String(index + 1)));
+  if (command.format === "text" || command.format === "jsonl") {
+    yield* selectorCache.write(
+      displayedFindings.map((finding) => ({
+        selector: finding.selector ?? "",
+        hash: finding.hash,
+        ruleId: finding.ruleId,
+        file: finding.file,
+        line: finding.line,
+        column: finding.column,
+      })),
+    );
+  }
 
   return new CheckResult({
-    flags: unreviewedFlags,
-    totalFlags: allFlags.length,
-    filteredCount,
+    findings: result.findings,
+    displayedFindings,
+    unresolvedCount: unresolved.length,
+    resolvedCount: resolved.length,
+    deferredCount: deferred.length,
+    staleCount,
+    exitCode: blocking.length > 0 ? 1 : 0,
     noMatchingRules: false,
     availableRules,
   });

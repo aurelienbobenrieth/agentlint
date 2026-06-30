@@ -1,93 +1,117 @@
 # Contributing
 
-## How to contribute
+## Local Development
 
-- [Open an issue](https://github.com/aurelienbobenrieth/agentlint/issues) to report bugs or request rules.
-- [Start a discussion](https://github.com/aurelienbobenrieth/agentlint/discussions) for broader ideas, questions, or feedback.
-
-## Local development
-
-- Node 22+, pnpm 10+
+- Node 22+ and pnpm 10+
 - `pnpm install`
-- `pnpm check` runs the full validation suite (typecheck, lint, format check, test)
+- `pnpm check` runs typecheck, lint, format check, intent validation, and tests
+- `pnpm build` builds the package with tsdown
 
 ```bash
-pnpm typecheck    # Type check
-pnpm test         # Run tests
-pnpm test:watch   # Run tests in watch mode
-pnpm lint         # Lint with oxlint
-pnpm fmt          # Format with oxfmt
-pnpm build        # Build with tsdown
-pnpm check        # Run all checks
+pnpm typecheck
+pnpm lint
+pnpm fmt:check
+pnpm test
+pnpm build
+pnpm check
 ```
 
-## Writing a rule
+The repo uses `@effect/language-service` through `tsconfig.json`. Configure your editor to use the workspace TypeScript version so Effect diagnostics are active.
 
-Rules use `defineRule()` with metadata and a visitor factory:
+## Engineering Expectations
 
-```typescript
-import { defineRule } from "agentlint";
+- Prefer Effect Schema for public data contracts and runtime validation.
+- Prefer Effect services/layers for shared infrastructure.
+- Derive TypeScript types from schemas where practical.
+- Keep rule, parser, CLI, and ledger changes covered by typecheck and tests.
+- Inspect relevant local references under `.agents/ref-repos/` before architectural changes:
+  - `effect-smol` for Effect service and Schema style
+  - `oxc` for visitor lifecycle and config-owned routing
+  - `eslint` for rule and preset conventions
+  - `skills` for packaged skill shape
+
+## Writing Rules
+
+Rules use `defineRule()` with `id`, `description`, `guidance`, and `createOnce`. Config and presets own file routing and persistence policy.
+Use `standard` for the invariant, `checks` for the short criteria agents should apply during `check`, `examples` for boundary-case calibration, and `refs` for source-of-truth links that belong in `explain`.
+
+```ts
+import { defineRule } from "@aurelienbbn/agentlint";
 
 export const myRule = defineRule({
-  meta: {
-    name: "my-rule",
-    description: "What it checks",
-    languages: ["ts", "tsx"],
-    instruction: "How the AI should evaluate matches",
+  id: "domain/my-rule",
+  description: "Flags code that needs a judgment call.",
+  guidance: {
+    standard: "State the expected standard assertively.",
+    checks: ["Name the short decision criterion agents should apply during check."],
+    examples: [
+      {
+        label: "Boundary case",
+        bad: "Show a tempting but wrong shape.",
+        good: "Show the acceptable shape.",
+      },
+    ],
+    refs: [{ type: "url", href: "https://example.com/source-of-truth" }],
   },
   createOnce(context) {
     return {
-      // Optional: per-file setup. Return false to skip.
-      before(filename) {},
-
-      // Visitor for specific AST node types (tree-sitter names)
-      function_declaration(node) {
-        context.flag({
+      before(filename) {
+        return !filename.endsWith(".generated.ts");
+      },
+      call_expression(node) {
+        context.report({
           node,
-          message: "Something suspicious",
+          message: "Explain the concrete local concern.",
         });
       },
-
-      // Optional: aggregate analysis after all files
       after() {},
     };
   },
 });
 ```
 
-### Available visitor keys
+Lifecycle:
 
-Any tree-sitter node type string is a valid visitor key. Common ones:
+- `createOnce(context)` runs once per rule run.
+- `before(filename)` runs before each matching file and may return `false`.
+- Visitor handlers record findings with `context.report`.
+- `after()` runs after traversal and can emit aggregate findings.
+- Broad routing belongs in config `files`, `ignores`, and `overrides`.
 
-- `comment` - all comments
-- `function_declaration`, `arrow_function`, `method_definition`
-- `class_declaration`
-- `call_expression`, `new_expression`
-- `import_statement`, `export_statement`
-- `if_statement`, `try_statement`, `return_statement`
-- `jsx_element`, `jsx_self_closing_element`
-- `type_alias_declaration`, `interface_declaration`
+## AgentlintNode API
 
-### The AgentReviewNode API
+```ts
+node.type;
+node.text;
+node.startPosition; // { row, column }, zero-indexed
+node.endPosition;
+node.children;
+node.parent;
+node.childCount;
 
-```typescript
-node.type; // tree-sitter node type string
-node.text; // full source text
-node.startPosition; // { row, column } (0-indexed)
-node.endPosition; // { row, column } (0-indexed)
-node.children; // child nodes (lazily wrapped)
-node.parent; // parent node or null
-node.childCount; // number of children
-
-node.childByFieldName("name"); // grammar field access
-node.childrenByType("comment"); // direct children of type
-node.descendantsOfType("string"); // recursive search
+node.childByFieldName("name");
+node.childrenByType("comment");
+node.descendantsOfType("string");
 ```
 
-## Testing rules
+Any tree-sitter node type string is a valid visitor key. Common examples include `comment`, `function_declaration`, `call_expression`, `import_statement`, `if_statement`, `try_statement`, `jsx_element`, and `type_alias_declaration`.
 
-Tests use real tree-sitter WASM parsing. See `test/services/TreeWalker.test.ts` for examples.
+## Testing
 
-## Commits
+Use real tree-sitter parsing for pipeline behavior and focused service doubles for command handlers. Cover:
+
+- hash stability for same-file line shifts
+- override enable/disable behavior
+- ledger read/write validation
+- local versus CI disposition gating
+- JSONL output shape when changing reporter fields
+
+## Changesets
+
+Add a changeset for user-visible CLI, API, config, output, ledger, dependency, or packaged-skill changes:
+
+```bash
+pnpm changeset
+```
 
 Use conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`.

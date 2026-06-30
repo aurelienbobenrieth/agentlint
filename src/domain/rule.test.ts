@@ -1,69 +1,77 @@
 import { describe, expect, it } from "vitest";
-import { defineConfig } from "./config.js";
+import { defineConfig, normalizeConfig } from "./config.js";
+import { compactStandard, normalizeGuidance } from "./guidance.js";
 import { defineRule } from "./rule.js";
 
-describe("defineRule", () => {
-  it("returns the rule unchanged", () => {
-    const rule = defineRule({
-      meta: {
-        name: "test-rule",
-        description: "A test rule",
-        languages: ["ts", "tsx"],
-        instruction: "Evaluate this thing.",
-      },
-      createOnce(_context) {
-        return {
-          comment(_node) {},
-        };
-      },
-    });
+const rule = defineRule({
+  id: "comments/no-noise",
+  description: "Flags comments that need noise review.",
+  guidance: {
+    standard: "Comments should add durable context beyond the code.",
+    checks: ["Comments should not restate identifiers."],
+  },
+  createOnce() {
+    return {
+      comment() {},
+    };
+  },
+});
 
-    expect(rule.meta.name).toBe("test-rule");
-    expect(rule.meta.languages).toEqual(["ts", "tsx"]);
-    expect(typeof rule.createOnce).toBe("function");
+describe("defineRule", () => {
+  it("uses id, description, guidance, and createOnce", () => {
+    expect(rule.id).toBe("comments/no-noise");
+    expect(rule.description).toContain("comments");
+    expect(normalizeGuidance(rule.guidance).checks).toEqual(["Comments should not restate identifiers."]);
   });
 
-  it("preserves optional include/ignore on meta", () => {
-    const rule = defineRule({
-      meta: {
-        name: "scoped-rule",
-        description: "Scoped",
-        languages: ["ts"],
-        instruction: "Check it.",
-        include: ["src/actions/**"],
-        ignore: ["**/*.test.ts"],
-      },
-      createOnce() {
-        return {};
-      },
-    });
-
-    expect(rule.meta.include).toEqual(["src/actions/**"]);
-    expect(rule.meta.ignore).toEqual(["**/*.test.ts"]);
+  it("supports string guidance", () => {
+    const standard = compactStandard("One standard.\nMore detail.");
+    expect(standard).toBe("One standard.");
   });
 });
 
 describe("defineConfig", () => {
-  it("returns the config unchanged", () => {
-    const rule = defineRule({
-      meta: {
-        name: "r",
-        description: "d",
-        languages: ["ts"],
-        instruction: "i",
-      },
-      createOnce() {
-        return {};
-      },
-    });
+  it("normalizes files, ignores, policy, and overrides", () => {
+    const config = normalizeConfig(
+      defineConfig({
+        rules: { "comments/no-noise": rule },
+        policy: { "comments/no-noise": { persistence: "durable" } },
+        files: ["src/**/*.ts"],
+        ignores: ["**/*.test.ts"],
+        overrides: [{ files: ["docs/**/*.ts"], rules: { "comments/no-noise": "off" } }],
+      }),
+    );
 
-    const config = defineConfig({
-      include: ["src/**/*.ts"],
-      ignore: ["dist/**"],
-      rules: { r: rule },
-    });
+    expect(config.policy["comments/no-noise"]?.persistence).toBe("durable");
+    expect(config.files).toEqual(["src/**/*.ts"]);
+    expect(config.ignores).toEqual(["**/*.test.ts"]);
+    expect(config.overrides).toHaveLength(1);
+  });
 
-    expect(config.rules["r"]).toBe(rule);
-    expect(config.include).toEqual(["src/**/*.ts"]);
+  it("composes presets before local config", () => {
+    const preset = defineConfig({
+      rules: { "comments/no-noise": rule },
+      files: ["packages/**/*.{ts,tsx}"],
+    });
+    const config = normalizeConfig(
+      defineConfig({
+        extends: [preset],
+        files: ["src/**/*.{ts,tsx}"],
+      }),
+    );
+
+    expect(Object.keys(config.rules)).toEqual(["comments/no-noise"]);
+    expect(config.files).toEqual(["src/**/*.{ts,tsx}"]);
+  });
+
+  it("throws on unknown policy ids", () => {
+    expect(() =>
+      normalizeConfig(
+        defineConfig({
+          rules: { "comments/no-noise": rule },
+          policy: { "missing/rule": { persistence: "ephemeral" } },
+        }),
+      ),
+    ).toThrow("Unknown rule id in policy");
   });
 });

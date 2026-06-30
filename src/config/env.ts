@@ -15,6 +15,7 @@
  */
 
 import { Context, Layer } from "effect";
+import { userInfo } from "node:os";
 
 /**
  * Read-only snapshot of the runtime environment.
@@ -27,6 +28,10 @@ export class Env extends Context.Service<
   {
     /** Current working directory, captured at startup. */
     readonly cwd: string;
+    /** CLI arguments excluding node and script path. */
+    readonly argv: ReadonlyArray<string>;
+    /** Actor inferred for ledger records. */
+    readonly actor: string;
     /** `true` when ANSI colour codes should be suppressed (`NO_COLOR` or non-TTY). */
     readonly noColor: boolean;
     /** `true` when stdout is an interactive terminal. */
@@ -44,8 +49,20 @@ export class Env extends Context.Service<
   static readonly layer: Layer.Layer<Env> = Layer.sync(Env, () => {
     /* eslint-disable n/no-process-env -- single authorised access point */
     const isTTY = process.stdout.isTTY ?? false;
+    const rawEnv = process.env;
+    const username = rawEnv["USER"] ?? rawEnv["USERNAME"] ?? userInfo().username;
+    const actor =
+      rawEnv["AGENTLINT_ACTOR"] ??
+      (rawEnv["CODEX_SANDBOX"] || rawEnv["CODEX_ENV_PWD"]
+        ? "agent:codex"
+        : rawEnv["CLAUDECODE"] || rawEnv["CLAUDE_CODE"]
+          ? "agent:claude"
+          : `human:${username}`);
+
     return Env.of({
       cwd: process.cwd(),
+      argv: process.argv.slice(2),
+      actor,
       noColor: !!process.env["NO_COLOR"] || !isTTY,
       isTTY,
       setExitCode: (code) => {

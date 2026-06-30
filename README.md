@@ -4,143 +4,176 @@
 [![npm version](https://img.shields.io/npm/v/@aurelienbbn/agentlint.svg)](https://www.npmjs.com/package/@aurelienbbn/agentlint)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Stateless, deterministic CLI that bridges traditional linters and AI-assisted code review.
+Deterministic triggers for contextual agent guidance and accountable resolution.
 
-agentlint uses tree-sitter to parse code, runs visitor-based rules that flag suspicious patterns, and outputs structured reports with natural language instructions. The output is designed to be consumed by an AI coding agent (Claude Code, Cursor, etc.) that evaluates each finding in context.
+agentlint parses code with tree-sitter, runs visitor-based rules, and prints concise findings for a coding agent or human to handle. It does not call an AI model and does not need an API key. Its job is to surface code patterns where the right outcome requires judgment, then block completion until each finding is fixed or explicitly resolved.
 
-## How it works
+## Model
 
 ```
-Phase 1 - Deterministic (agentlint)
-  tree-sitter AST parsing -> visitor dispatch -> pattern match -> collect flags
-
-Phase 2 - AI-evaluated (the calling agent)
-  reads agentlint stdout -> evaluates each match per instructions -> acts
+code -> tree-sitter AST -> rule visitors -> findings
+findings -> fix code or record a disposition -> rerun check
 ```
 
-agentlint owns Phase 1 only. It does not call any AI model. It does not require an API key.
+- A finding is a concrete matched instance.
+- Guidance is the reusable standard attached to a rule. `standard` and short `checks` are the normal agent feedback; `examples` and `refs` calibrate edge cases through `explain`.
+- A disposition is an explicit outcome: accepted, deferred, no-fix, or approved.
+- The ledger is `.agentlint/ledger.jsonl`, a committed JSONL record of resolved findings.
+- `.agentlint/.cache/` stores latest-check selectors and is gitignored.
 
-## Quick start
+## Quick Start
+
+Install with the package manager already used by the repo:
 
 ```bash
-pnpm add @aurelienbbn/agentlint
+pnpm add -D @aurelienbbn/agentlint
+pnpm agentlint init
 ```
 
-Create `.agentlint/config.ts`:
+Create or edit `.agentlint/config.ts`:
 
-```typescript
+```ts
 import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
 const noNoiseComments = defineRule({
-  meta: {
-    name: "no-noise-comments",
-    description: "Flags comments for AI evaluation",
-    languages: ["ts", "tsx"],
-    instruction: `Evaluate each comment. Is it noise or valuable?
-Remove noise comments. Keep valuable ones.`,
+  id: "comments/no-noise",
+  description: "Flags comments that need a value judgment.",
+  guidance: {
+    standard: "Comments should add durable context beyond the code.",
+    checks: [
+      "Remove comments that only restate obvious implementation details.",
+      "Keep comments that explain non-obvious constraints, external contracts, or tradeoffs.",
+    ],
   },
   createOnce(context) {
     return {
       comment(node) {
         const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text === "") return;
-        context.flag({ node, message: `Comment: "${text.slice(0, 60)}"` });
+        if (text.length === 0) return;
+        context.report({ node, message: `Comment: "${text.slice(0, 60)}"` });
       },
     };
   },
 });
 
 export default defineConfig({
-  rules: { "no-noise-comments": noNoiseComments },
+  rules: {
+    "comments/no-noise": noNoiseComments,
+  },
+  policy: {
+    "comments/no-noise": { persistence: "ephemeral" },
+  },
+  files: ["src/**/*.{ts,tsx,js,jsx}"],
+  ignores: ["**/*.test.*", "**/*.spec.*"],
 });
 ```
 
-Run:
+Run the loop:
 
 ```bash
-# Scan files changed in current branch
 pnpm agentlint check
-
-# Scan all files
-pnpm agentlint check --all
-
-# Scan specific files or globs
-pnpm agentlint check src/utils.ts "src/**/*.tsx"
-
-# List registered rules
-pnpm agentlint list
-
-# Mark flags as reviewed
-pnpm agentlint review <hash...>
+pnpm agentlint explain 1 # when examples, refs, or ledger context are needed
+pnpm agentlint resolve 1 --accept --reason "The comment explains a non-obvious integration constraint."
+pnpm agentlint check
 ```
 
-## Output format
+Use `--format jsonl` when an agent harness wants one machine-readable object per finding.
 
+## CLI
+
+### `agentlint check [files...]`
+
+Scans changed files by default. Exit code `1` means unresolved findings exist, not that the tool crashed. Text output includes each finding's local message, compact standard, and short checks. JSONL includes the same actionable guidance for agent harnesses.
+
+| Flag             | Description                                 |
+| ---------------- | ------------------------------------------- |
+| `--all`          | Scan all files under the project            |
+| `--base <ref>`   | Compare changed files against a git ref     |
+| `--rule <id>`    | Run only one rule id or comma-separated ids |
+| `--format text`  | Print the default compact terminal output   |
+| `--format jsonl` | Print one JSON object per displayed finding |
+| `--ci`           | Treat deferred findings as blocking         |
+
+Local `check` blocks unresolved findings. `check --ci` blocks unresolved and deferred findings. Accepted, no-fix, and approved findings do not block while their hash still matches current code.
+
+### `agentlint explain <rule-id|selector>`
+
+Prints full guidance on demand, including examples and refs. Use selectors from the latest `check` output, such as `1`, `[1]`, a full hash, or `file:line` when unambiguous.
+
+### `agentlint resolve <selector>`
+
+Records a disposition in `.agentlint/ledger.jsonl`.
+
+```bash
+agentlint resolve 1 --accept --reason "Acceptable here because ..."
+agentlint resolve 1 --defer --reason "Needs product decision after release."
+agentlint resolve 1 --no-fix --reason "Generated vendor code cannot be edited."
 ```
-agentlint v0.1.0 - 1 rule(s) triggered, 3 match(es)
 
-━━━ no-noise-comments: Flags comments for AI evaluation (3 match(es)) ━━━
+Every resolution needs a reason. Re-running the same disposition is idempotent.
 
-  [abc1234] src/utils.ts:5:1  // Increment the counter
-  [def5678] src/utils.ts:12:1  // Helper function
-  [ghi9012] src/utils.ts:18:3  // TODO: implement later
+### `agentlint rules list`
 
-  ┌─ Instruction ─────────────────────────────────────────
-  │ Evaluate each comment. Is it noise or valuable?
-  │ Remove noise comments. Keep valuable ones.
-  └───────────────────────────────────────────────────────
+Lists registered rule ids, descriptions, configured persistence, compact guidance, and whether each rule is enabled for an optional file:
 
-3 match(es) across 1 rule(s)
+```bash
+agentlint rules list
+agentlint rules list --files src/page.tsx
 ```
 
-## CLI reference
+### `agentlint ledger`
 
-### `agentlint check [files...] [options]`
+```bash
+agentlint ledger list
+agentlint ledger list --rule comments/no-noise
+agentlint ledger gc
+agentlint ledger gc --write
+```
 
-| Flag                  | Description                             |
-| --------------------- | --------------------------------------- |
-| `--all`, `-a`         | Scan all files (not just git diff)      |
-| `--rule`, `-r <name>` | Run only this rule                      |
-| `--dry-run`, `-d`     | Show counts only, no instruction blocks |
-| `--base <ref>`        | Git ref to diff against                 |
+`ledger gc` defaults to a dry run. Use `--write` to prune stale records whose findings no longer appear in current code.
 
-### `agentlint list`
+## Config
 
-Lists all registered rules with their metadata.
+Config owns routing and resolution policy. Rule definitions own only detection and guidance.
 
-### `agentlint init`
+```ts
+import { basePreset, defineConfig, frontendPreset } from "@aurelienbbn/agentlint";
 
-Scaffolds a starter `.agentlint/config.ts` file in the current directory.
+export default defineConfig({
+  extends: [basePreset, frontendPreset],
+  rules: {},
+  policy: {
+    "data/bounded-query": { persistence: "ephemeral" },
+    "ui/query-state-coverage": { persistence: "ephemeral" },
+  },
+  overrides: [
+    {
+      files: ["web/**/*.{tsx,jsx}"],
+      rules: {
+        "ui/query-state-coverage": "on",
+      },
+    },
+    {
+      files: ["**/*.test.*"],
+      rules: {
+        "ui/query-state-coverage": "off",
+      },
+    },
+  ],
+});
+```
 
-### `agentlint review [hashes...] [options]`
+Persistence defaults to `ephemeral`. Use `durable` for findings that represent consequential project decisions.
 
-Manages per-developer reviewed-flag state. When you run `agentlint check`, flags that have been marked as reviewed are automatically filtered out of the output.
+## Learned Notes
 
-| Flag          | Description                              |
-| ------------- | ---------------------------------------- |
-| `--all`, `-a` | Mark all current flags as reviewed       |
-| `--reset`     | Wipe the state file (`.agentlint-state`) |
+Use `.agents/learn/` for rare, expensive debugging knowledge that should be searchable later but should not enter base context. Search it with `rg` when a bug looks familiar or platform-specific. Add a short note only after non-obvious investigation, using the template in `.agents/learn/_template.md`.
 
-**Review workflow:**
-
-1. Run `agentlint check` to see current flags.
-2. After evaluating a flag, mark it as reviewed by passing its hash:
-   ```bash
-   pnpm agentlint review abc1234 def5678
-   ```
-3. To mark every current flag as reviewed at once:
-   ```bash
-   pnpm agentlint review --all
-   ```
-4. Reviewed flags are stored in `.agentlint-state` (a local file, not committed to git). Future `check` runs hide them automatically.
-5. To start fresh and see all flags again:
-   ```bash
-   pnpm agentlint review --reset
-   ```
+Learned notes are separate from `.agentlint/ledger.jsonl`; the ledger records finding dispositions only.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup and how to write rules.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local development, Effect-first expectations, and rule authoring.
 
 ## Security
 
