@@ -28,6 +28,9 @@ For agentlint rules:
 - Keep routing in config `files`, `ignores`, `overrides`, or presets.
 - Keep persistence in config `policy`.
 - Make guidance assertive; do not phrase it as a question or generic request.
+- Put required decision criteria in `checks`; `check` prints them as normal agent feedback.
+- Put boundary-case calibration in `examples`; `explain` prints them when the compact guidance is not enough.
+- Put authoritative docs, specs, skills, or platform references in `refs`; use them for rules tied to external contracts such as Shopify BFS.
 - Emit findings with concrete local messages.
 - Cover the rule with focused parsing or pipeline tests.
 
@@ -41,7 +44,15 @@ export const myRule = defineRule({
   description: "Flags code that needs a judgment call.",
   guidance: {
     standard: "State the expected standard assertively.",
-    checks: ["Name the sub-condition agents commonly miss."],
+    checks: ["Name the short decision criterion agents should apply during check."],
+    examples: [
+      {
+        label: "Boundary case",
+        bad: "Show a tempting but wrong shape.",
+        good: "Show the acceptable shape.",
+      },
+    ],
+    refs: [{ type: "url", href: "https://example.com/source-of-truth" }],
   },
   createOnce(context) {
     return {
@@ -87,5 +98,7 @@ Validate with:
 <agentlint-cmd> check --all --rule domain/my-rule
 <agentlint-cmd> explain domain/my-rule
 ```
+
+Review the `check` output first: the message, standard, and checks should be enough for straightforward fixes. Use `explain` to verify examples and refs for ambiguous cases or external-contract rules.
 
 Resolve `<agentlint-cmd>` from the repo package manager: npm `npm exec agentlint --`, pnpm `pnpm agentlint`, yarn `yarn agentlint`, bun `bun run agentlint`.

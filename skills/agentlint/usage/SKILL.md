@@ -25,10 +25,12 @@ Loop:
 
 1. Run `<agentlint-cmd> check` after code changes; use `--all` when validating the whole repo and `--ci` for CI-equivalent gating.
 2. Treat every finding as mandatory work: fix it, or record `--accept`, `--defer`, or `--no-fix` with a concrete reason.
-3. Read compact guidance before acting; run `<agentlint-cmd> explain <selector>` when guidance is insufficient.
-4. Use latest-check selectors such as `1` or `[1]`; rerun `check` if a selector is stale.
-5. Never accept a finding without understanding the rule guidance and the local code.
-6. Stop only after `<agentlint-cmd> check` reports no unresolved blocking findings.
+3. Use the finding message, standard, and checks from `check` as the normal action guidance.
+4. Run `<agentlint-cmd> explain <selector>` when you need examples, refs, ledger context, or boundary-case calibration.
+5. Run `<agentlint-cmd> explain <rule-id>` once when multiple findings share a rule and the first one needs detailed guidance.
+6. Use latest-check selectors such as `1` or `[1]`; rerun `check` if a selector is stale.
+7. Never accept a finding without understanding the rule guidance and the local code.
+8. Stop only after `<agentlint-cmd> check` reports no unresolved blocking findings.
 
 Commands:
 
@@ -44,5 +46,11 @@ Commands:
 ```
 
 Use `<agentlint-cmd> rules list` to see configured rule ids and compact standards. Use `<agentlint-cmd> rules list --files path/to/file.tsx` to see file-specific enablement.
+
+Guidance shape:
+
+- `standard` and `checks` are normal `check` feedback and should be enough for straightforward fixes.
+- `examples` calibrate edge cases and acceptable fixes; load them through `explain`.
+- `refs` identify the source of truth for rules tied to external docs or platform contracts; load them through `explain` when verifying current authority.
 
 When stuck on a weird, repeated, dependency-specific, or platform-specific issue, search `.agents/learn/` with `rg` before rediscovering the same fix. Write a short learned note only after non-obvious investigation that would plausibly save a future session.

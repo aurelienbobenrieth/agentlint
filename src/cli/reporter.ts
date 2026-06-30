@@ -76,6 +76,7 @@ export const formatCheckText = Effect.fn("formatCheckText")(function* (
 
   for (const finding of findings) {
     const rule = config.rules[finding.ruleId];
+    const guidance = rule ? normalizeGuidance(rule.guidance) : undefined;
     const policy = policyForRule(config, finding.ruleId);
     const loc = `${finding.file}:${finding.line}:${finding.column}`;
     const selector = finding.selector ? `[${finding.selector}]` : `[${finding.hash}]`;
@@ -88,6 +89,12 @@ export const formatCheckText = Effect.fn("formatCheckText")(function* (
     }
     if (standard) {
       lines.push(`  Standard: ${standard}`);
+    }
+    if (guidance && guidance.checks.length > 0) {
+      lines.push("  Checks:");
+      for (const check of guidance.checks) {
+        lines.push(`    - ${check}`);
+      }
     }
     lines.push(`  Persistence: ${policy.persistence}`);
     lines.push(`  Explain: agentlint explain ${finding.selector ?? finding.hash}`);
@@ -120,6 +127,7 @@ export function formatCheckJsonl(findings: ReadonlyArray<FindingRecord>, config:
         column: finding.column,
         message: finding.message,
         standard: guidance?.standard ?? "",
+        checks: guidance?.checks ?? [],
         detailCommand: `agentlint explain ${selector}`,
         resolveCommands: {
           accept: `agentlint resolve ${selector} --accept --reason "..."`,

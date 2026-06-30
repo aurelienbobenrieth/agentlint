@@ -16,7 +16,7 @@ findings -> fix code or record a disposition -> rerun check
 ```
 
 - A finding is a concrete matched instance.
-- Guidance is the reusable standard attached to a rule.
+- Guidance is the reusable standard attached to a rule. `standard` and short `checks` are the normal agent feedback; `examples` and `refs` calibrate edge cases through `explain`.
 - A disposition is an explicit outcome: accepted, deferred, no-fix, or approved.
 - The ledger is `.agentlint/ledger.jsonl`, a committed JSONL record of resolved findings.
 - `.agentlint/.cache/` stores latest-check selectors and is gitignored.
@@ -38,8 +38,13 @@ import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 const noNoiseComments = defineRule({
   id: "comments/no-noise",
   description: "Flags comments that need a value judgment.",
-  guidance: `Comments should add durable context beyond the code.
-Remove comments that only restate obvious implementation details.`,
+  guidance: {
+    standard: "Comments should add durable context beyond the code.",
+    checks: [
+      "Remove comments that only restate obvious implementation details.",
+      "Keep comments that explain non-obvious constraints, external contracts, or tradeoffs.",
+    ],
+  },
   createOnce(context) {
     return {
       comment(node) {
@@ -67,7 +72,7 @@ Run the loop:
 
 ```bash
 pnpm agentlint check
-pnpm agentlint explain 1
+pnpm agentlint explain 1 # when examples, refs, or ledger context are needed
 pnpm agentlint resolve 1 --accept --reason "The comment explains a non-obvious integration constraint."
 pnpm agentlint check
 ```
@@ -78,7 +83,7 @@ Use `--format jsonl` when an agent harness wants one machine-readable object per
 
 ### `agentlint check [files...]`
 
-Scans changed files by default. Exit code `1` means unresolved findings exist, not that the tool crashed.
+Scans changed files by default. Exit code `1` means unresolved findings exist, not that the tool crashed. Text output includes each finding's local message, compact standard, and short checks. JSONL includes the same actionable guidance for agent harnesses.
 
 | Flag             | Description                                 |
 | ---------------- | ------------------------------------------- |
@@ -93,7 +98,7 @@ Local `check` blocks unresolved findings. `check --ci` blocks unresolved and def
 
 ### `agentlint explain <rule-id|selector>`
 
-Prints full guidance on demand. Use selectors from the latest `check` output, such as `1`, `[1]`, a full hash, or `file:line` when unambiguous.
+Prints full guidance on demand, including examples and refs. Use selectors from the latest `check` output, such as `1`, `[1]`, a full hash, or `file:line` when unambiguous.
 
 ### `agentlint resolve <selector>`
 

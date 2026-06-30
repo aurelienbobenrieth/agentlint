@@ -33,6 +33,7 @@ The repo uses `@effect/language-service` through `tsconfig.json`. Configure your
 ## Writing Rules
 
 Rules use `defineRule()` with `id`, `description`, `guidance`, and `createOnce`. Config and presets own file routing and persistence policy.
+Use `standard` for the invariant, `checks` for the short criteria agents should apply during `check`, `examples` for boundary-case calibration, and `refs` for source-of-truth links that belong in `explain`.
 
 ```ts
 import { defineRule } from "@aurelienbbn/agentlint";
@@ -42,7 +43,15 @@ export const myRule = defineRule({
   description: "Flags code that needs a judgment call.",
   guidance: {
     standard: "State the expected standard assertively.",
-    checks: ["Name the sub-condition agents commonly miss."],
+    checks: ["Name the short decision criterion agents should apply during check."],
+    examples: [
+      {
+        label: "Boundary case",
+        bad: "Show a tempting but wrong shape.",
+        good: "Show the acceptable shape.",
+      },
+    ],
+    refs: [{ type: "url", href: "https://example.com/source-of-truth" }],
   },
   createOnce(context) {
     return {

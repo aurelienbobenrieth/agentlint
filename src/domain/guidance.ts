@@ -2,7 +2,7 @@
  * Guidance data contracts and normalization helpers.
  *
  * Guidance is the contextual standard attached to a rule. The default check
- * output uses only the compact standard; `explain` can print checks, examples,
+ * output prints the compact standard plus checks; `explain` can print examples
  * and refs on demand.
  *
  * @module
