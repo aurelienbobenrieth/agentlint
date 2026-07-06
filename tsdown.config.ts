@@ -34,7 +34,12 @@ export default defineConfig({
       }
 
       // Copy language grammars from tree-sitter-wasms
-      const grammars = ["tree-sitter-typescript.wasm", "tree-sitter-tsx.wasm", "tree-sitter-javascript.wasm"];
+      const grammars = [
+        "tree-sitter-typescript.wasm",
+        "tree-sitter-tsx.wasm",
+        "tree-sitter-javascript.wasm",
+        "tree-sitter-json.wasm",
+      ];
       for (const grammar of grammars) {
         const src = resolve(__dirname, `node_modules/tree-sitter-wasms/out/${grammar}`);
         if (existsSync(src)) {

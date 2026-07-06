@@ -29,6 +29,7 @@ const EXTENSION_TO_GRAMMAR: HashMap.HashMap<string, string> = HashMap.make(
   ["cts", "typescript"],
   ["mjs", "javascript"],
   ["cjs", "javascript"],
+  ["json", "json"],
 );
 
 /**

@@ -33,6 +33,7 @@ const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
   ["typescript", "tree-sitter-typescript.wasm"],
   ["tsx", "tree-sitter-tsx.wasm"],
   ["javascript", "tree-sitter-javascript.wasm"],
+  ["json", "tree-sitter-json.wasm"],
 );
 
 export function resolvePackagedWasmPath(path: Pick<Path.Path, "resolve">, dir: string, filename: string): string {
