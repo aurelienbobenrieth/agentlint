@@ -10,6 +10,7 @@ import { defineConfig, defineRule } from "../../index.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { Git } from "../../shared/infrastructure/git.js";
 import { LedgerRecord, LedgerStore } from "../../shared/infrastructure/ledger-store.js";
+import { NotesStore } from "../../shared/infrastructure/notes-store.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { checkHandler } from "./handler.js";
@@ -42,6 +43,7 @@ function testLayer(cwd: string) {
       cwd,
       argv: [],
       actor: "agent:test",
+      platform: "test",
       noColor: true,
       isTTY: false,
       setExitCode: () => {},
@@ -60,13 +62,18 @@ function testLayer(cwd: string) {
     Git.of({
       detectDefaultBranch: () => Effect.succeed("main"),
       changedFiles: () => Effect.succeed(["src/sample.ts"]),
+      showFile: () => Effect.succeed(undefined),
     }),
   );
 
-  return Layer.mergeAll(TestConfigLoader, Parser.layer, TestGit, LedgerStore.layer, SelectorCache.layer).pipe(
-    Layer.provideMerge(NodeServices.layer),
-    Layer.provideMerge(TestEnv),
-  );
+  return Layer.mergeAll(
+    TestConfigLoader,
+    Parser.layer,
+    TestGit,
+    LedgerStore.layer,
+    NotesStore.layer,
+    SelectorCache.layer,
+  ).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(TestEnv));
 }
 
 function setup(cwd: string) {

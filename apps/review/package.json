@@ -1,0 +1,29 @@
+{
+  "name": "@agentlint/review",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local review SPA served by `agentlint review`.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide && tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentlint/ui": "workspace:*",
+    "@tanstack/react-query": "^5.101.2",
+    "@tanstack/react-router": "^1.170.17",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@inlang/paraglide-js": "^2.4.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3"
+  }
+}

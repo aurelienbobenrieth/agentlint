@@ -5,6 +5,7 @@
 
 import { Schema } from "effect";
 import { FindingRecord } from "../../domain/finding.js";
+import { MatchedNote } from "../../shared/infrastructure/notes-store.js";
 
 /**
  * @since 0.1.0
@@ -26,9 +27,11 @@ export class CheckCommand extends Schema.TaggedClass<CheckCommand>()("CheckComma
 export class CheckResult extends Schema.TaggedClass<CheckResult>()("CheckResult", {
   findings: Schema.Array(FindingRecord),
   displayedFindings: Schema.Array(FindingRecord),
+  notes: Schema.Array(MatchedNote),
   unresolvedCount: Schema.Number,
   resolvedCount: Schema.Number,
   deferredCount: Schema.Number,
+  pendingApprovalCount: Schema.Number,
   staleCount: Schema.Number,
   exitCode: Schema.Number,
   noMatchingRules: Schema.Boolean,

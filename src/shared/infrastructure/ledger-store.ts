@@ -11,7 +11,7 @@
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 
-export const LedgerStatus = Schema.Literals(["accepted", "deferred", "no_fix", "approved"]);
+export const LedgerStatus = Schema.Literals(["accepted", "deferred", "no_fix", "approved", "approval_requested"]);
 export type LedgerStatus = Schema.Schema.Type<typeof LedgerStatus>;
 
 export class LedgerRecord extends Schema.Class<LedgerRecord>("LedgerRecord")({
@@ -51,7 +51,7 @@ function latestByKey(records: ReadonlyArray<LedgerRecord>): Map<string, LedgerRe
   return latest;
 }
 
-function parseLedger(content: string): LedgerRecord[] {
+export function parseLedger(content: string): LedgerRecord[] {
   const records: LedgerRecord[] = [];
   const lines = content.split(/\r?\n/);
 
@@ -133,7 +133,7 @@ export class LedgerStore extends Context.Service<
               .makeDirectory(ledgerDir, { recursive: true })
               .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
             yield* fs
-              .writeFileString(ledgerPath, serializeLedger([...snapshotRecords, record]))
+              .writeFileString(ledgerPath, JSON.stringify(record) + "\n", { flag: "a" })
               .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
             return { appended: true };
           }),

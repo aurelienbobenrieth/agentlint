@@ -11,6 +11,40 @@ import { compactStandard, normalizeGuidance } from "../domain/guidance.js";
 import type { FindingRecord } from "../domain/finding.js";
 import type { NormalizedConfig } from "../domain/config.js";
 import { policyForRule } from "../domain/config.js";
+import type { MatchedNote } from "../shared/infrastructure/notes-store.js";
+
+/**
+ * Format matched learned notes as a non-blocking context section.
+ *
+ * Only the pointer (name, description, path) is printed — the body stays on
+ * disk until the reader opens it.
+ *
+ * @since 0.2.0
+ */
+export function formatNotesText(notes: ReadonlyArray<MatchedNote>, noColor: boolean): string {
+  if (notes.length === 0) return "";
+  const ansi = makeAnsi(noColor);
+  const lines = [ansi.dim("Context notes (non-blocking):")];
+  for (const note of notes) {
+    lines.push(ansi.dim(`  ${note.name} - ${note.description} (${note.path})`));
+  }
+  return lines.join("\n");
+}
+
+/** @since 0.2.0 */
+export function formatNotesJsonl(notes: ReadonlyArray<MatchedNote>): string {
+  return notes
+    .map((note) =>
+      JSON.stringify({
+        type: "note",
+        name: note.name,
+        description: note.description,
+        path: note.path,
+        matchedFiles: note.matchedFiles,
+      }),
+    )
+    .join("\n");
+}
 
 /**
  * Group an array by a key function, returning a HashMap of arrays.
@@ -98,9 +132,15 @@ export const formatCheckText = Effect.fn("formatCheckText")(function* (
     }
     lines.push(`  Persistence: ${policy.persistence}`);
     lines.push(`  Explain: agentlint explain ${finding.selector ?? finding.hash}`);
-    lines.push(`  Resolve: agentlint resolve ${finding.selector ?? finding.hash} --accept --reason "..."`);
-    lines.push(`           agentlint resolve ${finding.selector ?? finding.hash} --defer --reason "..."`);
-    lines.push(`           agentlint resolve ${finding.selector ?? finding.hash} --no-fix --reason "..."`);
+    if (policy.resolution === "human") {
+      lines.push(`  Requires human approval. Fix the code, or request review:`);
+      lines.push(`  Resolve: agentlint resolve ${finding.selector ?? finding.hash} --request-approval --reason "..."`);
+      lines.push(`           agentlint resolve ${finding.selector ?? finding.hash} --no-fix --reason "..."`);
+    } else {
+      lines.push(`  Resolve: agentlint resolve ${finding.selector ?? finding.hash} --accept --reason "..."`);
+      lines.push(`           agentlint resolve ${finding.selector ?? finding.hash} --defer --reason "..."`);
+      lines.push(`           agentlint resolve ${finding.selector ?? finding.hash} --no-fix --reason "..."`);
+    }
     lines.push("");
   }
 
@@ -122,6 +162,7 @@ export function formatCheckJsonl(findings: ReadonlyArray<FindingRecord>, config:
         ruleId: finding.ruleId,
         description: rule?.description ?? "",
         persistence: policy.persistence,
+        resolution: policy.resolution,
         file: finding.file,
         line: finding.line,
         column: finding.column,
@@ -129,11 +170,17 @@ export function formatCheckJsonl(findings: ReadonlyArray<FindingRecord>, config:
         standard: guidance?.standard ?? "",
         checks: guidance?.checks ?? [],
         detailCommand: `agentlint explain ${selector}`,
-        resolveCommands: {
-          accept: `agentlint resolve ${selector} --accept --reason "..."`,
-          defer: `agentlint resolve ${selector} --defer --reason "..."`,
-          noFix: `agentlint resolve ${selector} --no-fix --reason "..."`,
-        },
+        resolveCommands:
+          policy.resolution === "human"
+            ? {
+                requestApproval: `agentlint resolve ${selector} --request-approval --reason "..."`,
+                noFix: `agentlint resolve ${selector} --no-fix --reason "..."`,
+              }
+            : {
+                accept: `agentlint resolve ${selector} --accept --reason "..."`,
+                defer: `agentlint resolve ${selector} --defer --reason "..."`,
+                noFix: `agentlint resolve ${selector} --no-fix --reason "..."`,
+              },
       });
     })
     .join("\n");

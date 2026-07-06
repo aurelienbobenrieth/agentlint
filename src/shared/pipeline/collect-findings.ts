@@ -14,17 +14,20 @@ import picomatch from "picomatch";
 import { Env } from "../../config/env.js";
 import { normalizeConfig, type NormalizedConfig } from "../../domain/config.js";
 import { FindingRecord } from "../../domain/finding.js";
-import type { AgentlintRule, Visitors } from "../../domain/rule.js";
+import { ruleMatches, type AgentlintRule, type RuleMatch, type Visitors } from "../../domain/rule.js";
 import { RuleContextImpl } from "../../domain/rule-context.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git.js";
+import { matchNotes, MatchedNote, NotesStore } from "../infrastructure/notes-store.js";
 import { Parser } from "../infrastructure/parser.js";
 import { resolveFiles } from "./file-resolver.js";
 import { grammarForExtension } from "./language-map.js";
+import { compileMatches, resolveWhereClauses, runMatches, type RunnableMatches } from "./pattern-match.js";
 import { visitorKeys, walkFile } from "./tree-walker.js";
 
 export const CollectResult = Schema.Struct({
   findings: Schema.Array(FindingRecord),
+  notes: Schema.Array(MatchedNote),
   noMatchingRules: Schema.Boolean,
   availableRules: Schema.Array(Schema.String),
 });
@@ -46,6 +49,9 @@ interface RuleEntry {
   readonly context: RuleContextImpl;
   readonly visitors: Visitors;
   readonly keys: ReadonlyArray<string>;
+  readonly matches: ReadonlyArray<RuleMatch>;
+  /** Compiled matches, cached per grammar for the duration of one run. */
+  readonly compiledByGrammar: Map<string, RunnableMatches>;
 }
 
 function matcher(patterns: ReadonlyArray<string> | undefined): ((file: string) => boolean) | undefined {
@@ -97,7 +103,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   if (options.rules.length > 0) {
     activeRules = activeRules.filter(([id]) => options.rules.includes(id));
     if (activeRules.length === 0) {
-      return { findings: [], noMatchingRules: true, availableRules };
+      return { findings: [], notes: [], noMatchingRules: true, availableRules };
     }
   }
 
@@ -115,21 +121,31 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   const ruleEntries: RuleEntry[] = [];
   for (const [ruleId, rule] of activeRules) {
     const context = new RuleContextImpl(ruleId);
-    const visitors = rule.createOnce(context);
-    ruleEntries.push({ ruleId, rule, context, visitors, keys: visitorKeys(visitors) });
+    const visitors = rule.createOnce?.(context) ?? {};
+    ruleEntries.push({
+      ruleId,
+      rule,
+      context,
+      visitors,
+      keys: visitorKeys(visitors),
+      matches: ruleMatches(rule),
+      compiledByGrammar: new Map(),
+    });
   }
 
   const allFindings: FindingRecord[] = [];
+  const scannedForNotes: Array<{ file: string; source: string }> = [];
 
   for (const file of files) {
     const ext = path.extname(file).slice(1);
     const grammar = grammarForExtension(ext);
-    if (!grammar) continue;
 
     const absPath = path.resolve(env.cwd, file);
     const sourceResult = yield* fs.readFileString(absPath).pipe(Effect.result);
     if (sourceResult._tag === "Failure") continue;
     const source = sourceResult.success;
+    scannedForNotes.push({ file, source });
+    if (!grammar) continue;
 
     const rulesForFile = ruleEntries.filter((entry) => ruleEnabledForFile(config, file, entry.ruleId));
     if (rulesForFile.length === 0) continue;
@@ -139,11 +155,13 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       context: RuleContextImpl;
       visitors: Visitors;
     }> = [];
+    const matchRules: RuleEntry[] = [];
 
     for (const entry of rulesForFile) {
       entry.context.setFile(absPath, file, source);
       const beforeResult = entry.visitors.before?.(absPath);
-      if (beforeResult === false || entry.keys.length === 0) continue;
+      if (beforeResult === false || (entry.keys.length === 0 && entry.matches.length === 0)) continue;
+      if (entry.matches.length > 0) matchRules.push(entry);
       runnableRules.push({
         ruleId: entry.ruleId,
         context: entry.context,
@@ -154,6 +172,17 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     if (runnableRules.length === 0) continue;
 
     const tree = yield* parserService.parse(source, grammar);
+
+    for (const entry of matchRules) {
+      let runnable = entry.compiledByGrammar.get(grammar);
+      if (!runnable) {
+        const compiled = yield* compileMatches({ ruleId: entry.ruleId, matches: entry.matches, grammar });
+        runnable = yield* resolveWhereClauses(entry.ruleId, compiled, grammar);
+        entry.compiledByGrammar.set(grammar, runnable);
+      }
+      runMatches(tree, runnable, entry.context);
+    }
+
     allFindings.push(...walkFile(tree, runnableRules));
   }
 
@@ -162,8 +191,12 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     allFindings.push(...entry.context.drainFindings());
   }
 
+  const notesStore = yield* NotesStore;
+  const notes = matchNotes(yield* notesStore.load(config.noteDirs), scannedForNotes);
+
   return {
     findings: sortFindings(allFindings),
+    notes,
     noMatchingRules: false,
     availableRules,
   };

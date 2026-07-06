@@ -17,3 +17,12 @@ export type RuleListItem = Schema.Schema.Type<typeof RuleListItem>;
 export class RulesListResult extends Schema.TaggedClass<RulesListResult>()("RulesListResult", {
   rules: Schema.Array(RuleListItem),
 }) {}
+
+export class RulesTestCommand extends Schema.TaggedClass<RulesTestCommand>()("RulesTestCommand", {
+  rules: Schema.Array(Schema.String),
+}) {}
+
+export class RulesTestResult extends Schema.TaggedClass<RulesTestResult>()("RulesTestResult", {
+  message: Schema.String,
+  exitCode: Schema.Number,
+}) {}

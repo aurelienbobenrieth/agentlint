@@ -14,6 +14,7 @@ function testLayer(cwd: string) {
       cwd,
       argv: [],
       actor: "agent:test",
+      platform: "test",
       noColor: true,
       isTTY: false,
       setExitCode: () => {},

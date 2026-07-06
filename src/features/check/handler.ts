@@ -30,9 +30,11 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     return new CheckResult({
       findings: [],
       displayedFindings: [],
+      notes: [],
       unresolvedCount: 0,
       resolvedCount: 0,
       deferredCount: 0,
+      pendingApprovalCount: 0,
       staleCount: 0,
       exitCode: 2,
       noMatchingRules: true,
@@ -47,6 +49,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   const unresolved = [];
   const resolved = [];
   const deferred = [];
+  const pendingApproval = [];
 
   for (const finding of result.findings) {
     const disposition = snapshot.latestByKey.get(ledgerKey(finding.ruleId, finding.hash));
@@ -56,11 +59,15 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
       resolved.push(finding);
       if (disposition.status === "deferred") {
         deferred.push(finding);
+      } else if (disposition.status === "approval_requested") {
+        pendingApproval.push(finding);
       }
     }
   }
 
-  const blocking = command.ci ? [...unresolved, ...deferred] : unresolved;
+  // Pending approvals let the agent finish its turn locally, but nothing
+  // merges until a human records `approved` — mirrors deferred semantics.
+  const blocking = command.ci ? [...unresolved, ...deferred, ...pendingApproval] : unresolved;
   const displayedFindings = blocking.map((finding, index) => withSelector(finding, String(index + 1)));
   if (command.format === "text" || command.format === "jsonl") {
     yield* selectorCache.write(
@@ -78,9 +85,11 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   return new CheckResult({
     findings: result.findings,
     displayedFindings,
+    notes: result.notes,
     unresolvedCount: unresolved.length,
     resolvedCount: resolved.length,
     deferredCount: deferred.length,
+    pendingApprovalCount: pendingApproval.length,
     staleCount,
     exitCode: blocking.length > 0 ? 1 : 0,
     noMatchingRules: false,

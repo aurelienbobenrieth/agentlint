@@ -8,7 +8,9 @@ const PackageJson = Schema.Struct({
   version: Schema.String,
 });
 const PackageJsonFromString = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson));
-const pkg = PackageJsonFromString(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf-8"));
+const pkg = PackageJsonFromString(
+  readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf-8"),
+);
 
 export default defineConfig({
   define: {

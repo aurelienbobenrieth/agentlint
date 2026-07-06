@@ -23,6 +23,7 @@ export class RuleContextImpl implements RuleContext {
   #absolutePath = "";
   #file = "";
   #source = "";
+  #occurrences = new Map<string, number>();
 
   constructor(ruleId: string) {
     this.ruleId = ruleId;
@@ -32,6 +33,7 @@ export class RuleContextImpl implements RuleContext {
     this.#absolutePath = absolutePath;
     this.#file = file.replace(/\\/g, "/");
     this.#source = source;
+    this.#occurrences = new Map();
   }
 
   drainFindings(): FindingRecord[] {
@@ -70,7 +72,14 @@ export class RuleContextImpl implements RuleContext {
     const sourceSnippet = rawSnippet.length > 100 ? rawSnippet.slice(0, 97) + "..." : rawSnippet;
     const normalizedNodeText = options.node.text.replace(/\s+/g, " ").trim();
 
-    const hash = fnv1a7(`${this.ruleId}:${this.#file}:${options.node.type}:${normalizedNodeText}:${options.message}`);
+    // Identical snippets in the same file (copy-pasted code) would otherwise
+    // share a hash, so resolving one would silently resolve all of them. The
+    // first occurrence keeps the unsuffixed hash for ledger back-compat;
+    // later occurrences are disambiguated by document order.
+    const hashInput = `${this.ruleId}:${this.#file}:${options.node.type}:${normalizedNodeText}:${options.message}`;
+    const occurrence = (this.#occurrences.get(hashInput) ?? 0) + 1;
+    this.#occurrences.set(hashInput, occurrence);
+    const hash = fnv1a7(occurrence === 1 ? hashInput : `${hashInput}:${occurrence}`);
 
     this.findings.push(
       new FindingRecord({

@@ -1,6 +1,6 @@
 {
   "name": "@aurelienbbn/agentlint",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Deterministic triggers for contextual agent guidance and accountable resolution",
   "keywords": [
     "agent",
@@ -33,9 +33,9 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && pnpm --filter @agentlint/review build",
     "prepack": "pnpm build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm --filter @agentlint/ui typecheck && pnpm --filter @agentlint/review typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint",
@@ -69,17 +69,5 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.28.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "esbuild",
-      "msgpackr-extract"
-    ],
-    "ignoredBuiltDependencies": [
-      "@parcel/watcher",
-      "esbuild",
-      "msgpackr-extract"
-    ]
-  }
+  "packageManager": "pnpm@10.28.0"
 }

@@ -9,6 +9,11 @@ export class LedgerGcCommand extends Schema.TaggedClass<LedgerGcCommand>()("Ledg
   write: Schema.Boolean,
 }) {}
 
+export class LedgerReviewCommand extends Schema.TaggedClass<LedgerReviewCommand>()("LedgerReviewCommand", {
+  base: Schema.UndefinedOr(Schema.String),
+  format: Schema.Literals(["text", "jsonl"]),
+}) {}
+
 export class LedgerResult extends Schema.TaggedClass<LedgerResult>()("LedgerResult", {
   message: Schema.String,
   exitCode: Schema.Number,

@@ -21,6 +21,7 @@ export type {
   ConfigOverride,
   NormalizedConfig,
   Persistence,
+  Resolution,
   RulePolicy,
   RuleSwitch,
 } from "./domain/config.js";
@@ -28,6 +29,11 @@ export type { FindingOptions } from "./domain/finding.js";
 export { FindingRecord } from "./domain/finding.js";
 export type { Guidance, GuidanceExample, GuidanceRef, NormalizedGuidance } from "./domain/guidance.js";
 export type { TreeSitterNodeType } from "./domain/node-types.js";
-export { RuleDefinition } from "./domain/rule.js";
-export type { AgentlintRule, RuleGuidance, VisitorHandler, Visitors } from "./domain/rule.js";
+export { RuleDefinition, ruleMatches } from "./domain/rule.js";
+export type { AgentlintRule, MatchWhere, RuleFixtures, RuleGuidance, RuleMatch, VisitorHandler, Visitors } from "./domain/rule.js";
 export type { RuleContext } from "./domain/rule-context.js";
+
+// Testing utilities for rule and plugin authors.
+export { runRuleFixtures, runRuleOnSource } from "./shared/pipeline/rule-tester.js";
+export type { FixtureFailure, FixtureReport } from "./shared/pipeline/rule-tester.js";
+export { PatternError } from "./shared/pipeline/pattern-match.js";

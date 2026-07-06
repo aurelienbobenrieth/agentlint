@@ -1,0 +1,4 @@
+@import "@agentlint/ui/styles";
+
+/* Component sources outside the vite root, scanned for Tailwind classes. */
+@source "../../../packages/ui/src";

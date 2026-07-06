@@ -61,6 +61,12 @@ export class Parser extends Context.Service<
   Parser,
   {
     parse(source: string, grammar: string): Effect.Effect<Tree, ParserError>;
+    /**
+     * The loaded tree-sitter `Language` for a grammar, or `undefined` for
+     * frontends that are not tree-sitter backed (e.g. liquid). Needed to
+     * construct tree-sitter queries.
+     */
+    language(grammar: string): Effect.Effect<Language | undefined, ParserError>;
   }
 >()("agentlint/Parser") {
   /** Default layer — lazily initializes WASM and caches grammars. */
@@ -95,6 +101,38 @@ export class Parser extends Context.Service<
       let parserInstance: TSParser | undefined;
       let languageCache: HashMap.HashMap<string, Language> = HashMap.empty();
 
+      const ensureInit = Effect.gen(function* () {
+        if (parserInstance) return parserInstance;
+        const initPath = yield* resolveWasmPath("tree-sitter.wasm");
+        yield* Effect.tryPromise({
+          try: async () => {
+            await TSParser.init({ locateFile: () => initPath });
+            parserInstance = new TSParser();
+          },
+          catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+        });
+        const parser = parserInstance;
+        if (!parser) return yield* new ParserError({ message: "Parser failed to initialize" });
+        return parser;
+      });
+
+      const loadLanguage = (grammar: string): Effect.Effect<Language, ParserError> =>
+        Effect.gen(function* () {
+          const cached = Option.getOrUndefined(HashMap.get(languageCache, grammar));
+          if (cached) return cached;
+
+          const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
+          if (!file) return yield* new ParserError({ message: `Unknown grammar: ${grammar}` });
+
+          const wasmPath = yield* resolveWasmPath(file);
+          const lang = yield* Effect.tryPromise({
+            try: () => Language.load(wasmPath),
+            catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+          });
+          languageCache = HashMap.set(languageCache, grammar, lang);
+          return lang;
+        });
+
       return Parser.of({
         parse: (source, grammar) =>
           Effect.gen(function* () {
@@ -105,37 +143,19 @@ export class Parser extends Context.Service<
               });
             }
 
-            if (!parserInstance) {
-              const initPath = yield* resolveWasmPath("tree-sitter.wasm");
-              yield* Effect.tryPromise({
-                try: async () => {
-                  await TSParser.init({ locateFile: () => initPath });
-                  parserInstance = new TSParser();
-                },
-                catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
-              });
-            }
-
-            let lang = Option.getOrUndefined(HashMap.get(languageCache, grammar));
-            if (!lang) {
-              const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
-              if (!file) return yield* new ParserError({ message: `Unknown grammar: ${grammar}` });
-
-              const wasmPath = yield* resolveWasmPath(file);
-              lang = yield* Effect.tryPromise({
-                try: () => Language.load(wasmPath),
-                catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
-              });
-              languageCache = HashMap.set(languageCache, grammar, lang);
-            }
-
-            const parser = parserInstance;
-            if (!parser) return yield* new ParserError({ message: "Parser failed to initialize" });
-
+            const parser = yield* ensureInit;
+            const lang = yield* loadLanguage(grammar);
             parser.setLanguage(lang);
             const tree = parser.parse(source);
             if (!tree) return yield* new ParserError({ message: "Parser returned null tree" });
             return tree;
+          }),
+
+        language: (grammar) =>
+          Effect.gen(function* () {
+            if (grammar === "liquid") return undefined;
+            yield* ensureInit;
+            return yield* loadLanguage(grammar);
           }),
       });
     }),

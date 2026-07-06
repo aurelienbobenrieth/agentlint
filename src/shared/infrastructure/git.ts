@@ -111,6 +111,8 @@ export class Git extends Context.Service<
     detectDefaultBranch(): Effect.Effect<string, GitError>;
     /** Return sorted list of files changed relative to `baseRef` (defaults to the detected default branch). */
     changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, GitError>;
+    /** Return the content of `filePath` at `ref`, or `undefined` when absent at that ref. */
+    showFile(ref: string, filePath: string): Effect.Effect<string | undefined, GitError>;
   }
 >()("agentlint/Git") {
   static readonly layer: Layer.Layer<Git, never, ChildProcessSpawner.ChildProcessSpawner | Env> = Layer.effect(
@@ -129,6 +131,12 @@ export class Git extends Context.Service<
           (baseRef ? Effect.succeed(baseRef) : provide(detectDefault(env.cwd))).pipe(
             Effect.flatMap((base) => provide(collectChangedFiles(env.cwd, base))),
             Effect.mapError((e) => new GitError({ message: String(e) })),
+          ),
+
+        showFile: (ref, filePath) =>
+          provide(gitCmd(`show ${ref}:${filePath}`, env.cwd)).pipe(
+            Effect.map((content): string | undefined => content),
+            Effect.catch(() => Effect.succeed(undefined)),
           ),
       });
     }),

@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import { ledgerKey, LedgerStore } from "../../shared/infrastructure/ledger-store.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
-import { LedgerGcCommand, LedgerListCommand, LedgerResult } from "./request.js";
+import { buildReviewState } from "../../shared/pipeline/review-state.js";
+import { LedgerGcCommand, LedgerListCommand, LedgerResult, LedgerReviewCommand } from "./request.js";
 
 function groupByRule<T extends { readonly ruleId: string }>(records: ReadonlyArray<T>) {
   const groups = new Map<string, T[]>();
@@ -31,6 +32,69 @@ export const ledgerListHandler = Effect.fn("ledgerListHandler")(function* (comma
   }
 
   return new LedgerResult({ message: lines.join("\n"), exitCode: 0 });
+});
+
+export const ledgerReviewHandler = Effect.fn("ledgerReviewHandler")(function* (command: LedgerReviewCommand) {
+  const state = yield* buildReviewState(command.base);
+
+  if (command.format === "jsonl") {
+    const lines = [
+      ...state.pendingApprovals.map((entry) =>
+        JSON.stringify({
+          type: "pending_approval",
+          ruleId: entry.finding.ruleId,
+          hash: entry.finding.hash,
+          file: entry.finding.file,
+          line: entry.finding.line,
+          message: entry.finding.message,
+          reason: entry.disposition?.reason ?? "",
+          actor: entry.disposition?.actor ?? "",
+          at: entry.disposition?.at ?? "",
+        }),
+      ),
+      ...state.newRecords.map((record) =>
+        JSON.stringify({
+          type: "disposition",
+          ruleId: record.ruleId,
+          hash: record.hash,
+          status: record.status,
+          reason: record.reason,
+          actor: record.actor,
+          at: record.at,
+        }),
+      ),
+    ];
+    return new LedgerResult({ message: lines.join("\n"), exitCode: 0 });
+  }
+
+  const lines: string[] = [`Review against ${state.base}`, ""];
+
+  lines.push(`Pending human approval (${state.pendingApprovals.length})`);
+  for (const entry of state.pendingApprovals) {
+    lines.push(`  ${entry.finding.ruleId} ${entry.finding.file}:${entry.finding.line} [${entry.finding.hash}]`);
+    lines.push(`    ${entry.finding.message}`);
+    if (entry.disposition) {
+      lines.push(`    Requested by ${entry.disposition.actor}: ${entry.disposition.reason}`);
+    }
+    lines.push(`    Approve: agentlint approve ${entry.finding.hash} --reason "..."`);
+  }
+  lines.push("");
+
+  lines.push(`New dispositions since ${state.base} (${state.newRecords.length})`);
+  for (const record of state.newRecords) {
+    lines.push(`  ${record.status} ${record.ruleId} [${record.hash}] by ${record.actor}`);
+    lines.push(`    ${record.reason}`);
+  }
+  lines.push("");
+
+  if (state.unresolved.length > 0) {
+    lines.push(`Unresolved findings: ${state.unresolved.length} (agentlint check for details)`);
+  }
+  if (state.staleRecords.length > 0) {
+    lines.push(`Stale ledger records: ${state.staleRecords.length} (agentlint ledger gc)`);
+  }
+
+  return new LedgerResult({ message: lines.join("\n").trimEnd(), exitCode: 0 });
 });
 
 export const ledgerGcHandler = Effect.fn("ledgerGcHandler")(function* (command: LedgerGcCommand) {

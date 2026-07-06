@@ -15,6 +15,7 @@ const TestEnv = Layer.succeed(
     cwd: TEST_CWD,
     argv: [],
     actor: "test",
+    platform: "test",
     noColor: true,
     isTTY: false,
     setExitCode: () => {},

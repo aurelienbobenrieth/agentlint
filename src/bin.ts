@@ -9,24 +9,30 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Console, Effect, Layer } from "effect";
-import { formatCheckJsonl, formatCheckText } from "./cli/reporter.js";
+import { formatCheckJsonl, formatCheckText, formatNotesJsonl, formatNotesText } from "./cli/reporter.js";
 import { Env } from "./config/env.js";
 import { normalizeConfig } from "./domain/config.js";
+import { approveHandler } from "./features/approve/handler.js";
+import { ApproveCommand } from "./features/approve/request.js";
 import { checkHandler } from "./features/check/handler.js";
 import { CheckCommand } from "./features/check/request.js";
 import { explainHandler } from "./features/explain/handler.js";
 import { ExplainCommand } from "./features/explain/request.js";
 import { initHandler } from "./features/init/handler.js";
 import { InitCommand } from "./features/init/request.js";
-import { ledgerGcHandler, ledgerListHandler } from "./features/ledger/handler.js";
-import { LedgerGcCommand, LedgerListCommand } from "./features/ledger/request.js";
+import { ledgerGcHandler, ledgerListHandler, ledgerReviewHandler } from "./features/ledger/handler.js";
+import { LedgerGcCommand, LedgerListCommand, LedgerReviewCommand } from "./features/ledger/request.js";
+import { notesListHandler } from "./features/notes/handler.js";
+import { NotesListCommand } from "./features/notes/request.js";
 import { resolveHandler } from "./features/resolve/handler.js";
 import { ResolveCommand } from "./features/resolve/request.js";
-import { rulesListHandler } from "./features/rules/handler.js";
-import { RulesListCommand } from "./features/rules/request.js";
+import { runReviewSession } from "./features/review/server.js";
+import { rulesListHandler, rulesTestHandler } from "./features/rules/handler.js";
+import { RulesListCommand, RulesTestCommand } from "./features/rules/request.js";
 import { ConfigLoader } from "./shared/infrastructure/config-loader.js";
 import { Git } from "./shared/infrastructure/git.js";
 import { LedgerStore } from "./shared/infrastructure/ledger-store.js";
+import { NotesStore } from "./shared/infrastructure/notes-store.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { SelectorCache } from "./shared/infrastructure/selector-cache.js";
 
@@ -82,12 +88,15 @@ function parseRuleFilter(value: string | undefined): string[] {
     : [];
 }
 
-function parseResolveStatus(flags: ParsedFlags): "accepted" | "deferred" | "no_fix" | undefined {
+type ResolveStatus = "accepted" | "deferred" | "no_fix" | "approval_requested";
+
+function parseResolveStatus(flags: ParsedFlags): ResolveStatus | undefined {
   const statuses = [
     flagBoolean(flags, "accept") ? "accepted" : undefined,
     flagBoolean(flags, "defer") ? "deferred" : undefined,
     flagBoolean(flags, "no-fix") ? "no_fix" : undefined,
-  ].filter((status): status is "accepted" | "deferred" | "no_fix" => status !== undefined);
+    flagBoolean(flags, "request-approval") ? "approval_requested" : undefined,
+  ].filter((status): status is ResolveStatus => status !== undefined);
 
   return statuses.length === 1 ? statuses[0] : undefined;
 }
@@ -99,10 +108,15 @@ function usage(): string {
     "Commands:",
     "  agentlint check [files...] [--format text|jsonl] [--all] [--base main] [--rule id] [--ci]",
     "  agentlint explain <rule-id|selector>",
-    '  agentlint resolve <selector> --accept|--defer|--no-fix --reason "..."',
+    '  agentlint resolve <selector> --accept|--defer|--no-fix|--request-approval --reason "..."',
+    '  agentlint approve <selector> --reason "..."',
+    "  agentlint review [--base ref] [--port n] [--no-open]",
     "  agentlint rules list [--files path]",
+    "  agentlint rules test [--rule id]",
     "  agentlint ledger list [--rule id]",
     "  agentlint ledger gc [--rule id] [--dry-run] [--write]",
+    "  agentlint ledger review [--base ref] [--format text|jsonl]",
+    "  agentlint notes list",
     "  agentlint init",
   ].join("\n");
 }
@@ -131,13 +145,21 @@ const runCheck = (args: ReadonlyArray<string>) =>
 
     const configLoader = yield* ConfigLoader;
     const config = normalizeConfig(yield* configLoader.load());
+    const env = yield* Env;
+    const notesOutput =
+      format === "jsonl" ? formatNotesJsonl(result.notes) : formatNotesText(result.notes, env.noColor);
     const output =
       format === "jsonl"
-        ? formatCheckJsonl(result.displayedFindings, config)
-        : yield* formatCheckText(result.displayedFindings, config, {
-            version: __AGENTLINT_VERSION__,
-            ci: result.deferredCount > 0 && flagBoolean(flags, "ci"),
-          });
+        ? [formatCheckJsonl(result.displayedFindings, config), notesOutput].filter((part) => part.length > 0).join("\n")
+        : [
+            yield* formatCheckText(result.displayedFindings, config, {
+              version: __AGENTLINT_VERSION__,
+              ci: result.deferredCount > 0 && flagBoolean(flags, "ci"),
+            }),
+            notesOutput,
+          ]
+            .filter((part) => part.length > 0)
+            .join("\n\n");
 
     if (output.length > 0) {
       yield* Console.log(output);
@@ -147,13 +169,15 @@ const runCheck = (args: ReadonlyArray<string>) =>
       const summary: string[] = [];
       if (result.resolvedCount > 0) summary.push(`${result.resolvedCount} resolved hidden`);
       if (result.deferredCount > 0) summary.push(`${result.deferredCount} deferred`);
+      if (result.pendingApprovalCount > 0) {
+        summary.push(`${result.pendingApprovalCount} pending human approval (agentlint review)`);
+      }
       if (result.staleCount > 0) summary.push(`${result.staleCount} stale ledger record(s)`);
       if (summary.length > 0) {
         yield* Console.log(summary.join("; "));
       }
     }
 
-    const env = yield* Env;
     env.setExitCode(result.exitCode);
   });
 
@@ -171,6 +195,15 @@ const runRulesList = (args: ReadonlyArray<string>) =>
         `${rule.enabled ? "on " : "off"} ${rule.id} [${rule.persistence}] - ${rule.description}\n  ${rule.standard}`,
       );
     }
+  });
+
+const runRulesTest = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const flags = parseFlags(args);
+    const result = yield* rulesTestHandler(new RulesTestCommand({ rules: parseRuleFilter(flagString(flags, "rule")) }));
+    yield* Console.log(result.message);
+    const env = yield* Env;
+    env.setExitCode(result.exitCode);
   });
 
 const runExplain = (args: ReadonlyArray<string>) =>
@@ -207,6 +240,42 @@ const runResolve = (args: ReadonlyArray<string>) =>
     env.setExitCode(result.exitCode);
   });
 
+const runReview = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const flags = parseFlags(args);
+    const portFlag = flagString(flags, "port");
+    const session = yield* runReviewSession({
+      base: flagString(flags, "base"),
+      port: portFlag ? Number(portFlag) : 0,
+      open: !flagBoolean(flags, "no-open"),
+    });
+
+    yield* Console.log(`Review finished: ${session.summary}`);
+    if (session.feedbackPath) {
+      yield* Console.log(`Change requests written to ${session.feedbackPath}:`);
+      for (const item of session.feedback) {
+        yield* Console.log(`  ${item.ruleId} ${item.file}:${item.line} - ${item.comment}`);
+      }
+      const env = yield* Env;
+      env.setExitCode(1);
+    }
+  });
+
+const runApprove = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const flags = parseFlags(args);
+    const result = yield* approveHandler(
+      new ApproveCommand({
+        selector: flags.positionals[0],
+        reason: flagString(flags, "reason"),
+        actor: flagString(flags, "actor"),
+      }),
+    );
+    yield* Console.log(result.message);
+    const env = yield* Env;
+    env.setExitCode(result.exitCode);
+  });
+
 const runLedger = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const subcommand = args[0];
@@ -218,10 +287,17 @@ const runLedger = (args: ReadonlyArray<string>) =>
           ? yield* ledgerGcHandler(
               new LedgerGcCommand({ rule: flagString(flags, "rule"), write: flagBoolean(flags, "write") }),
             )
-          : undefined;
+          : subcommand === "review"
+            ? yield* ledgerReviewHandler(
+                new LedgerReviewCommand({
+                  base: flagString(flags, "base"),
+                  format: flagString(flags, "format") === "jsonl" ? "jsonl" : "text",
+                }),
+              )
+            : undefined;
 
     if (!result) {
-      yield* Console.log("Usage: agentlint ledger list|gc");
+      yield* Console.log("Usage: agentlint ledger list|gc|review");
       const env = yield* Env;
       env.setExitCode(2);
       return;
@@ -248,13 +324,29 @@ const program = Effect.gen(function* () {
       return yield* runExplain(env.argv.slice(1));
     case "resolve":
       return yield* runResolve(env.argv.slice(1));
+    case "approve":
+      return yield* runApprove(env.argv.slice(1));
+    case "review":
+      return yield* runReview(env.argv.slice(1));
     case "rules":
       if (subcommand === "list") return yield* runRulesList(rest);
-      yield* Console.log("Usage: agentlint rules list [--files path]");
+      if (subcommand === "test") return yield* runRulesTest(rest);
+      yield* Console.log("Usage: agentlint rules list [--files path] | rules test [--rule id]");
       env.setExitCode(2);
       return;
     case "ledger":
       return yield* runLedger(env.argv.slice(1));
+    case "notes": {
+      if (subcommand === "list") {
+        const result = yield* notesListHandler(new NotesListCommand({}));
+        yield* Console.log(result.message);
+        env.setExitCode(result.exitCode);
+        return;
+      }
+      yield* Console.log("Usage: agentlint notes list");
+      env.setExitCode(2);
+      return;
+    }
     case "init":
       return yield* runInit;
     case undefined:
@@ -283,6 +375,7 @@ const AppLayer = Layer.mergeAll(
   Parser.layer,
   Git.layer,
   LedgerStore.layer,
+  NotesStore.layer,
   SelectorCache.layer,
 ).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 

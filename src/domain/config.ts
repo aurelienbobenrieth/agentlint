@@ -12,11 +12,24 @@ import { RuleDefinition } from "./rule.js";
 export const Persistence = Schema.Literals(["ephemeral", "durable"]);
 export type Persistence = Schema.Schema.Type<typeof Persistence>;
 
+/**
+ * Who may record an accepting disposition for a rule's findings.
+ *
+ * - `agent`: any actor can accept, defer, or no-fix (default).
+ * - `human`: agents can fix code or request approval, but only a human
+ *   `approve` unblocks the finding. Pending requests block `check --ci`.
+ *
+ * @since 0.2.0
+ */
+export const Resolution = Schema.Literals(["agent", "human"]);
+export type Resolution = Schema.Schema.Type<typeof Resolution>;
+
 export const RuleSwitch = Schema.Literals(["on", "off"]);
 export type RuleSwitch = Schema.Schema.Type<typeof RuleSwitch>;
 
 export const RulePolicy = Schema.Struct({
   persistence: Schema.optional(Persistence),
+  resolution: Schema.optional(Resolution),
 });
 export type RulePolicy = Schema.Schema.Type<typeof RulePolicy>;
 
@@ -26,6 +39,17 @@ export interface ConfigOverride {
   readonly rules: Record<string, RuleSwitch>;
 }
 
+/**
+ * Learned-notes configuration. Notes are markdown files with trigger
+ * frontmatter surfaced as non-blocking context during `check`.
+ *
+ * @since 0.2.0
+ */
+export interface NotesConfig {
+  /** Directories scanned for note markdown files. Default: `.agents/learn`. */
+  readonly dirs?: ReadonlyArray<string> | undefined;
+}
+
 export interface AgentlintConfig {
   readonly extends?: ReadonlyArray<AgentlintConfig> | undefined;
   readonly rules?: Record<string, AgentlintRule> | undefined;
@@ -33,6 +57,7 @@ export interface AgentlintConfig {
   readonly files?: ReadonlyArray<string> | undefined;
   readonly ignores?: ReadonlyArray<string> | undefined;
   readonly overrides?: ReadonlyArray<ConfigOverride> | undefined;
+  readonly notes?: NotesConfig | undefined;
 }
 
 export interface NormalizedConfig {
@@ -41,6 +66,7 @@ export interface NormalizedConfig {
   readonly files?: ReadonlyArray<string> | undefined;
   readonly ignores: ReadonlyArray<string>;
   readonly overrides: ReadonlyArray<ConfigOverride>;
+  readonly noteDirs: ReadonlyArray<string>;
 }
 
 const RulePolicyDecoder = Schema.decodeUnknownSync(RulePolicy);
@@ -92,6 +118,7 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   let files: ReadonlyArray<string> | undefined;
   const ignores: string[] = [];
   const overrides: ConfigOverride[] = [];
+  const noteDirs: string[] = [];
 
   for (const layer of layers) {
     for (const [id, rule] of Object.entries(layer.rules ?? {})) {
@@ -100,17 +127,23 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
     }
     for (const [id, rulePolicy] of Object.entries(layer.policy ?? {})) {
       RulePolicyDecoder(rulePolicy);
-      policy[id] = { persistence: rulePolicy.persistence ?? "ephemeral" };
+      policy[id] = {
+        persistence: rulePolicy.persistence ?? policy[id]?.persistence ?? "ephemeral",
+        resolution: rulePolicy.resolution ?? policy[id]?.resolution ?? "agent",
+      };
     }
     if (layer.files) {
       files = [...layer.files];
     }
     ignores.push(...(layer.ignores ?? []));
     overrides.push(...(layer.overrides ?? []));
+    for (const dir of layer.notes?.dirs ?? []) {
+      if (!noteDirs.includes(dir)) noteDirs.push(dir);
+    }
   }
 
   for (const id of Object.keys(rules)) {
-    policy[id] = policy[id] ?? { persistence: "ephemeral" };
+    policy[id] = policy[id] ?? { persistence: "ephemeral", resolution: "agent" };
   }
 
   for (const id of Object.keys(policy)) {
@@ -137,9 +170,10 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
     files,
     ignores,
     overrides,
+    noteDirs,
   };
 }
 
 export function policyForRule(config: NormalizedConfig, ruleId: string): Required<RulePolicy> {
-  return config.policy[ruleId] ?? { persistence: "ephemeral" };
+  return config.policy[ruleId] ?? { persistence: "ephemeral", resolution: "agent" };
 }

@@ -37,3 +37,9 @@ Thumbs.db
 !.agents/learn/
 !.agents/learn/**
 .claude/
+
+# Generated i18n runtime
+apps/review/src/paraglide/
+
+# Local package tarballs
+local-packages/

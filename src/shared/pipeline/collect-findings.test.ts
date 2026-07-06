@@ -8,6 +8,7 @@ import { Env } from "../../config/env.js";
 import { defineConfig, defineRule } from "../../index.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git.js";
+import { NotesStore } from "../infrastructure/notes-store.js";
 import { Parser } from "../infrastructure/parser.js";
 import { collectFindings } from "./collect-findings.js";
 
@@ -26,10 +27,11 @@ function testLayer(config: ReturnType<typeof defineConfig>) {
     Git.of({
       detectDefaultBranch: () => Effect.succeed("main"),
       changedFiles: () => Effect.succeed([]),
+      showFile: () => Effect.succeed(undefined),
     }),
   );
 
-  return Layer.mergeAll(TestConfigLoader, Parser.layer, TestGit).pipe(
+  return Layer.mergeAll(TestConfigLoader, Parser.layer, TestGit, NotesStore.layer).pipe(
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(Env.layer),
   );

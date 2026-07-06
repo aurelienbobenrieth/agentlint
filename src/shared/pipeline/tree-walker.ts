@@ -8,7 +8,6 @@
  * @module
  */
 
-import { Effect, HashMap, Option } from "effect";
 import type { Tree, TreeCursor } from "web-tree-sitter";
 import { type AgentlintNode, wrapNode } from "../../domain/node.js";
 import type { FindingRecord } from "../../domain/finding.js";
@@ -28,16 +27,6 @@ interface RuleEntry {
 }
 
 /**
- * A single handler entry in the dispatch table, keyed by node type.
- *
- * @since 0.1.0
- * @category models
- */
-interface DispatchHandler {
-  readonly handler: VisitorHandler;
-}
-
-/**
  * Walk files with the given rules, collecting all flags.
  *
  * Call this once per file. The caller is responsible for:
@@ -54,34 +43,27 @@ export function visitorKeys(visitors: Visitors): ReadonlyArray<string> {
 }
 
 export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyArray<FindingRecord> {
-  const dispatchTable: HashMap.HashMap<string, DispatchHandler[]> = HashMap.mutate(
-    HashMap.empty<string, DispatchHandler[]>(),
-    (m) => {
-      for (const entry of rules) {
-        for (const key of visitorKeys(entry.visitors)) {
-          const handler = entry.visitors[key];
-
-          const existing = Option.getOrUndefined(HashMap.get(m, key));
-          if (existing) {
-            existing.push({ handler: handler as VisitorHandler });
-          } else {
-            HashMap.set(m, key, [{ handler: handler as VisitorHandler }]);
-          }
-        }
+  const dispatchTable = new Map<string, VisitorHandler[]>();
+  for (const entry of rules) {
+    for (const key of visitorKeys(entry.visitors)) {
+      const handler = entry.visitors[key] as VisitorHandler;
+      const existing = dispatchTable.get(key);
+      if (existing) {
+        existing.push(handler);
+      } else {
+        dispatchTable.set(key, [handler]);
       }
-    },
-  );
+    }
+  }
 
   const cursor: TreeCursor = tree.walk();
   let reachedEnd = false;
 
   while (!reachedEnd) {
-    const nodeType = cursor.nodeType;
-
-    const handlers = Option.getOrUndefined(HashMap.get(dispatchTable, nodeType));
+    const handlers = dispatchTable.get(cursor.nodeType);
     if (handlers) {
       const wrapped: AgentlintNode = wrapNode(cursor.currentNode);
-      for (const { handler } of handlers) {
+      for (const handler of handlers) {
         handler(wrapped);
       }
     }
@@ -101,20 +83,4 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
   }
 
   return allFindings;
-}
-
-/**
- * Effect wrapper around {@link walkFile}.
- *
- * Runs the tree walk synchronously inside `Effect.sync`, making it
- * composable with the rest of the Effect pipeline.
- *
- * @since 0.1.0
- * @category constructors
- */
-export function walkFileEffect(
-  tree: Tree,
-  rules: ReadonlyArray<RuleEntry>,
-): Effect.Effect<ReadonlyArray<FindingRecord>> {
-  return Effect.sync(() => walkFile(tree, rules));
 }
