@@ -20,9 +20,26 @@ import { parseLiquidTree } from "./liquid-tree.js";
  * @since 0.1.0
  * @category errors
  */
-export class ParserError extends Schema.TaggedErrorClass<ParserError>()("ParserError", {
-  message: Schema.String,
-}) {}
+export class ParserError extends Schema.TaggedErrorClass<ParserError>()("agentlint/ParserError", {
+  reason: Schema.Literals(["wasm_missing", "unknown_grammar", "init_failed", "load_failed", "parse_failed"]),
+  grammar: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "wasm_missing":
+        return `WASM file not found: ${this.detail}`;
+      case "unknown_grammar":
+        return `Unknown grammar: ${this.grammar}`;
+      case "init_failed":
+        return `Parser failed to initialize${this.detail ? `: ${this.detail}` : ""}`;
+      case "load_failed":
+        return `Failed to load grammar ${this.grammar}: ${this.detail}`;
+      case "parse_failed":
+        return `Parse failed${this.grammar ? ` (${this.grammar})` : ""}: ${this.detail ?? "parser returned null tree"}`;
+    }
+  }
+}
 
 /**
  * Maps grammar names to their corresponding `.wasm` filenames.
@@ -95,7 +112,7 @@ export class Parser extends Context.Service<
             if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
           }
 
-          return yield* new ParserError({ message: `WASM file not found: ${filename}` });
+          return yield* new ParserError({ reason: "wasm_missing", detail: filename });
         });
 
       let parserInstance: TSParser | undefined;
@@ -109,10 +126,11 @@ export class Parser extends Context.Service<
             await TSParser.init({ locateFile: () => initPath });
             parserInstance = new TSParser();
           },
-          catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+          catch: (error) =>
+            new ParserError({ reason: "init_failed", detail: error instanceof Error ? error.message : String(error) }),
         });
         const parser = parserInstance;
-        if (!parser) return yield* new ParserError({ message: "Parser failed to initialize" });
+        if (!parser) return yield* new ParserError({ reason: "init_failed" });
         return parser;
       });
 
@@ -122,12 +140,17 @@ export class Parser extends Context.Service<
           if (cached) return cached;
 
           const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
-          if (!file) return yield* new ParserError({ message: `Unknown grammar: ${grammar}` });
+          if (!file) return yield* new ParserError({ reason: "unknown_grammar", grammar });
 
           const wasmPath = yield* resolveWasmPath(file);
           const lang = yield* Effect.tryPromise({
             try: () => Language.load(wasmPath),
-            catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+            catch: (error) =>
+              new ParserError({
+                reason: "load_failed",
+                grammar,
+                detail: error instanceof Error ? error.message : String(error),
+              }),
           });
           languageCache = HashMap.set(languageCache, grammar, lang);
           return lang;
@@ -139,7 +162,12 @@ export class Parser extends Context.Service<
             if (grammar === "liquid") {
               return yield* Effect.try({
                 try: () => parseLiquidTree(source),
-                catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+                catch: (error) =>
+                  new ParserError({
+                    reason: "parse_failed",
+                    grammar,
+                    detail: error instanceof Error ? error.message : String(error),
+                  }),
               });
             }
 
@@ -147,7 +175,7 @@ export class Parser extends Context.Service<
             const lang = yield* loadLanguage(grammar);
             parser.setLanguage(lang);
             const tree = parser.parse(source);
-            if (!tree) return yield* new ParserError({ message: "Parser returned null tree" });
+            if (!tree) return yield* new ParserError({ reason: "parse_failed", grammar });
             return tree;
           }),
 

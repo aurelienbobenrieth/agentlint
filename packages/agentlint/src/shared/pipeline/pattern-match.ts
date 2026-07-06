@@ -33,9 +33,25 @@ import { Parser } from "../infrastructure/parser.js";
  * @since 0.2.0
  * @category errors
  */
-export class PatternError extends Schema.TaggedErrorClass<PatternError>()("PatternError", {
-  message: Schema.String,
-}) {}
+export class PatternError extends Schema.TaggedErrorClass<PatternError>()("agentlint/PatternError", {
+  ruleId: Schema.String,
+  reason: Schema.Literals(["pattern_parse", "query_invalid", "unsupported_frontend", "unknown_fixture_grammar"]),
+  grammar: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "pattern_parse":
+        return `Rule ${this.ruleId}: pattern does not parse as ${this.grammar}: ${this.detail}`;
+      case "query_invalid":
+        return `Rule ${this.ruleId}: invalid tree-sitter query: ${this.detail}`;
+      case "unsupported_frontend":
+        return `Rule ${this.ruleId}: "query" matches are not supported for the ${this.grammar} frontend`;
+      case "unknown_fixture_grammar":
+        return `Rule ${this.ruleId}: no grammar registered for fixture file "${this.detail}"`;
+    }
+  }
+}
 
 const SINGLE_METAVAR = /^\$[A-Z_][A-Z0-9_]*$/;
 const MULTI_METAVAR = /^\$\$\$[A-Z0-9_]*$/;
@@ -207,9 +223,7 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
 
   if (fallback) return fallback;
 
-  return yield* new PatternError({
-    message: `Rule ${ruleId}: pattern does not parse as ${grammar}: ${pattern}`,
-  });
+  return yield* new PatternError({ ruleId, reason: "pattern_parse", grammar, detail: pattern });
 });
 
 /**
@@ -237,14 +251,18 @@ export const compileMatches = Effect.fn("compileMatches")(function* (input: Comp
       const language = yield* parser.language(input.grammar);
       if (!language) {
         return yield* new PatternError({
-          message: `Rule ${input.ruleId}: "query" matches are not supported for the ${input.grammar} frontend`,
+          ruleId: input.ruleId,
+          reason: "unsupported_frontend",
+          grammar: input.grammar,
         });
       }
       const query = yield* Effect.try({
         try: () => new Query(language, match.query ?? ""),
         catch: (error) =>
           new PatternError({
-            message: `Rule ${input.ruleId}: invalid tree-sitter query: ${error instanceof Error ? error.message : String(error)}`,
+            ruleId: input.ruleId,
+            reason: "query_invalid",
+            detail: error instanceof Error ? error.message : String(error),
           }),
       });
       compiled.push({ kind: "query", query, message: match.message });

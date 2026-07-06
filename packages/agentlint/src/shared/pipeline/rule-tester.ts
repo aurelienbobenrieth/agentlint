@@ -36,7 +36,7 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
   const extension = file.includes(".") ? (file.split(".").pop() ?? "") : "";
   const grammar = grammarForExtension(extension);
   if (!grammar) {
-    return yield* new PatternError({ message: `No grammar registered for fixture file "${file}"` });
+    return yield* new PatternError({ ruleId: rule.id, reason: "unknown_fixture_grammar", detail: file });
   }
 
   const context = new RuleContextImpl(rule.id);

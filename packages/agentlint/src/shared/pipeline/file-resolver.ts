@@ -19,9 +19,13 @@ import picomatch from "picomatch";
  * @since 0.1.0
  * @category errors
  */
-export class FileResolverError extends Schema.TaggedErrorClass<FileResolverError>()("FileResolverError", {
-  message: Schema.String,
-}) {}
+export class FileResolverError extends Schema.TaggedErrorClass<FileResolverError>()("agentlint/FileResolverError", {
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return `Git error: ${this.detail}`;
+  }
+}
 
 /**
  * Options controlling which files enter the lint pipeline.
@@ -133,7 +137,7 @@ export function resolveFiles(
     } else {
       const changed = yield* Effect.mapError(
         gitService.changedFiles(options.baseRef),
-        (e) => new FileResolverError({ message: `Git error: ${e}` }),
+        (e) => new FileResolverError({ detail: String(e) }),
       );
       candidates = [...changed];
     }

@@ -16,9 +16,13 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
  * @since 0.1.0
  * @category errors
  */
-export class GitError extends Schema.TaggedErrorClass<GitError>()("GitError", {
-  message: Schema.String,
-}) {}
+export class GitError extends Schema.TaggedErrorClass<GitError>()("agentlint/GitError", {
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return `Git operation failed: ${this.detail}`;
+  }
+}
 
 /**
  * Execute a git command and return trimmed stdout.
@@ -125,12 +129,12 @@ export class Git extends Context.Service<
 
       return Git.of({
         detectDefaultBranch: () =>
-          provide(detectDefault(env.cwd)).pipe(Effect.mapError((e) => new GitError({ message: String(e) }))),
+          provide(detectDefault(env.cwd)).pipe(Effect.mapError((e) => new GitError({ detail: String(e) }))),
 
         changedFiles: (baseRef) =>
           (baseRef ? Effect.succeed(baseRef) : provide(detectDefault(env.cwd))).pipe(
             Effect.flatMap((base) => provide(collectChangedFiles(env.cwd, base))),
-            Effect.mapError((e) => new GitError({ message: String(e) })),
+            Effect.mapError((e) => new GitError({ detail: String(e) })),
           ),
 
         showFile: (ref, filePath) =>

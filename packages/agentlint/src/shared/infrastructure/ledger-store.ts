@@ -27,9 +27,21 @@ export class LedgerRecord extends Schema.Class<LedgerRecord>("LedgerRecord")({
   adr: Schema.optional(Schema.String),
 }) {}
 
-export class LedgerError extends Schema.TaggedErrorClass<LedgerError>()("LedgerError", {
-  message: Schema.String,
-}) {}
+/* Tagged errors carry structured fields and derive `message` from them: a
+ * stringly `message` field loses the discriminant for programmatic handling,
+ * and unlabeled failures render as noise in telemetry and Cause output. */
+
+export class LedgerError extends Schema.TaggedErrorClass<LedgerError>()("agentlint/LedgerError", {
+  reason: Schema.Literals(["invalid_record", "io"]),
+  detail: Schema.String,
+  line: Schema.optional(Schema.Number),
+}) {
+  override get message(): string {
+    return this.reason === "invalid_record"
+      ? `Invalid ledger record on line ${this.line ?? "?"}: ${this.detail}`
+      : `Ledger I/O failed: ${this.detail}`;
+  }
+}
 
 export interface LedgerSnapshot {
   readonly records: ReadonlyArray<LedgerRecord>;
@@ -62,8 +74,8 @@ export function parseLedger(content: string): LedgerRecord[] {
     try {
       records.push(LedgerDecoder(JSON.parse(line)));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new LedgerError({ message: `Invalid ledger record on line ${index + 1}: ${message}` });
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new LedgerError({ reason: "invalid_record", detail, line: index + 1 });
     }
   }
 
@@ -97,14 +109,12 @@ export class LedgerStore extends Context.Service<
           Effect.flatMap((exists) => {
             if (!exists) return Effect.succeed([] as LedgerRecord[]);
             return fs.readFileString(ledgerPath).pipe(
-              Effect.mapError((error) => new LedgerError({ message: String(error) })),
+              Effect.mapError((error) => new LedgerError({ reason: "io", detail: String(error) })),
               Effect.flatMap((content) =>
                 Effect.try({
                   try: () => parseLedger(content),
                   catch: (error) =>
-                    new LedgerError({
-                      message: error instanceof LedgerError ? error.message : String(error),
-                    }),
+                    error instanceof LedgerError ? error : new LedgerError({ reason: "io", detail: String(error) }),
                 }),
               ),
             );
@@ -131,10 +141,10 @@ export class LedgerStore extends Context.Service<
 
             yield* fs
               .makeDirectory(ledgerDir, { recursive: true })
-              .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
+              .pipe(Effect.mapError((error) => new LedgerError({ reason: "io", detail: String(error) })));
             yield* fs
               .writeFileString(ledgerPath, JSON.stringify(record) + "\n", { flag: "a" })
-              .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
+              .pipe(Effect.mapError((error) => new LedgerError({ reason: "io", detail: String(error) })));
             return { appended: true };
           }),
 
@@ -145,10 +155,10 @@ export class LedgerStore extends Context.Service<
             }
             yield* fs
               .makeDirectory(ledgerDir, { recursive: true })
-              .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
+              .pipe(Effect.mapError((error) => new LedgerError({ reason: "io", detail: String(error) })));
             yield* fs
               .writeFileString(ledgerPath, serializeLedger(records))
-              .pipe(Effect.mapError((error) => new LedgerError({ message: String(error) })));
+              .pipe(Effect.mapError((error) => new LedgerError({ reason: "io", detail: String(error) })));
           }),
       });
     }),

@@ -21,9 +21,22 @@ import type { AgentlintConfig } from "../../domain/config.js";
  * @since 0.1.0
  * @category errors
  */
-export class ConfigError extends Schema.TaggedErrorClass<ConfigError>()("ConfigError", {
-  message: Schema.String,
-}) {}
+export class ConfigError extends Schema.TaggedErrorClass<ConfigError>()("agentlint/ConfigError", {
+  reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
+  path: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "not_found":
+        return `No agentlint config found. Create .agentlint/config.ts in ${this.path}`;
+      case "import_failed":
+        return `Failed to load ${this.path}: ${this.detail}`;
+      case "invalid_shape":
+        return `Invalid config at ${this.path}: must export an agentlint config object`;
+    }
+  }
+}
 
 /**
  * Project-relative config file path.
@@ -45,9 +58,7 @@ const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string)
     if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
       return candidate;
     }
-    return yield* new ConfigError({
-      message: `No agentlint config found. Create .agentlint/config.ts in ${cwd}`,
-    });
+    return yield* new ConfigError({ reason: "not_found", path: cwd });
   });
 
 /**
@@ -101,14 +112,14 @@ export class ConfigLoader extends Context.Service<
               },
               catch: (error) =>
                 new ConfigError({
-                  message: error instanceof Error ? error.message : String(error),
+                  reason: "import_failed",
+                  path: configPath,
+                  detail: error instanceof Error ? error.message : String(error),
                 }),
             });
 
             if (!config || typeof config !== "object") {
-              return yield* new ConfigError({
-                message: `Invalid config at ${configPath}: must export an agentlint config object`,
-              });
+              return yield* new ConfigError({ reason: "invalid_shape", path: configPath });
             }
 
             return config;

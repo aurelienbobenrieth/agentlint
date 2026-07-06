@@ -27,9 +27,16 @@ import { applyReviewAction, buildReviewPayload, writeReviewFeedback, type Review
 /** Services the review session needs at runtime. */
 type ReviewServices = Env | FileSystem.FileSystem | Path.Path | ConfigLoader | Git | LedgerStore | NotesStore | Parser;
 
-export class ReviewServerError extends Schema.TaggedErrorClass<ReviewServerError>()("ReviewServerError", {
-  message: Schema.String,
-}) {}
+export class ReviewServerError extends Schema.TaggedErrorClass<ReviewServerError>()("agentlint/ReviewServerError", {
+  reason: Schema.Literals(["assets_missing", "listen_failed"]),
+  detail: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    return this.reason === "assets_missing"
+      ? "Review UI assets not found. Rebuild the package (pnpm build) or reinstall agentlint."
+      : `Review server failed to listen: ${this.detail}`;
+  }
+}
 
 const ActionDecoder = Schema.decodeUnknownSync(ReviewAction);
 
@@ -108,9 +115,7 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
     }
   }
   if (!uiDir) {
-    return yield* new ReviewServerError({
-      message: "Review UI assets not found. Rebuild the package (pnpm build) or reinstall agentlint.",
-    });
+    return yield* new ReviewServerError({ reason: "assets_missing" });
   }
   const assetsRoot = uiDir;
 
@@ -194,7 +199,7 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
     });
 
     server.on("error", (error) => {
-      resume(Effect.fail(new ReviewServerError({ message: error.message })));
+      resume(Effect.fail(new ReviewServerError({ reason: "listen_failed", detail: error.message })));
     });
 
     server.listen(options.port, "127.0.0.1", () => {
