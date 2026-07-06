@@ -30,6 +30,7 @@ const EXTENSION_TO_GRAMMAR: HashMap.HashMap<string, string> = HashMap.make(
   ["mjs", "javascript"],
   ["cjs", "javascript"],
   ["json", "json"],
+  ["liquid", "liquid"],
 );
 
 /**

@@ -25,7 +25,7 @@ const STARTER_CONFIG = `import { defineConfig } from "@aurelienbbn/agentlint"
 export default defineConfig({
   rules: {},
   files: ["src/**/*.{ts,tsx,js,jsx}"],
-  ignores: ["**/*.test.*", "**/*.spec.*"],
+  ignores: [],
 })
 `;
 

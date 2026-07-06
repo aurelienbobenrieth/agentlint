@@ -11,6 +11,7 @@
 import { Context, Effect, FileSystem, HashMap, Layer, Option, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
+import { parseLiquidTree } from "./liquid-tree.js";
 
 /**
  * Raised when parsing fails — e.g. missing grammar, corrupt WASM, or
@@ -97,6 +98,13 @@ export class Parser extends Context.Service<
       return Parser.of({
         parse: (source, grammar) =>
           Effect.gen(function* () {
+            if (grammar === "liquid") {
+              return yield* Effect.try({
+                try: () => parseLiquidTree(source),
+                catch: (error) => new ParserError({ message: error instanceof Error ? error.message : String(error) }),
+              });
+            }
+
             if (!parserInstance) {
               const initPath = yield* resolveWasmPath("tree-sitter.wasm");
               yield* Effect.tryPromise({
