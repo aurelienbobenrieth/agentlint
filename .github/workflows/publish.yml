@@ -34,7 +34,7 @@ jobs:
       - name: Validate tag matches package version
         run: |
           TAG="${GITHUB_REF_NAME}"
-          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          PKG_VERSION="v$(node -p "require('./packages/agentlint/package.json').version")"
           if [ "$TAG" != "$PKG_VERSION" ]; then
             echo "::error::Tag $TAG does not match package version $PKG_VERSION"
             exit 1
@@ -52,7 +52,7 @@ jobs:
         run: pnpm run build
 
       - name: Publish package
-        run: pnpm publish --access public --no-git-checks --provenance
+        run: pnpm publish --filter @aurelienbbn/agentlint --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -22,7 +22,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: resolve(__dirname, "..", "..", "dist", "ui"),
+    outDir: resolve(__dirname, "..", "..", "packages", "agentlint", "dist", "ui"),
     emptyOutDir: true,
   },
   server: {

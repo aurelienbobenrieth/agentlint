@@ -1,72 +1,32 @@
 {
-  "name": "@aurelienbbn/agentlint",
-  "version": "0.2.0",
-  "description": "Deterministic triggers for contextual agent guidance and accountable resolution",
-  "keywords": [
-    "agent",
-    "ai",
-    "ast",
-    "code-review",
-    "linter",
-    "tanstack-intent",
-    "tree-sitter"
-  ],
+  "name": "agentlint-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace for agentlint: deterministic triggers for contextual agent guidance and accountable resolution.",
   "license": "MIT",
   "author": "Aurelien Bobenrieth",
   "repository": {
     "type": "git",
     "url": "https://github.com/aurelienbobenrieth/agentlint"
   },
-  "bin": {
-    "agentlint": "dist/bin.mjs"
-  },
-  "files": [
-    "dist",
-    "skills",
-    "!skills/_artifacts"
-  ],
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs"
-    }
-  },
   "scripts": {
-    "build": "tsdown && pnpm --filter @agentlint/review build",
-    "prepack": "pnpm build",
-    "typecheck": "tsc --noEmit && pnpm --filter @agentlint/ui typecheck && pnpm --filter @agentlint/review typecheck",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "build": "pnpm --filter @aurelienbbn/agentlint build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @aurelienbbn/agentlint test",
+    "test:watch": "pnpm --filter @aurelienbbn/agentlint test:watch",
     "lint": "oxlint",
     "fmt": "oxfmt --write",
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
-    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate && pnpm test"
-  },
-  "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.85",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@shopify/liquid-html-parser": "^2.9.2",
-    "effect": "4.0.0-beta.85",
-    "jiti": "^2.7.0",
-    "picomatch": "^4.0.4",
-    "web-tree-sitter": "^0.25.10",
-    "zod": "^4.4.3"
+    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
-    "@effect/language-service": "^0.86.2",
     "@tanstack/intent": "latest",
-    "@types/node": "^22.20.0",
-    "@types/picomatch": "^4.0.3",
     "oxfmt": "latest",
-    "oxlint": "^1.71.0",
-    "tree-sitter-wasms": "^0.1.13",
-    "tsdown": "latest",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "oxlint": "^1.71.0"
   },
   "engines": {
     "node": ">=22"
