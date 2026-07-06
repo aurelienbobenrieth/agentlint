@@ -64,11 +64,7 @@ describe("pattern matching", () => {
   it("supports where.notHas constraints against the matched subtree", async () => {
     const rule = patternRule("useQuery($$$ARGS)", "unbounded", { notHas: "limit: $_" });
     const findings = await run(
-      runRuleOnSource(
-        rule,
-        "useQuery({ queryKey: ['a'] }); useQuery({ queryKey: ['b'], limit: 10 });",
-        "fixture.tsx",
-      ),
+      runRuleOnSource(rule, "useQuery({ queryKey: ['a'] }); useQuery({ queryKey: ['b'], limit: 10 });", "fixture.tsx"),
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]?.sourceSnippet).toContain("'a'");
@@ -76,9 +72,7 @@ describe("pattern matching", () => {
 
   it("supports where.has constraints", async () => {
     const rule = patternRule("it($$$ARGS)", "focused test", { has: "only" });
-    const findings = await run(
-      runRuleOnSource(rule, "it('a', () => {}); it.skip('b', () => {});", "fixture.ts"),
-    );
+    const findings = await run(runRuleOnSource(rule, "it('a', () => {}); it.skip('b', () => {});", "fixture.ts"));
     expect(findings).toHaveLength(0);
   });
 
@@ -101,9 +95,7 @@ describe("pattern matching", () => {
 
   it("fails loudly when a pattern does not parse", async () => {
     const rule = patternRule("useQuery(((");
-    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow(
-      "pattern does not parse",
-    );
+    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow("pattern does not parse");
   });
 
   it("fails loudly when a query is malformed", async () => {
@@ -113,9 +105,7 @@ describe("pattern matching", () => {
       guidance: "Test standard.",
       match: [{ query: "(call_expression", message: "x" }],
     });
-    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow(
-      "invalid tree-sitter query",
-    );
+    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow("invalid tree-sitter query");
   });
 });
 
@@ -155,9 +145,9 @@ describe("rule fixtures", () => {
 
 describe("defineRule validation", () => {
   it("rejects rules with neither match nor createOnce", () => {
-    expect(() =>
-      defineRule({ id: "x/y", description: "d", guidance: "g" }),
-    ).toThrow('must define "match" or "createOnce"');
+    expect(() => defineRule({ id: "x/y", description: "d", guidance: "g" })).toThrow(
+      'must define "match" or "createOnce"',
+    );
   });
 
   it("rejects matches with both pattern and query", () => {

@@ -16,7 +16,7 @@ import { RuleContextImpl } from "../../domain/rule-context.js";
 import { Parser } from "../infrastructure/parser.js";
 import { grammarForExtension } from "./language-map.js";
 import { compileMatches, PatternError, resolveWhereClauses, runMatches } from "./pattern-match.js";
-import { visitorKeys, walkFile } from "./tree-walker.js";
+import { walkFile } from "./tree-walker.js";
 
 /**
  * Run a single rule against one in-memory source snippet.
@@ -53,9 +53,7 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
     runMatches(tree, runnable, context);
   }
 
-  const findings = [
-    ...walkFile(tree, [{ ruleId: rule.id, context, visitors }]),
-  ];
+  const findings = [...walkFile(tree, [{ ruleId: rule.id, context, visitors }])];
   visitors.after?.();
   findings.push(...context.drainFindings());
   return findings as ReadonlyArray<FindingRecord>;

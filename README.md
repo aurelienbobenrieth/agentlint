@@ -6,28 +6,31 @@
 
 Deterministic triggers for contextual agent guidance and accountable resolution.
 
-agentlint parses code with tree-sitter, runs visitor-based rules, and prints concise findings for a coding agent or human to handle. It does not call an AI model and does not need an API key. Its job is to surface code patterns where the right outcome requires judgment, then block completion until each finding is fixed or explicitly resolved.
+agentlint parses code with tree-sitter, runs declarative pattern rules, and prints concise findings for a coding agent or human to handle. It does not call an AI model and does not need an API key. Its job is to surface code patterns where the right outcome requires judgment, then block completion until each finding is fixed or explicitly resolved — with a committed, reviewable trail of who resolved what and why.
+
+Classic linters handle mechanical violations with one correct fix. Skills and prompts activate probabilistically. agentlint covers the gap between them: **deterministic activation, judgment-based resolution, accountable ledger**.
 
 ## Model
 
 ```
-code -> tree-sitter AST -> rule visitors -> findings
-findings -> fix code or record a disposition -> rerun check
+code -> tree-sitter AST -> pattern matches -> findings
+findings -> fix code, record a disposition, or request human approval -> rerun check
 ```
 
-- A finding is a concrete matched instance.
-- Guidance is the reusable standard attached to a rule. `standard` and short `checks` are the normal agent feedback; `examples` and `refs` calibrate edge cases through `explain`.
-- A disposition is an explicit outcome: accepted, deferred, no-fix, or approved.
-- The ledger is `.agentlint/ledger.jsonl`, a committed JSONL record of resolved findings.
-- `.agentlint/.cache/` stores latest-check selectors and is gitignored.
+- A **finding** is a concrete matched instance, identified by a stable content hash.
+- **Guidance** is the reusable standard attached to a rule. `standard` and short `checks` are the normal feedback; `examples` and `refs` calibrate edge cases through `explain` (incremental disclosure — nothing bloats base context).
+- A **disposition** is an explicit outcome: `accepted`, `deferred`, `no-fix`, `approval-requested`, or `approved`.
+- The **ledger** is `.agentlint/ledger.jsonl`, a committed JSONL record of dispositions. It is read mechanically on every `check`, so it gates merges instead of being write-only documentation. Dispositions are pinned to code hashes: change the code and the disposition invalidates automatically.
+- **Human-gated rules** (`resolution: "human"`) cannot be self-accepted by agents. Agents fix the code or `--request-approval`; only a human `approve` (CLI or review UI) unblocks CI.
+- **Learned notes** (`.agents/learn/*.md`) carry situational knowledge with trigger frontmatter. Matching notes surface as non-blocking context lines — determinism when a trigger exists, `rg` search as the fallback.
 
 ## Quick Start
 
-Install with the package manager already used by the repo:
-
 ```bash
 pnpm add -D @aurelienbbn/agentlint
-pnpm agentlint init
+pnpm agentlint init                          # config + gitignore
+pnpm agentlint init --harness claude-code    # optional: PostToolUse hook
+pnpm agentlint init --harness pre-commit     # optional: commit gate
 ```
 
 Create or edit `.agentlint/config.ts`:
@@ -35,33 +38,34 @@ Create or edit `.agentlint/config.ts`:
 ```ts
 import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
-const noNoiseComments = defineRule({
-  id: "comments/no-noise",
-  description: "Flags comments that need a value judgment.",
+const boundedFindMany = defineRule({
+  id: "data/bounded-find-many",
+  description: "Flags findMany calls that need a bound or pagination review.",
   guidance: {
-    standard: "Comments should add durable context beyond the code.",
-    checks: [
-      "Remove comments that only restate obvious implementation details.",
-      "Keep comments that explain non-obvious constraints, external contracts, or tradeoffs.",
-    ],
+    standard: "Queries that grow with production data need an explicit bound, cursor, or pagination contract.",
+    checks: ["Pagination, cursors, limits, or a documented finite dataset satisfy the standard."],
   },
-  createOnce(context) {
-    return {
-      comment(node) {
-        const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text.length === 0) return;
-        context.report({ node, message: `Comment: "${text.slice(0, 60)}"` });
-      },
-    };
+  match: [
+    {
+      pattern: "$DB.findMany($$$ARGS)",
+      where: { notHas: "take: $_" },
+      message: "findMany on $DB has no explicit bound.",
+    },
+  ],
+  fixtures: {
+    invalid: ["await db.users.findMany({});"],
+    valid: ["await db.users.findMany({ take: 50 });"],
   },
 });
 
 export default defineConfig({
   rules: {
-    "comments/no-noise": noNoiseComments,
+    "data/bounded-find-many": boundedFindMany,
   },
   policy: {
-    "comments/no-noise": { persistence: "ephemeral" },
+    "data/bounded-find-many": { persistence: "ephemeral" },
+    // Human-gated example: agents can request, only humans approve.
+    // "danger/lossy-migration": { persistence: "durable", resolution: "human" },
   },
   files: ["src/**/*.{ts,tsx,js,jsx}"],
   ignores: ["**/*.test.*", "**/*.spec.*"],
@@ -72,69 +76,117 @@ Run the loop:
 
 ```bash
 pnpm agentlint check
-pnpm agentlint explain 1 # when examples, refs, or ledger context are needed
-pnpm agentlint resolve 1 --accept --reason "The comment explains a non-obvious integration constraint."
+pnpm agentlint explain 1                     # examples, refs, ledger context on demand
+pnpm agentlint resolve 1 --accept --reason "Bounded by org size, max ~200 rows."
 pnpm agentlint check
 ```
 
 Use `--format jsonl` when an agent harness wants one machine-readable object per finding.
 
+## Writing rules
+
+`match` is the primary authoring surface — you write code shapes, not visitor plumbing:
+
+- `pattern` is **code-shaped** and matched structurally against the parsed file. Metavariables: `$NAME` captures one node, `$_` matches one node without capturing, `$$$ARGS` matches remaining siblings. `useQuery($$$ARGS)` matches the call by callee, not by substring — strings, comments, and wrapper calls never false-positive.
+- `where: { has, notHas }` constrains the matched subtree with sub-patterns (`notHas: "limit: $_"` checks object properties structurally).
+- `query` accepts a raw tree-sitter query for grammar-level precision. The `@match` capture designates the reported node.
+- `message` interpolates captures: `"findMany on $DB has no explicit bound."`
+- `fixtures.invalid` / `fixtures.valid` are inline proof of trigger precision, run by `agentlint rules test`. A rule ships with evidence of its own false-positive rate.
+- `createOnce(context)` remains the imperative escape hatch for stateful or cross-node logic (visitors keyed by node type, `before`/`after` hooks).
+
+Bad patterns fail loudly at compile time instead of silently never firing.
+
 ## CLI
 
 ### `agentlint check [files...]`
 
-Scans changed files by default. Exit code `1` means unresolved findings exist, not that the tool crashed. Text output includes each finding's local message, compact standard, and short checks. JSONL includes the same actionable guidance for agent harnesses.
+Scans changed files by default. Exit code `1` means blocking findings exist, not that the tool crashed.
 
-| Flag             | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `--all`          | Scan all files under the project            |
-| `--base <ref>`   | Compare changed files against a git ref     |
-| `--rule <id>`    | Run only one rule id or comma-separated ids |
-| `--format text`  | Print the default compact terminal output   |
-| `--format jsonl` | Print one JSON object per displayed finding |
-| `--ci`           | Treat deferred findings as blocking         |
+| Flag             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `--all`          | Scan all files under the project                         |
+| `--base <ref>`   | Compare changed files against a git ref                  |
+| `--rule <id>`    | Run only one rule id or comma-separated ids              |
+| `--format text`  | Print the default compact terminal output                |
+| `--format jsonl` | Print one JSON object per displayed finding              |
+| `--ci`           | Treat deferred and pending-approval findings as blocking |
 
-Local `check` blocks unresolved findings. `check --ci` blocks unresolved and deferred findings. Accepted, no-fix, and approved findings do not block while their hash still matches current code.
-
-### `agentlint explain <rule-id|selector>`
-
-Prints full guidance on demand, including examples and refs. Use selectors from the latest `check` output, such as `1`, `[1]`, a full hash, or `file:line` when unambiguous.
+Local `check` blocks unresolved findings only — an agent can finish its turn with an approval pending. `check --ci` also blocks deferred and pending-approval findings, so nothing merges without resolution.
 
 ### `agentlint resolve <selector>`
-
-Records a disposition in `.agentlint/ledger.jsonl`.
 
 ```bash
 agentlint resolve 1 --accept --reason "Acceptable here because ..."
 agentlint resolve 1 --defer --reason "Needs product decision after release."
 agentlint resolve 1 --no-fix --reason "Generated vendor code cannot be edited."
+agentlint resolve 1 --request-approval --reason "Drop is safe: data backfilled to users_v2."
 ```
 
-Every resolution needs a reason. Re-running the same disposition is idempotent.
+Every resolution needs a reason. `--accept` is refused on `resolution: "human"` rules. Selectors come from the latest `check` (`1`, `[1]`, a hash, or `file:line`); resolution re-verifies only the affected file.
 
-### `agentlint rules list`
+### `agentlint approve <selector>` (humans)
 
-Lists registered rule ids, descriptions, configured persistence, compact guidance, and whether each rule is enabled for an optional file:
+Records an `approved` disposition. Refused for `agent:` actors — the guard is accountability, not security: a forged actor is a visible, committed ledger line that PR review catches. Approvals stay valid only while the flagged code is unchanged.
 
-```bash
-agentlint rules list
-agentlint rules list --files src/page.tsx
-```
+### `agentlint review`
+
+Opens a local review UI (findings by status, code context, guidance with examples/refs toggles, per-rule filters). Approve or request changes with reasons; change requests are written to `.agentlint/review-feedback.md` and echoed to the terminal for the agent that launched the review. `--base <ref>` scopes the ledger delta; `--no-open` and `--port <n>` are available for automation.
 
 ### `agentlint ledger`
 
 ```bash
 agentlint ledger list
-agentlint ledger list --rule comments/no-noise
-agentlint ledger gc
-agentlint ledger gc --write
+agentlint ledger review --base main    # pending approvals + dispositions since ref
+agentlint ledger review --format jsonl # machine-readable, for PR bots
+agentlint ledger gc --write            # prune stale records
 ```
 
-`ledger gc` defaults to a dry run. Use `--write` to prune stale records whose findings no longer appear in current code.
+`ledger review` is the PR surface: reviewers read reasons, not diffs of `.jsonl`.
+
+### `agentlint rules`
+
+```bash
+agentlint rules list [--files path]
+agentlint rules test [--rule id]       # run fixtures: invalid => findings, valid => none
+```
+
+### `agentlint notes list`
+
+Lists learned notes and their triggers. Notes live in `.agents/learn/*.md`:
+
+```markdown
+---
+name: query-cache-gotcha
+description: useQuery cache keys must include all filter params
+triggers:
+  files: ["src/**/*.tsx"]
+  grep: "useQuery"
+---
+
+The body stays on disk until the reader opens it.
+```
+
+Matching notes appear as dim `Context notes` lines in `check` output — pointers, never bodies.
+
+### `agentlint mcp`
+
+Stdio MCP server exposing `check`, `explain`, `resolve`, `rules_list`, `rules_test`, and `ledger_review` as tools for any MCP-capable harness. `approve` is deliberately not exposed.
+
+### `agentlint hook claude-code`
+
+PostToolUse adapter: reads the hook payload from stdin, checks the edited file, and exits 2 with findings on stderr so Claude Code feeds them straight back to the model. Installed by `agentlint init --harness claude-code`.
+
+## Enforcement layers
+
+Determinism comes from the gates; hooks shorten feedback distance:
+
+1. **CI** — `agentlint check --ci` (universal, non-negotiable)
+2. **pre-commit** — `agentlint init --harness pre-commit` (harness-independent)
+3. **in-loop hooks / MCP** — per-harness accelerators (optional)
 
 ## Config
 
-Config owns routing and resolution policy. Rule definitions own only detection and guidance.
+Config owns routing and resolution policy. Rule definitions own detection and guidance.
 
 ```ts
 import { basePreset, defineConfig, frontendPreset } from "@aurelienbbn/agentlint";
@@ -144,32 +196,30 @@ export default defineConfig({
   rules: {},
   policy: {
     "data/bounded-query": { persistence: "ephemeral" },
-    "ui/query-state-coverage": { persistence: "ephemeral" },
+    "danger/lossy-migration": { persistence: "durable", resolution: "human" },
   },
   overrides: [
-    {
-      files: ["web/**/*.{tsx,jsx}"],
-      rules: {
-        "ui/query-state-coverage": "on",
-      },
-    },
-    {
-      files: ["**/*.test.*"],
-      rules: {
-        "ui/query-state-coverage": "off",
-      },
-    },
+    { files: ["web/**/*.{tsx,jsx}"], rules: { "ui/query-state-coverage": "on" } },
+    { files: ["**/*.test.*"], rules: { "ui/query-state-coverage": "off" } },
   ],
+  notes: { dirs: [".agents/learn"] },
 });
 ```
 
-Persistence defaults to `ephemeral`. Use `durable` for findings that represent consequential project decisions.
+- `persistence` defaults to `ephemeral`; use `durable` for consequential project decisions.
+- `resolution` defaults to `agent`; use `human` for findings a machine may flag but must not self-accept (lossy migrations, code deletion, auth changes).
 
-## Learned Notes
+## Testing rules programmatically
 
-Use `.agents/learn/` for rare, expensive debugging knowledge that should be searchable later but should not enter base context. Search it with `rg` when a bug looks familiar or platform-specific. Add a short note only after non-obvious investigation, using the template in `.agents/learn/_template.md`.
+```ts
+import { runRuleFixtures, runRuleOnSource } from "@aurelienbbn/agentlint";
+```
 
-Learned notes are separate from `.agentlint/ledger.jsonl`; the ledger records finding dispositions only.
+Both are exported for plugin authors who want rule assertions inside their own vitest suites.
+
+## Repository layout
+
+This repo is a pnpm workspace: the publishable package at the root, the review SPA in [apps/review](apps/review) (Vite + TanStack Router/Query + Paraglide i18n), and the presentational component library in [packages/ui](packages/ui) (COSS UI primitives + agentlint composition components).
 
 ## Contributing
 

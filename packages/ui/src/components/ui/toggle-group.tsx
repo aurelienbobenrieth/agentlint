@@ -6,14 +6,11 @@ import type { VariantProps } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "@ui/lib/utils";
 import { Separator } from "@ui/components/ui/separator";
-import {
-  Toggle as ToggleComponent,
-  type toggleVariants,
-} from "@ui/components/ui/toggle";
+import { Toggle as ToggleComponent, type toggleVariants } from "@ui/components/ui/toggle";
 
-export const ToggleGroupContext: React.Context<
+export const ToggleGroupContext: React.Context<VariantProps<typeof toggleVariants>> = React.createContext<
   VariantProps<typeof toggleVariants>
-> = React.createContext<VariantProps<typeof toggleVariants>>({
+>({
   size: "default",
   variant: "default",
 });
@@ -25,15 +22,12 @@ export function ToggleGroup({
   orientation = "horizontal",
   children,
   ...props
-}: ToggleGroupPrimitive.Props &
-  VariantProps<typeof toggleVariants>): React.ReactElement {
+}: ToggleGroupPrimitive.Props & VariantProps<typeof toggleVariants>): React.ReactElement {
   return (
     <ToggleGroupPrimitive
       className={cn(
         "flex w-fit *:focus-visible:z-10 dark:*:[[data-slot=separator]:has(+[data-slot=toggle]:hover)]:before:bg-input/64 dark:*:[[data-slot=separator]:has(+[data-slot=toggle][data-pressed])]:before:bg-input dark:*:[[data-slot=toggle]:hover+[data-slot=separator]]:before:bg-input/64 dark:*:[[data-slot=toggle][data-pressed]+[data-slot=separator]]:before:bg-input",
-        orientation === "horizontal"
-          ? "*:pointer-coarse:after:min-w-auto"
-          : "*:pointer-coarse:after:min-h-auto",
+        orientation === "horizontal" ? "*:pointer-coarse:after:min-w-auto" : "*:pointer-coarse:after:min-h-auto",
         variant === "default"
           ? "gap-0.5"
           : orientation === "horizontal"
@@ -47,9 +41,7 @@ export function ToggleGroup({
       orientation={orientation}
       {...props}
     >
-      <ToggleGroupContext.Provider value={{ size, variant }}>
-        {children}
-      </ToggleGroupContext.Provider>
+      <ToggleGroupContext.Provider value={{ size, variant }}>{children}</ToggleGroupContext.Provider>
     </ToggleGroupPrimitive>
   );
 }
@@ -60,8 +52,7 @@ export function ToggleGroupItem({
   variant,
   size,
   ...props
-}: TogglePrimitive.Props &
-  VariantProps<typeof toggleVariants>): React.ReactElement {
+}: TogglePrimitive.Props & VariantProps<typeof toggleVariants>): React.ReactElement {
   const context = React.useContext(ToggleGroupContext);
 
   const resolvedVariant = context.variant || variant;

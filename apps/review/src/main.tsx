@@ -1,21 +1,14 @@
 import { BlockStack, Button, InlineStack, Text, ThemeToggle, cn } from "@agentlint/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Link,
-  Outlet,
-  RouterProvider,
-} from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useFinishReview, useReviewState } from "@/api";
 import { m } from "@/paraglide/messages.js";
 import { getLocale, locales, setLocale } from "@/paraglide/runtime.js";
-import { FindingsPage } from "@/pages/FindingsPage";
-import { LedgerPage } from "@/pages/LedgerPage";
-import { RulesPage } from "@/pages/RulesPage";
+import { FindingsPage } from "@/pages/findings-page";
+import { LedgerPage } from "@/pages/ledger-page";
+import { RulesPage } from "@/pages/rules-page";
 import "./styles.css";
 
 function LocaleSwitch() {
@@ -27,7 +20,10 @@ function LocaleSwitch() {
           key={locale}
           variant="ghost"
           size="sm"
-          className={cn("rounded-none px-2 text-xs uppercase first:rounded-l-md last:rounded-r-md", locale === current && "bg-accent font-bold")}
+          className={cn(
+            "rounded-none px-2 text-xs uppercase first:rounded-l-md last:rounded-r-md",
+            locale === current && "bg-accent font-bold",
+          )}
           onClick={() => setLocale(locale)}
         >
           {locale}

@@ -36,10 +36,7 @@ export function NumberField({
   );
 }
 
-export function NumberFieldGroup({
-  className,
-  ...props
-}: NumberFieldPrimitive.Group.Props): React.ReactElement {
+export function NumberFieldGroup({ className, ...props }: NumberFieldPrimitive.Group.Props): React.ReactElement {
   return (
     <NumberFieldPrimitive.Group
       className={cn(
@@ -88,10 +85,7 @@ export function NumberFieldIncrement({
   );
 }
 
-export function NumberFieldInput({
-  className,
-  ...props
-}: NumberFieldPrimitive.Input.Props): React.ReactElement {
+export function NumberFieldInput({ className, ...props }: NumberFieldPrimitive.Input.Props): React.ReactElement {
   return (
     <NumberFieldPrimitive.Input
       className={cn(
@@ -114,9 +108,7 @@ export function NumberFieldScrubArea({
   const context = React.useContext(NumberFieldContext);
 
   if (!context) {
-    throw new Error(
-      "NumberFieldScrubArea must be used within a NumberField component for accessibility.",
-    );
+    throw new Error("NumberFieldScrubArea must be used within a NumberField component for accessibility.");
   }
 
   return (
@@ -135,9 +127,7 @@ export function NumberFieldScrubArea({
   );
 }
 
-export function CursorGrowIcon(
-  props: React.ComponentProps<"svg">,
-): React.ReactElement {
+export function CursorGrowIcon(props: React.ComponentProps<"svg">): React.ReactElement {
   return (
     <svg
       aria-hidden="true"

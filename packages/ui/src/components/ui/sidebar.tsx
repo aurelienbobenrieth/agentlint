@@ -11,19 +11,9 @@ import { Button } from "@ui/components/ui/button";
 import { Input } from "@ui/components/ui/input";
 import { ScrollArea } from "@ui/components/ui/scroll-area";
 import { Separator } from "@ui/components/ui/separator";
-import {
-  Sheet,
-  SheetDescription,
-  SheetHeader,
-  SheetPopup,
-  SheetTitle,
-} from "@ui/components/ui/sheet";
+import { Sheet, SheetDescription, SheetHeader, SheetPopup, SheetTitle } from "@ui/components/ui/sheet";
 import { Skeleton } from "@ui/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "@ui/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@ui/components/ui/tooltip";
 
 const SIDEBAR_COOKIE_NAME: string = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE: number = 60 * 60 * 24 * 7;
@@ -124,10 +114,7 @@ export function SidebarProvider({
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
+      if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         toggleSidebar();
       }
@@ -157,10 +144,7 @@ export function SidebarProvider({
   return (
     <SidebarContext.Provider value={contextValue}>
       <div
-        className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
-          className,
-        )}
+        className={cn("group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar", className)}
         data-slot="sidebar-wrapper"
         style={
           {
@@ -194,10 +178,7 @@ export function Sidebar({
   if (collapsible === "none") {
     return (
       <div
-        className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground",
-          className,
-        )}
+        className={cn("flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground", className)}
         data-slot="sidebar"
         {...props}
       >
@@ -305,10 +286,7 @@ export function SidebarTrigger({
   );
 }
 
-export function SidebarRail({
-  className,
-  ...props
-}: React.ComponentProps<"button">): React.ReactElement {
+export function SidebarRail({ className, ...props }: React.ComponentProps<"button">): React.ReactElement {
   const { toggleSidebar } = useSidebar();
 
   return (
@@ -334,10 +312,7 @@ export function SidebarRail({
   );
 }
 
-export function SidebarInset({
-  className,
-  ...props
-}: React.ComponentProps<"main">): React.ReactElement {
+export function SidebarInset({ className, ...props }: React.ComponentProps<"main">): React.ReactElement {
   return (
     <main
       className={cn(
@@ -351,10 +326,7 @@ export function SidebarInset({
   );
 }
 
-export function SidebarInput({
-  className,
-  ...props
-}: React.ComponentProps<typeof Input>): React.ReactElement {
+export function SidebarInput({ className, ...props }: React.ComponentProps<typeof Input>): React.ReactElement {
   return (
     <Input
       className={cn("h-8 w-full bg-background shadow-none", className)}
@@ -365,10 +337,7 @@ export function SidebarInput({
   );
 }
 
-export function SidebarHeader({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarHeader({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn("flex flex-col gap-2 p-2", className)}
@@ -379,10 +348,7 @@ export function SidebarHeader({
   );
 }
 
-export function SidebarFooter({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarFooter({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn("flex flex-col gap-2 p-2", className)}
@@ -393,10 +359,7 @@ export function SidebarFooter({
   );
 }
 
-export function SidebarSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof Separator>): React.ReactElement {
+export function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof Separator>): React.ReactElement {
   return (
     <Separator
       className={cn("mx-2 w-auto bg-sidebar-border", className)}
@@ -407,17 +370,11 @@ export function SidebarSeparator({
   );
 }
 
-export function SidebarContent({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarContent({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <ScrollArea className="min-h-0 flex-1" fill scrollFade>
       <div
-        className={cn(
-          "flex h-full flex-col gap-2 group-data-[collapsible=icon]:overflow-hidden",
-          className,
-        )}
+        className={cn("flex h-full flex-col gap-2 group-data-[collapsible=icon]:overflow-hidden", className)}
         data-sidebar="content"
         data-slot="sidebar-content"
         {...props}
@@ -426,10 +383,7 @@ export function SidebarContent({
   );
 }
 
-export function SidebarGroup({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarGroup({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
@@ -486,10 +440,7 @@ export function SidebarGroupAction({
   });
 }
 
-export function SidebarGroupContent({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarGroupContent({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn("w-full text-sm", className)}
@@ -500,10 +451,7 @@ export function SidebarGroupContent({
   );
 }
 
-export function SidebarMenu({
-  className,
-  ...props
-}: React.ComponentProps<"ul">): React.ReactElement {
+export function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">): React.ReactElement {
   return (
     <ul
       className={cn("flex w-full min-w-0 flex-col gap-1", className)}
@@ -514,10 +462,7 @@ export function SidebarMenu({
   );
 }
 
-export function SidebarMenuItem({
-  className,
-  ...props
-}: React.ComponentProps<"li">): React.ReactElement {
+export function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">): React.ReactElement {
   return (
     <li
       className={cn("group/menu-item relative", className)}
@@ -570,15 +515,8 @@ export function SidebarMenuButton({
 
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={buttonElement as React.ReactElement<Record<string, unknown>>}
-      />
-      <TooltipPopup
-        align="center"
-        hidden={state !== "collapsed" || isMobile}
-        side="right"
-        {...tooltip}
-      />
+      <TooltipTrigger render={buttonElement as React.ReactElement<Record<string, unknown>>} />
+      <TooltipPopup align="center" hidden={state !== "collapsed" || isMobile} side="right" {...tooltip} />
     </Tooltip>
   );
 }
@@ -615,10 +553,7 @@ export function SidebarMenuAction({
   });
 }
 
-export function SidebarMenuBadge({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn(
@@ -656,12 +591,7 @@ export function SidebarMenuSkeleton({
       data-slot="sidebar-menu-skeleton"
       {...props}
     >
-      {showIcon && (
-        <Skeleton
-          className="size-4 rounded-lg"
-          data-sidebar="menu-skeleton-icon"
-        />
-      )}
+      {showIcon && <Skeleton className="size-4 rounded-lg" data-sidebar="menu-skeleton-icon" />}
       <Skeleton
         className="h-4 max-w-(--skeleton-width) flex-1"
         data-sidebar="menu-skeleton-text"
@@ -675,10 +605,7 @@ export function SidebarMenuSkeleton({
   );
 }
 
-export function SidebarMenuSub({
-  className,
-  ...props
-}: React.ComponentProps<"ul">): React.ReactElement {
+export function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">): React.ReactElement {
   return (
     <ul
       className={cn(
@@ -693,10 +620,7 @@ export function SidebarMenuSub({
   );
 }
 
-export function SidebarMenuSubItem({
-  className,
-  ...props
-}: React.ComponentProps<"li">): React.ReactElement {
+export function SidebarMenuSubItem({ className, ...props }: React.ComponentProps<"li">): React.ReactElement {
   return (
     <li
       className={cn("group/menu-sub-item relative", className)}

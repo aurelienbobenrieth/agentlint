@@ -19,7 +19,7 @@
  */
 
 import { Effect, Schema } from "effect";
-import { Query, type Language, type Node as TSNode, type Tree } from "web-tree-sitter";
+import { Query, type Node as TSNode, type Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../../domain/node.js";
 import type { RuleMatch } from "../../domain/rule.js";
@@ -325,9 +325,7 @@ export const resolveWhereClauses = Effect.fn("resolveWhereClauses")(function* (
   for (const match of compiled) {
     if (match.kind !== "pattern") continue;
     const has =
-      match.where?.has !== undefined
-        ? (yield* compilePatternNode(ruleId, match.where.has, grammar)).node
-        : undefined;
+      match.where?.has !== undefined ? (yield* compilePatternNode(ruleId, match.where.has, grammar)).node : undefined;
     const notHas =
       match.where?.notHas !== undefined
         ? (yield* compilePatternNode(ruleId, match.where.notHas, grammar)).node

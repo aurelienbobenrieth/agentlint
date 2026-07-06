@@ -46,11 +46,13 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.85",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@shopify/liquid-html-parser": "^2.9.2",
     "effect": "4.0.0-beta.85",
     "jiti": "^2.7.0",
     "picomatch": "^4.0.4",
-    "web-tree-sitter": "^0.25.10"
+    "web-tree-sitter": "^0.25.10",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",

@@ -86,6 +86,25 @@ describe("collectFindings", () => {
     }
   });
 
+  it("disambiguates identical snippets in the same file with distinct hashes", async () => {
+    const config = defineConfig({ rules: { "comments/no-noise": commentRule } });
+    const layer = testLayer(config);
+    const dir = await mkdtemp(join(tmpdir(), "agentlint-occ-"));
+    const file = join(dir, "sample.ts");
+
+    try {
+      await writeFile(file, "// duplicated note\nexport const a = 1;\n// duplicated note\nexport const b = 2;\n");
+      const result = await Effect.runPromise(
+        collectFindings({ all: false, rules: [], base: undefined, files: [file] }).pipe(Effect.provide(layer)),
+      );
+
+      expect(result.findings).toHaveLength(2);
+      expect(result.findings[0]?.hash).not.toBe(result.findings[1]?.hash);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies overrides in array order", async () => {
     const config = defineConfig({
       rules: { "comments/no-noise": commentRule },

@@ -126,8 +126,64 @@ const detectSkillMethod = Effect.fn("detectSkillMethod")(function* (cwd: string)
   return "skills" as const;
 });
 
+/**
+ * Claude Code PostToolUse hook: checks each edited file immediately and
+ * feeds blocking findings back to the model, so activation does not depend
+ * on the agent remembering to run check.
+ */
+const CLAUDE_CODE_HOOK_SETTINGS = {
+  hooks: {
+    PostToolUse: [
+      {
+        matcher: "Edit|Write|MultiEdit",
+        hooks: [{ type: "command", command: "pnpm agentlint hook claude-code" }],
+      },
+    ],
+  },
+};
+
+const PRE_COMMIT_SNIPPET = `#!/bin/sh
+# agentlint gate: block commits with unresolved findings.
+pnpm agentlint check || {
+  echo "agentlint: fix the findings or record dispositions, then commit again." >&2
+  exit 1
+}
+`;
+
+const writeHarnessSnippets = Effect.fn("writeHarnessSnippets")(function* (harness: string, cwd: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const lines: string[] = [];
+
+  if (harness === "claude-code") {
+    const settingsPath = path.resolve(cwd, ".claude", "settings.json");
+    if (yield* fs.exists(settingsPath).pipe(Effect.orElseSucceed(() => false))) {
+      lines.push("· .claude/settings.json already exists - merge this hook into it:");
+      lines.push(JSON.stringify(CLAUDE_CODE_HOOK_SETTINGS, null, 2));
+    } else {
+      yield* fs.makeDirectory(path.resolve(cwd, ".claude"), { recursive: true });
+      yield* fs.writeFileString(settingsPath, JSON.stringify(CLAUDE_CODE_HOOK_SETTINGS, null, 2) + "\n");
+      lines.push("✓ Created .claude/settings.json with a PostToolUse hook (agentlint hook claude-code)");
+    }
+    return lines;
+  }
+
+  if (harness === "pre-commit") {
+    const hookPath = path.resolve(cwd, ".agentlint", "harness", "pre-commit");
+    yield* fs.makeDirectory(path.resolve(cwd, ".agentlint", "harness"), { recursive: true });
+    yield* fs.writeFileString(hookPath, PRE_COMMIT_SNIPPET);
+    lines.push("✓ Wrote .agentlint/harness/pre-commit");
+    lines.push("  Install it with: cp .agentlint/harness/pre-commit .git/hooks/pre-commit");
+    lines.push("  (or reference it from husky/lefthook)");
+    return lines;
+  }
+
+  lines.push(`Unknown harness "${harness}". Supported: claude-code, pre-commit.`);
+  return lines;
+});
+
 /** @since 0.1.0 */
-export const initHandler = Effect.fn("initHandler")(function* (_command: InitCommand) {
+export const initHandler = Effect.fn("initHandler")(function* (command: InitCommand) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -180,6 +236,10 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
 
   if (gitignoreUpdated) {
     lines.push("✓ Added .agentlint/.cache/ to .gitignore");
+  }
+
+  if (command.harness) {
+    lines.push(...(yield* writeHarnessSnippets(command.harness, env.cwd)));
   }
 
   // --- Step 2: Next steps ---

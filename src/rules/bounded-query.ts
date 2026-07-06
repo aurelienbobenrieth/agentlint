@@ -19,9 +19,7 @@ function calleeName(node: AgentlintNode): string | undefined {
 function argumentsHaveBound(node: AgentlintNode): boolean {
   const args = node.childByFieldName("arguments");
   if (!args) return false;
-  return args
-    .descendantsOfType("pair")
-    .some((pair) => BOUND_KEYS.has(pair.childByFieldName("key")?.text ?? ""));
+  return args.descendantsOfType("pair").some((pair) => BOUND_KEYS.has(pair.childByFieldName("key")?.text ?? ""));
 }
 
 export const boundedQuery = defineRule({

@@ -1,11 +1,12 @@
 ---
 name: agentlint/rule-advisor
 description: >
-  Decide whether a concern belongs in agentlint and, when it does, create a v0
-  rule with assertive guidance, config-owned routing, and test coverage.
+  Decide whether a concern belongs in agentlint and, when it does, create a
+  rule with a declarative match pattern, assertive guidance, fixtures, and
+  config-owned routing and resolution policy.
 type: core
 library: agentlint
-library_version: "0.1.5"
+library_version: "0.2.0"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:CONTRIBUTING.md"
@@ -19,20 +20,23 @@ Classify first:
 - Import or package boundary: use dependency analysis or a CI check.
 - Runtime behavior: use tests or production monitoring.
 - AST-detectable trigger where the right action needs judgment: use agentlint.
+- Trigger detectable, but the action is consequential enough that only a human should sign off (data loss, deletion, auth): agentlint rule with `resolution: "human"`.
 
 Before creating a rule, scan existing lint config, tests, architecture checks, and `.agentlint/config.ts` for overlap.
 
 For agentlint rules:
 
 - Use one rule for one judgment-worthy trigger.
+- Prefer a declarative `match` over `createOnce`. Patterns are code-shaped and matched structurally: `$NAME` captures one node, `$_` matches without capturing, `$$$ARGS` matches remaining siblings. Constrain with `where: { has, notHas }`. A pattern that does not parse fails at compile time.
+- Use a raw tree-sitter `query` when the pattern language cannot express the shape; use `createOnce` visitors only for stateful or cross-node logic.
+- Always include `fixtures`: `invalid` snippets that must fire and `valid` look-alikes that must not (strings, comments, wrapper calls, suppressing properties). Validate with `agentlint rules test`.
 - Keep routing in config `files`, `ignores`, `overrides`, or presets.
-- Keep persistence in config `policy`.
+- Keep `persistence` and `resolution` in config `policy`. Reserve `resolution: "human"` for triggers a machine may flag but must never self-accept.
 - Make guidance assertive; do not phrase it as a question or generic request.
 - Put required decision criteria in `checks`; `check` prints them as normal agent feedback.
 - Put boundary-case calibration in `examples`; `explain` prints them when the compact guidance is not enough.
-- Put authoritative docs, specs, skills, or platform references in `refs`; use them for rules tied to external contracts such as Shopify BFS.
-- Emit findings with concrete local messages.
-- Cover the rule with focused parsing or pipeline tests.
+- Put authoritative docs, specs, skills, or platform references in `refs`.
+- Emit findings with concrete local messages; interpolate captures ($NAME) when it helps.
 
 Template:
 
@@ -54,15 +58,16 @@ export const myRule = defineRule({
     ],
     refs: [{ type: "url", href: "https://example.com/source-of-truth" }],
   },
-  createOnce(context) {
-    return {
-      before(filename) {
-        return !filename.endsWith(".generated.ts");
-      },
-      call_expression(node) {
-        context.report({ node, message: "Explain the concrete local concern." });
-      },
-    };
+  match: [
+    {
+      pattern: "$OBJ.dangerousCall($$$ARGS)",
+      where: { notHas: "safe: true" },
+      message: "dangerousCall on $OBJ needs review.",
+    },
+  ],
+  fixtures: {
+    invalid: ["api.dangerousCall({})"],
+    valid: ["api.dangerousCall({ safe: true })", "const s = 'api.dangerousCall in a string'"],
   },
 });
 ```
@@ -78,7 +83,7 @@ export default defineConfig({
     "domain/my-rule": myRule,
   },
   policy: {
-    "domain/my-rule": { persistence: "ephemeral" },
+    "domain/my-rule": { persistence: "ephemeral", resolution: "agent" },
   },
   files: ["src/**/*.{ts,tsx}"],
   ignores: ["**/*.test.*"],
@@ -94,11 +99,11 @@ export default defineConfig({
 Validate with:
 
 ```bash
-<agentlint-cmd> rules list
+<agentlint-cmd> rules test --rule domain/my-rule
 <agentlint-cmd> check --all --rule domain/my-rule
 <agentlint-cmd> explain domain/my-rule
 ```
 
-Review the `check` output first: the message, standard, and checks should be enough for straightforward fixes. Use `explain` to verify examples and refs for ambiguous cases or external-contract rules.
+Run `rules test` first: it is the precision proof. Then review the `check` output: the message, standard, and checks should be enough for straightforward fixes.
 
 Resolve `<agentlint-cmd>` from the repo package manager: npm `npm exec agentlint --`, pnpm `pnpm agentlint`, yarn `yarn agentlint`, bun `bun run agentlint`.

@@ -5,23 +5,11 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import type React from "react";
 import { cn } from "@ui/lib/utils";
 
-export function RadioGroup({
-  className,
-  ...props
-}: RadioGroupPrimitive.Props): React.ReactElement {
-  return (
-    <RadioGroupPrimitive
-      className={cn("flex flex-col gap-3", className)}
-      data-slot="radio-group"
-      {...props}
-    />
-  );
+export function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props): React.ReactElement {
+  return <RadioGroupPrimitive className={cn("flex flex-col gap-3", className)} data-slot="radio-group" {...props} />;
 }
 
-export function Radio({
-  className,
-  ...props
-}: RadioPrimitive.Root.Props): React.ReactElement {
+export function Radio({ className, ...props }: RadioPrimitive.Root.Props): React.ReactElement {
   return (
     <RadioPrimitive.Root
       className={cn(

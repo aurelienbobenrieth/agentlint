@@ -85,9 +85,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (bas
     const finding = entry.finding;
     let source = sources.get(finding.file);
     if (source === undefined) {
-      source = yield* fs
-        .readFileString(path.resolve(env.cwd, finding.file))
-        .pipe(Effect.orElseSucceed(() => ""));
+      source = yield* fs.readFileString(path.resolve(env.cwd, finding.file)).pipe(Effect.orElseSucceed(() => ""));
       sources.set(finding.file, source);
     }
 
@@ -250,7 +248,9 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
  *
  * @since 0.2.0
  */
-export const writeReviewFeedback = Effect.fn("writeReviewFeedback")(function* (feedback: ReadonlyArray<ReviewFeedback>) {
+export const writeReviewFeedback = Effect.fn("writeReviewFeedback")(function* (
+  feedback: ReadonlyArray<ReviewFeedback>,
+) {
   if (feedback.length === 0) return null;
 
   const env = yield* Env;

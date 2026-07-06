@@ -1,20 +1,11 @@
-import {
-  BlockStack,
-  Button,
-  Card,
-  CodeBlock,
-  InlineStack,
-  StatePill,
-  Text,
-  cn,
-} from "@agentlint/ui";
+import { BlockStack, Button, Card, CodeBlock, InlineStack, StatePill, Text, cn } from "@agentlint/ui";
 import { useState } from "react";
 import { useReviewAction } from "@/api";
 import { actionLabel, statusLabel, statusTone } from "@/lib/labels";
 import { m } from "@/paraglide/messages.js";
 import type { ReviewActionType, ReviewFindingPayload, ReviewRulePayload } from "@/types";
-import { GuidancePanel } from "./GuidancePanel";
-import { ReasonForm } from "./ReasonForm";
+import { GuidancePanel } from "./guidance-panel";
+import { ReasonForm } from "./reason-form";
 
 function availableActions(finding: ReviewFindingPayload, humanRule: boolean): ReviewActionType[] {
   if (finding.status === "pending_approval") return ["approve", "request_changes"];
@@ -24,13 +15,7 @@ function availableActions(finding: ReviewFindingPayload, humanRule: boolean): Re
   return ["request_changes"];
 }
 
-export function FindingCard({
-  finding,
-  rule,
-}: {
-  finding: ReviewFindingPayload;
-  rule: ReviewRulePayload | undefined;
-}) {
+export function FindingCard({ finding, rule }: { finding: ReviewFindingPayload; rule: ReviewRulePayload | undefined }) {
   const action = useReviewAction();
   const [activeAction, setActiveAction] = useState<ReviewActionType | null>(null);
   const [reason, setReason] = useState("");
@@ -95,10 +80,7 @@ export function FindingCard({
         {rule ? <GuidancePanel rule={rule} /> : null}
 
         {finding.disposition ? (
-          <BlockStack
-            gap="xs"
-            className="mx-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2"
-          >
+          <BlockStack gap="xs" className="mx-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
             <Text mono tone="muted" size="xs">
               {m.disposition_by({
                 status: finding.disposition.status,

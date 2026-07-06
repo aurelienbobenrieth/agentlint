@@ -9,7 +9,10 @@ import { Schema } from "effect";
  * @since 0.1.0
  * @category models
  */
-export class InitCommand extends Schema.TaggedClass<InitCommand>()("InitCommand", {}) {}
+export class InitCommand extends Schema.TaggedClass<InitCommand>()("InitCommand", {
+  /** Optional harness to write integration snippets for. */
+  harness: Schema.optional(Schema.UndefinedOr(Schema.String)),
+}) {}
 
 /**
  * @since 0.1.0

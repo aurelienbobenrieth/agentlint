@@ -13,13 +13,13 @@ import {
 } from "@agentlint/ui";
 import { useMemo, useState } from "react";
 import { useReviewState } from "@/api";
-import { FindingCard } from "@/components/FindingCard";
+import { FindingCard } from "@/components/finding-card";
 import { m } from "@/paraglide/messages.js";
 import type { FindingStatus, ReviewFindingPayload } from "@/types";
 
 type Filter = "needs_action" | "pending_approval" | "unresolved" | "resolved" | "all";
 
-const RESOLVED_STATUSES: ReadonlyArray<FindingStatus> = ["accepted", "approved", "deferred", "no_fix"];
+const RESOLVED_STATUSES: ReadonlySet<FindingStatus> = new Set(["accepted", "approved", "deferred", "no_fix"]);
 
 function matchesFilter(finding: ReviewFindingPayload, filter: Filter): boolean {
   switch (filter) {
@@ -30,7 +30,7 @@ function matchesFilter(finding: ReviewFindingPayload, filter: Filter): boolean {
     case "unresolved":
       return finding.status === "unresolved";
     case "resolved":
-      return RESOLVED_STATUSES.includes(finding.status);
+      return RESOLVED_STATUSES.has(finding.status);
     case "all":
       return true;
   }
@@ -92,9 +92,7 @@ export function FindingsPage() {
     );
   }
 
-  const visible = data.findings.filter(
-    (finding) => matchesFilter(finding, filter) && !hiddenRules.has(finding.ruleId),
-  );
+  const visible = data.findings.filter((finding) => matchesFilter(finding, filter) && !hiddenRules.has(finding.ruleId));
 
   return (
     <div className="grid min-h-[calc(100vh-53px)] grid-cols-[260px_1fr]">
@@ -114,7 +112,10 @@ export function FindingsPage() {
               )}
             >
               <span>{filterLabel(item)}</span>
-              <Badge variant={item === "pending_approval" ? "warning" : "secondary"} className="px-1.5 py-px text-[10px]">
+              <Badge
+                variant={item === "pending_approval" ? "warning" : "secondary"}
+                className="px-1.5 py-px text-[10px]"
+              >
                 {counts.get(item) ?? 0}
               </Badge>
             </button>

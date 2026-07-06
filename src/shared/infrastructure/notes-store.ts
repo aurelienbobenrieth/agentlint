@@ -58,6 +58,18 @@ interface Frontmatter {
   readonly [key: string]: string | ReadonlyArray<string> | Frontmatter;
 }
 
+function parseFrontmatterValue(raw: string): string | string[] {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed
+      .slice(1, -1)
+      .split(",")
+      .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+      .filter((item) => item.length > 0);
+  }
+  return trimmed.replace(/^["']|["']$/g, "");
+}
+
 /**
  * Parse the minimal flat frontmatter subset notes use: `key: value`,
  * one level of nesting via 2-space indentation, inline `[a, b]` arrays,
@@ -72,18 +84,6 @@ export function parseFrontmatter(content: string): { frontmatter: Frontmatter; b
   let currentSection: Record<string, string | string[]> | undefined;
   let currentList: { holder: Record<string, string | string[]>; key: string } | undefined;
 
-  const parseValue = (raw: string): string | string[] => {
-    const trimmed = raw.trim();
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      return trimmed
-        .slice(1, -1)
-        .split(",")
-        .map((item) => item.trim().replace(/^["']|["']$/g, ""))
-        .filter((item) => item.length > 0);
-    }
-    return trimmed.replace(/^["']|["']$/g, "");
-  };
-
   for (const line of match[1].split(/\r?\n/)) {
     if (line.trim().length === 0) continue;
 
@@ -91,7 +91,7 @@ export function parseFrontmatter(content: string): { frontmatter: Frontmatter; b
     if (listItem && currentList && listItem[2] !== undefined) {
       const existing = currentList.holder[currentList.key];
       const list = Array.isArray(existing) ? existing : [];
-      list.push(parseValue(listItem[2]) as string);
+      list.push(parseFrontmatterValue(listItem[2]) as string);
       currentList.holder[currentList.key] = list;
       continue;
     }
@@ -104,7 +104,7 @@ export function parseFrontmatter(content: string): { frontmatter: Frontmatter; b
         currentSection[key] = [];
         currentList = { holder: currentSection, key };
       } else {
-        currentSection[key] = parseValue(value);
+        currentSection[key] = parseFrontmatterValue(value);
         currentList = undefined;
       }
       continue;
@@ -120,7 +120,7 @@ export function parseFrontmatter(content: string): { frontmatter: Frontmatter; b
         currentSection = section;
         currentList = { holder: root as Record<string, string | string[]>, key };
       } else {
-        root[key] = parseValue(value);
+        root[key] = parseFrontmatterValue(value);
         currentSection = undefined;
         currentList = undefined;
       }

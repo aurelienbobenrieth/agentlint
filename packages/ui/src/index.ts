@@ -29,26 +29,12 @@ export {
   CardTitle,
 } from "./components/ui/card.js";
 export { Tabs, TabsList, TabsPanel, TabsTab } from "./components/ui/tabs.js";
-export {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "./components/ui/table.js";
+export { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table.js";
 export { Textarea } from "./components/ui/textarea.js";
 export { Checkbox } from "./components/ui/checkbox.js";
 export { Separator } from "./components/ui/separator.js";
 export { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js";
-export {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "./components/ui/empty.js";
+export { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./components/ui/empty.js";
 export { Kbd, KbdGroup } from "./components/ui/kbd.js";
 export { ScrollArea } from "./components/ui/scroll-area.js";
 export { Spinner } from "./components/ui/spinner.js";

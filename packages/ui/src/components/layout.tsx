@@ -68,23 +68,11 @@ export function InlineStack({
 /**
  * BlockStack — vertical flex column with gap/alignment tokens.
  */
-export function BlockStack({
-  gap = "sm",
-  align = "stretch",
-  justify = "start",
-  className,
-  ...props
-}: StackProps) {
+export function BlockStack({ gap = "sm", align = "stretch", justify = "start", className, ...props }: StackProps) {
   return (
     <div
       data-slot="block-stack"
-      className={cn(
-        "flex flex-col",
-        GAP_CLASSES[gap],
-        ALIGN_CLASSES[align],
-        JUSTIFY_CLASSES[justify],
-        className,
-      )}
+      className={cn("flex flex-col", GAP_CLASSES[gap], ALIGN_CLASSES[align], JUSTIFY_CLASSES[justify], className)}
       {...props}
     />
   );
@@ -147,5 +135,7 @@ export function Text({
  * PageSection — main content column with consistent width and padding.
  */
 export function PageSection({ className, ...props }: React.ComponentProps<"main">) {
-  return <main data-slot="page-section" className={cn("mx-auto w-full max-w-4xl px-6 py-6 pb-24", className)} {...props} />;
+  return (
+    <main data-slot="page-section" className={cn("mx-auto w-full max-w-4xl px-6 py-6 pb-24", className)} {...props} />
+  );
 }

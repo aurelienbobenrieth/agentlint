@@ -26,6 +26,8 @@ import { notesListHandler } from "./features/notes/handler.js";
 import { NotesListCommand } from "./features/notes/request.js";
 import { resolveHandler } from "./features/resolve/handler.js";
 import { ResolveCommand } from "./features/resolve/request.js";
+import { claudeCodeHookHandler } from "./features/hook/handler.js";
+import { runMcpServer } from "./features/mcp/server.js";
 import { runReviewSession } from "./features/review/server.js";
 import { rulesListHandler, rulesTestHandler } from "./features/rules/handler.js";
 import { RulesListCommand, RulesTestCommand } from "./features/rules/request.js";
@@ -111,13 +113,15 @@ function usage(): string {
     '  agentlint resolve <selector> --accept|--defer|--no-fix|--request-approval --reason "..."',
     '  agentlint approve <selector> --reason "..."',
     "  agentlint review [--base ref] [--port n] [--no-open]",
+    "  agentlint mcp",
+    "  agentlint hook claude-code",
     "  agentlint rules list [--files path]",
     "  agentlint rules test [--rule id]",
     "  agentlint ledger list [--rule id]",
     "  agentlint ledger gc [--rule id] [--dry-run] [--write]",
     "  agentlint ledger review [--base ref] [--format text|jsonl]",
     "  agentlint notes list",
-    "  agentlint init",
+    "  agentlint init [--harness claude-code|pre-commit]",
   ].join("\n");
 }
 
@@ -308,10 +312,12 @@ const runLedger = (args: ReadonlyArray<string>) =>
     env.setExitCode(result.exitCode);
   });
 
-const runInit = Effect.gen(function* () {
-  const result = yield* initHandler(new InitCommand({}));
-  yield* Console.log(result.message);
-});
+const runInit = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const flags = parseFlags(args);
+    const result = yield* initHandler(new InitCommand({ harness: flagString(flags, "harness") }));
+    yield* Console.log(result.message);
+  });
 
 const program = Effect.gen(function* () {
   const env = yield* Env;
@@ -328,6 +334,21 @@ const program = Effect.gen(function* () {
       return yield* runApprove(env.argv.slice(1));
     case "review":
       return yield* runReview(env.argv.slice(1));
+    case "mcp":
+      return yield* runMcpServer(__AGENTLINT_VERSION__);
+    case "hook": {
+      if (subcommand === "claude-code") {
+        const result = yield* claudeCodeHookHandler();
+        if (result.feedback.length > 0) {
+          yield* Console.error(result.feedback);
+        }
+        env.setExitCode(result.exitCode);
+        return;
+      }
+      yield* Console.log("Usage: agentlint hook claude-code");
+      env.setExitCode(2);
+      return;
+    }
     case "rules":
       if (subcommand === "list") return yield* runRulesList(rest);
       if (subcommand === "test") return yield* runRulesTest(rest);
@@ -348,7 +369,7 @@ const program = Effect.gen(function* () {
       return;
     }
     case "init":
-      return yield* runInit;
+      return yield* runInit(env.argv.slice(1));
     case undefined:
     case "--help":
     case "-h":

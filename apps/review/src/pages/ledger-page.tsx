@@ -31,9 +31,7 @@ export function LedgerPage() {
     );
   }
 
-  const records = data.ledger
-    .filter((record) => !newOnly || record.isNew)
-    .toSorted((a, b) => b.at.localeCompare(a.at));
+  const records = data.ledger.filter((record) => !newOnly || record.isNew).toSorted((a, b) => b.at.localeCompare(a.at));
 
   return (
     <PageSection className="max-w-5xl">

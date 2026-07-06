@@ -16,24 +16,14 @@ import {
   AutocompleteSeparator,
 } from "@ui/components/ui/autocomplete";
 
-export const CommandDialog: typeof CommandDialogPrimitive.Root =
-  CommandDialogPrimitive.Root;
+export const CommandDialog: typeof CommandDialogPrimitive.Root = CommandDialogPrimitive.Root;
 
-export const CommandDialogPortal: typeof CommandDialogPrimitive.Portal =
-  CommandDialogPrimitive.Portal;
+export const CommandDialogPortal: typeof CommandDialogPrimitive.Portal = CommandDialogPrimitive.Portal;
 
-export const CommandCreateHandle: typeof CommandDialogPrimitive.createHandle =
-  CommandDialogPrimitive.createHandle;
+export const CommandCreateHandle: typeof CommandDialogPrimitive.createHandle = CommandDialogPrimitive.createHandle;
 
-export function CommandDialogTrigger(
-  props: CommandDialogPrimitive.Trigger.Props,
-): React.ReactElement {
-  return (
-    <CommandDialogPrimitive.Trigger
-      data-slot="command-dialog-trigger"
-      {...props}
-    />
-  );
+export function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props): React.ReactElement {
+  return <CommandDialogPrimitive.Trigger data-slot="command-dialog-trigger" {...props} />;
 }
 
 export function CommandDialogBackdrop({
@@ -100,15 +90,7 @@ export function Command({
   keepHighlight = true,
   ...props
 }: React.ComponentProps<typeof Autocomplete>): React.ReactElement {
-  return (
-    <Autocomplete
-      autoHighlight={autoHighlight}
-      inline
-      keepHighlight={keepHighlight}
-      open
-      {...props}
-    />
-  );
+  return <Autocomplete autoHighlight={autoHighlight} inline keepHighlight={keepHighlight} open {...props} />;
 }
 
 export function CommandInput({
@@ -150,19 +132,10 @@ export function CommandEmpty({
   className,
   ...props
 }: React.ComponentProps<typeof AutocompleteEmpty>): React.ReactElement {
-  return (
-    <AutocompleteEmpty
-      className={cn("not-empty:py-6", className)}
-      data-slot="command-empty"
-      {...props}
-    />
-  );
+  return <AutocompleteEmpty className={cn("not-empty:py-6", className)} data-slot="command-empty" {...props} />;
 }
 
-export function CommandPanel({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function CommandPanel({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn(
@@ -178,26 +151,14 @@ export function CommandGroup({
   className,
   ...props
 }: React.ComponentProps<typeof AutocompleteGroup>): React.ReactElement {
-  return (
-    <AutocompleteGroup
-      className={className}
-      data-slot="command-group"
-      {...props}
-    />
-  );
+  return <AutocompleteGroup className={className} data-slot="command-group" {...props} />;
 }
 
 export function CommandGroupLabel({
   className,
   ...props
 }: React.ComponentProps<typeof AutocompleteGroupLabel>): React.ReactElement {
-  return (
-    <AutocompleteGroupLabel
-      className={className}
-      data-slot="command-group-label"
-      {...props}
-    />
-  );
+  return <AutocompleteGroupLabel className={className} data-slot="command-group-label" {...props} />;
 }
 
 export const CommandCollection = AutocompleteCollection;
@@ -206,48 +167,27 @@ export function CommandItem({
   className,
   ...props
 }: React.ComponentProps<typeof AutocompleteItem>): React.ReactElement {
-  return (
-    <AutocompleteItem
-      className={cn("py-1.5", className)}
-      data-slot="command-item"
-      {...props}
-    />
-  );
+  return <AutocompleteItem className={cn("py-1.5", className)} data-slot="command-item" {...props} />;
 }
 
 export function CommandSeparator({
   className,
   ...props
 }: React.ComponentProps<typeof AutocompleteSeparator>): React.ReactElement {
-  return (
-    <AutocompleteSeparator
-      className={cn("my-2", className)}
-      data-slot="command-separator"
-      {...props}
-    />
-  );
+  return <AutocompleteSeparator className={cn("my-2", className)} data-slot="command-separator" {...props} />;
 }
 
-export function CommandShortcut({
-  className,
-  ...props
-}: React.ComponentProps<"kbd">): React.ReactElement {
+export function CommandShortcut({ className, ...props }: React.ComponentProps<"kbd">): React.ReactElement {
   return (
     <kbd
-      className={cn(
-        "ms-auto font-medium font-sans text-muted-foreground/72 text-xs tracking-widest",
-        className,
-      )}
+      className={cn("ms-auto font-medium font-sans text-muted-foreground/72 text-xs tracking-widest", className)}
       data-slot="command-shortcut"
       {...props}
     />
   );
 }
 
-export function CommandFooter({
-  className,
-  ...props
-}: React.ComponentProps<"div">): React.ReactElement {
+export function CommandFooter({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn(

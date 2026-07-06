@@ -16,10 +16,7 @@ export function CodeBlock({ lines, isHighlighted, className, ...props }: CodeBlo
   return (
     <div
       data-slot="code-block"
-      className={cn(
-        "overflow-x-auto rounded-lg border bg-muted/40 py-2 font-mono text-xs leading-relaxed",
-        className,
-      )}
+      className={cn("overflow-x-auto rounded-lg border bg-muted/40 py-2 font-mono text-xs leading-relaxed", className)}
       {...props}
     >
       {lines.map((line, index) => (

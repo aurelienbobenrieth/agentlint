@@ -1,6 +1,6 @@
 import { BlockStack, Card, InlineStack, PageSection, StatePill, Text } from "@agentlint/ui";
 import { useReviewState } from "@/api";
-import { GuidancePanel } from "@/components/GuidancePanel";
+import { GuidancePanel } from "@/components/guidance-panel";
 import { m } from "@/paraglide/messages.js";
 
 export function RulesPage() {
