@@ -1,5 +1,5 @@
 import type { StatePillTone } from "@agentlint/ui";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 import type { FindingStatus, ReviewActionType } from "@/types";
 
 export function statusLabel(status: FindingStatus): string {

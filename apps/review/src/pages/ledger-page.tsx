@@ -15,7 +15,7 @@ import {
 } from "@agentlint/ui";
 import { useState } from "react";
 import { useReviewState } from "@/api";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 
 export function LedgerPage() {
   const { data, isLoading } = useReviewState();

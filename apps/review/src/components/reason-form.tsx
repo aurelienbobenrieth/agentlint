@@ -1,5 +1,5 @@
 import { BlockStack, Button, InlineStack, Text, Textarea } from "@agentlint/ui";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 import { actionLabel } from "@/lib/labels";
 import type { ReviewActionType } from "@/types";
 

@@ -130,7 +130,7 @@ Records an `approved` disposition. Refused for `agent:` actors — the guard is 
 
 ### `agentlint review`
 
-Opens a local review UI (findings by status, code context, guidance with examples/refs toggles, per-rule filters). Approve or request changes with reasons; change requests are written to `.agentlint/review-feedback.md` and echoed to the terminal for the agent that launched the review. `--base <ref>` scopes the ledger delta; `--no-open` and `--port <n>` are available for automation.
+Opens a local review UI with a guided queue ordered by where human attention matters: pending approvals and human-gated findings first, then new agent dispositions since base (the self-acceptance audit surface), then the rest. Code context, guidance with examples/refs toggles, and a filterable findings list are one tab away. Approve or request changes with reasons; change requests are written to `.agentlint/review-feedback.md` and echoed to the terminal for the agent that launched the review. `--base <ref>` scopes the ledger delta; `--no-open` and `--port <n>` are available for automation.
 
 ### `agentlint ledger`
 

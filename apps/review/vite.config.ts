@@ -1,20 +1,11 @@
 import { resolve } from "node:path";
-import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
   root: __dirname,
-  plugins: [
-    react(),
-    tailwindcss(),
-    paraglideVitePlugin({
-      project: resolve(__dirname, "project.inlang"),
-      outdir: resolve(__dirname, "src", "paraglide"),
-      strategy: ["localStorage", "preferredLanguage", "baseLocale"],
-    }),
-  ],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

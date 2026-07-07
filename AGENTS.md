@@ -27,8 +27,8 @@ typecheck` for UI work.
   vendored COSS UI primitives (lint-excluded; refresh via
   `pnpm dlx shadcn@latest add @coss/<name>` from the package directory, do not
   hand-edit). agentlint composition components live in `src/components/*`.
-- `apps/review`: the review SPA. Containers, pages, i18n (Paraglide,
-  `messages/{en,fr}.json`). Imports `@agentlint/ui` public exports only — never
+- `apps/review`: the review SPA. Containers, pages, and all user-facing copy
+  centralized in `src/messages.ts` (never inline literals in components). Imports `@agentlint/ui` public exports only — never
   deep paths into the ui package. Builds into
   `packages/agentlint/dist/ui`, served by `agentlint review`.
 

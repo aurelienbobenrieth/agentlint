@@ -45,6 +45,8 @@ export interface ReviewFindingPayload {
     readonly reason: string;
     readonly actor: string;
     readonly at: string;
+    /** Whether this disposition is new relative to the base ref. */
+    readonly isNew: boolean;
   } | null;
 }
 

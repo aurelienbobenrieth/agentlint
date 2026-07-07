@@ -2,7 +2,7 @@ import { BlockStack, Button, Card, CodeBlock, InlineStack, StatePill, Text, cn }
 import { useState } from "react";
 import { useReviewAction } from "@/api";
 import { actionLabel, statusLabel, statusTone } from "@/lib/labels";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 import type { ReviewActionType, ReviewFindingPayload, ReviewRulePayload } from "@/types";
 import { GuidancePanel } from "./guidance-panel";
 import { ReasonForm } from "./reason-form";

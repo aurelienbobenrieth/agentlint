@@ -38,6 +38,7 @@ export interface ReviewFindingPayload {
     readonly reason: string;
     readonly actor: string;
     readonly at: string;
+    readonly isNew: boolean;
   } | null;
 }
 

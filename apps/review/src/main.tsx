@@ -1,37 +1,15 @@
-import { BlockStack, Button, InlineStack, Text, ThemeToggle, cn } from "@agentlint/ui";
+import { BlockStack, Button, Text, ThemeToggle } from "@agentlint/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useFinishReview, useReviewState } from "@/api";
-import { m } from "@/paraglide/messages.js";
-import { getLocale, locales, setLocale } from "@/paraglide/runtime.js";
+import { m } from "@/messages";
 import { FindingsPage } from "@/pages/findings-page";
+import { GuidedPage } from "@/pages/guided-page";
 import { LedgerPage } from "@/pages/ledger-page";
 import { RulesPage } from "@/pages/rules-page";
 import "./styles.css";
-
-function LocaleSwitch() {
-  const current = getLocale();
-  return (
-    <InlineStack gap="none" aria-label={m.language_label()} className="rounded-md border">
-      {locales.map((locale) => (
-        <Button
-          key={locale}
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "rounded-none px-2 text-xs uppercase first:rounded-l-md last:rounded-r-md",
-            locale === current && "bg-accent font-bold",
-          )}
-          onClick={() => setLocale(locale)}
-        >
-          {locale}
-        </Button>
-      ))}
-    </InlineStack>
-  );
-}
 
 function Layout() {
   const { data } = useReviewState();
@@ -75,8 +53,11 @@ function Layout() {
         ) : null}
         <nav className="ml-2 flex gap-1">
           <Link to="/" activeOptions={{ exact: true }} className={navLinkClass}>
-            {m.nav_findings()}
+            {m.nav_review()}
             {pending > 0 ? ` (${pending})` : ""}
+          </Link>
+          <Link to="/findings" className={navLinkClass}>
+            {m.nav_findings()}
           </Link>
           <Link to="/ledger" className={navLinkClass}>
             {m.nav_ledger()}
@@ -86,7 +67,6 @@ function Layout() {
           </Link>
         </nav>
         <span className="flex-1" />
-        <LocaleSwitch />
         <ThemeToggle label={m.theme_toggle()} />
         <Button
           disabled={finish.isPending}
@@ -106,9 +86,15 @@ function Layout() {
 
 const rootRoute = createRootRoute({ component: Layout });
 
-const findingsRoute = createRoute({
+const guidedRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  component: GuidedPage,
+});
+
+const findingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/findings",
   component: FindingsPage,
 });
 
@@ -124,7 +110,7 @@ const rulesRoute = createRoute({
   component: RulesPage,
 });
 
-const routeTree = rootRoute.addChildren([findingsRoute, ledgerRoute, rulesRoute]);
+const routeTree = rootRoute.addChildren([guidedRoute, findingsRoute, ledgerRoute, rulesRoute]);
 const router = createRouter({ routeTree });
 
 declare module "@tanstack/react-router" {

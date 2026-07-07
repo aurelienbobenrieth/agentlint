@@ -122,14 +122,18 @@ pnpm agentlint check --all --ci   # exit 1 - deferred + pending approval block t
 pnpm agentlint review
 ```
 
-The browser opens on the review UI:
+The browser opens on the **guided review** (plannotator-style): a queue
+ordered by where your attention matters - blocking items first (pending
+approvals, human-gated findings), then **Audit** (dispositions agents recorded
+since base, so self-acceptances get human eyes), then the rest. `j`/`k` moves
+through the queue; the progress bar tracks what you have handled.
 
-- **Needs action** shows the pending `dropTable` approval with the agent's
-  stated reason pre-filled on Approve.
+- The pending `dropTable` approval sits on top, with the agent's stated
+  reason pre-filled on Approve.
 - The **Ledger** tab shows the whole history — filter to "new since main" to
   see exactly what this branch added (the same delta the `ledger-review`
   GitHub Action posts on PRs).
-- Toggle **examples/refs** on any card; switch language (EN/FR) and theme.
+- Toggle **examples/refs** on any card; the Findings tab keeps the filterable list view.
 - Try **Request changes** with a comment, then **Finish review**: the comment
   lands in `.agentlint/review-feedback.md` _and_ in the terminal that launched
   the review — the feedback loop back to the agent.

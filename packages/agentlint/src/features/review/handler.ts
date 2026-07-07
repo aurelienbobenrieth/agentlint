@@ -79,6 +79,10 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (bas
   const config = normalizeConfig(yield* configLoader.load());
   const state = yield* buildReviewState(base);
 
+  const newIdentities = new Set(
+    state.newRecords.map((record) => JSON.stringify([record.ruleId, record.hash, record.status, record.at])),
+  );
+
   const sources = new Map<string, string>();
   const findings: ReviewFindingPayload[] = [];
   for (const entry of state.findings) {
@@ -105,14 +109,18 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (bas
             reason: entry.disposition.reason,
             actor: entry.disposition.actor,
             at: entry.disposition.at,
+            isNew: newIdentities.has(
+              JSON.stringify([
+                entry.disposition.ruleId,
+                entry.disposition.hash,
+                entry.disposition.status,
+                entry.disposition.at,
+              ]),
+            ),
           }
         : null,
     });
   }
-
-  const newIdentities = new Set(
-    state.newRecords.map((record) => JSON.stringify([record.ruleId, record.hash, record.status, record.at])),
-  );
 
   return {
     project: path.basename(env.cwd),

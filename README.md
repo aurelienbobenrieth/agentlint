@@ -17,11 +17,11 @@ pnpm agentlint init
 
 ## Workspace
 
-| Path                                     | Role                                                                                                                         |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [packages/agentlint](packages/agentlint) | The product: CLI, engine, MCP server, harness hooks, packaged skills. Publishable.                                           |
-| [apps/review](apps/review)               | Local review SPA served by `agentlint review` (Vite, TanStack Router/Query, Paraglide). Builds into the product's `dist/ui`. |
-| [packages/ui](packages/ui)               | `@agentlint/ui`: presentational component library (COSS UI primitives + agentlint composition components).                   |
+| Path                                     | Role                                                                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [packages/agentlint](packages/agentlint) | The product: CLI, engine, MCP server, harness hooks, packaged skills. Publishable.                                |
+| [apps/review](apps/review)               | Local review SPA served by `agentlint review` (Vite, TanStack Router/Query). Builds into the product's `dist/ui`. |
+| [packages/ui](packages/ui)               | `@agentlint/ui`: presentational component library (COSS UI primitives + agentlint composition components).        |
 
 See [AGENTS.md](AGENTS.md) for package roles and boundaries, and [CONTRIBUTING.md](CONTRIBUTING.md) for local development and rule authoring.
 

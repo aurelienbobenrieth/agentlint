@@ -1,6 +1,6 @@
 import { BlockStack, Button, ContrastCode, InlineStack, Text } from "@agentlint/ui";
 import { useState } from "react";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 import type { ReviewRulePayload } from "@/types";
 
 /**

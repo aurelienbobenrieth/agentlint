@@ -14,7 +14,7 @@ import {
 import { useMemo, useState } from "react";
 import { useReviewState } from "@/api";
 import { FindingCard } from "@/components/finding-card";
-import { m } from "@/paraglide/messages.js";
+import { m } from "@/messages";
 import type { FindingStatus, ReviewFindingPayload } from "@/types";
 
 type Filter = "needs_action" | "pending_approval" | "unresolved" | "resolved" | "all";
