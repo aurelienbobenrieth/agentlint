@@ -28,7 +28,7 @@ Five unresolved findings across the tree, each from a different kind of rule:
 | `db.dropTable(...)` in `src/migrations/2026-07-...` | `danger/lossy-migration`  | **human-gated**: no `--accept` offered  |
 
 The summary line also says `4 resolved hidden; 1 deferred` — that's the
-inherited history. And note the dim **Context notes**: two learned notes from
+inherited history. And note the dim **Context notes**: two of the three learned notes in
 `.agents/learn/` matched your files (the migrations one fires precisely on
 `dropTable|dropColumn` in `src/migrations/**`).
 
@@ -49,7 +49,45 @@ Every status is represented, with actor and reason:
 All of it is hash-pinned: edit `src/api/users.ts` line 7 and the acceptance
 resurfaces as unresolved on the next check.
 
-## 3. Prove the rules are precise
+## 3. Rules vs notes — the same concern, two artifacts
+
+The migration topic exists in this repo as **both** a rule and a note, on
+purpose — they answer different questions:
+
+|              | Rule (`danger/lossy-migration`)               | Note (`drop-column-backfill`)            |
+| ------------ | --------------------------------------------- | ---------------------------------------- |
+| Encodes      | a **standard** — "this always needs judgment" | a **fact** — "here is what we learned"   |
+| Trigger      | code shape (AST pattern)                      | situation (file globs + grep)            |
+| Output       | blocking finding, demands a disposition       | dim non-blocking `Context notes` pointer |
+| Ledger       | every resolution is recorded and hash-pinned  | never — nothing to resolve               |
+| Context cost | guidance printed with the finding             | one pointer line; the body stays on disk |
+
+You already saw both fire on the same file in step 1: the `dropTable` finding
+_blocks_, while the backfill note just points at
+`.agents/learn/drop-column-backfill.md`.
+
+Now the layered-activation part:
+
+```bash
+pnpm agentlint notes list
+```
+
+Three notes, two activation tiers:
+
+- `drop-column-backfill` and `query-cache-gotcha` have `triggers:` frontmatter
+  (globs + grep) — they surface **deterministically** whenever a scanned file
+  matches.
+- `expo-sheet-ivs-reload` has **no triggers** — deliberately. It is too niche
+  to earn a place in anyone's context, so it never auto-surfaces; it waits on
+  disk for `rg "IVS" .agents/learn/` the day the stream reloads again.
+
+That is the whole memory model: deterministic trigger when one can be
+expressed, plain search as the fallback — and never a paragraph of base
+context spent either way. If a note starts feeling normative ("we should
+always..."), that is the signal to promote it into a rule and let the ledger
+hold people to it.
+
+## 4. Prove the rules are precise
 
 ```bash
 pnpm agentlint rules test
@@ -62,7 +100,7 @@ code-shaped patterns (`$DB.dropTable($$$ARGS)`), a `where` constraint
 (`fetch` unless a `signal` is anywhere in the args), a raw tree-sitter query
 (`security/no-eval`), and one imperative visitor (TODO comments).
 
-## 4. Resolve like an agent would
+## 5. Resolve like an agent would
 
 ```bash
 pnpm agentlint explain 8          # full guidance: examples, refs, ledger context
@@ -78,7 +116,7 @@ pnpm agentlint check --all        # exit 0 once the rest is fixed/resolved - the
 pnpm agentlint check --all --ci   # exit 1 - deferred + pending approval block the merge
 ```
 
-## 5. Review as the human
+## 6. Review as the human
 
 ```bash
 pnpm agentlint review
@@ -102,7 +140,7 @@ The browser opens on the review UI:
 CLI equivalents: `pnpm agentlint approve <selector> --reason "..."` (refused
 for agent actors) and `pnpm agentlint ledger review --base main`.
 
-## 6. Reset the playground
+## 7. Reset the playground
 
 ```bash
 git checkout -- ../../examples/demo && git clean -fd ../../examples/demo
