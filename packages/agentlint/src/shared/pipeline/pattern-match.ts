@@ -88,7 +88,13 @@ function matchNode(pattern: AgentlintNode, target: AgentlintNode, captures: Capt
     return true;
   }
 
-  if (pattern.type !== target.type) return false;
+  if (pattern.type !== target.type) {
+    // A bare `identifier` pattern leaf matches any identifier-kind node with
+    // the same text (property_identifier, shorthand_property_identifier, ...),
+    // so `where: { notHas: "signal" }` also covers `{ signal }` shorthand.
+    const identifierLike = pattern.type === "identifier" && target.type.endsWith("identifier");
+    if (!identifierLike) return false;
+  }
 
   const patternChildren = namedChildren(pattern);
   if (patternChildren.length === 0) {

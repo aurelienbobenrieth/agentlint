@@ -70,6 +70,19 @@ describe("pattern matching", () => {
     expect(findings[0]?.sourceSnippet).toContain("'a'");
   });
 
+  it("matches bare identifier constraints against shorthand properties", async () => {
+    const rule = patternRule("fetch($$$ARGS)", "no timeout", { notHas: "signal" });
+    const findings = await run(
+      runRuleOnSource(
+        rule,
+        "await fetch('/a'); await fetch('/b', { signal }); await fetch('/c', { signal: AbortSignal.timeout(5) });",
+        "fixture.ts",
+      ),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.sourceSnippet).toContain("'/a'");
+  });
+
   it("supports where.has constraints", async () => {
     const rule = patternRule("it($$$ARGS)", "focused test", { has: "only" });
     const findings = await run(runRuleOnSource(rule, "it('a', () => {}); it.skip('b', () => {});", "fixture.ts"));

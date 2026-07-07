@@ -1,4 +1,7 @@
-export function Users() {
+import { fetchUsers } from "../api/users";
+
+// TODO: paginate this list before the org grows
+export function UsersPage() {
   const query = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
   if (!query.data) return null;
   return (
@@ -8,8 +11,4 @@ export function Users() {
       ))}
     </ul>
   );
-}
-
-export async function migrate(db: Database) {
-  await db.dropTable("legacy_users");
 }
