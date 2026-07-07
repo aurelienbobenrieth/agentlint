@@ -35,9 +35,7 @@ const noStringlyErrorMessage = defineRule({
   ],
   fixtures: {
     file: "fixture.ts",
-    invalid: [
-      'class E extends Schema.TaggedErrorClass<E>()("E", { message: Schema.String }) {}',
-    ],
+    invalid: ['class E extends Schema.TaggedErrorClass<E>()("E", { message: Schema.String }) {}'],
     valid: [
       'class E extends Schema.TaggedErrorClass<E>()("app/E", { reason: Schema.Literals(["io"]), detail: Schema.String }) {}',
     ],

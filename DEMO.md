@@ -67,7 +67,7 @@ The browser opens on the review UI:
 - Toggle **examples/refs** on any card — the same incremental disclosure agents
   get through `explain`.
 - Try **Request changes** with a comment, then **Finish review**: the comment
-  lands in `.agentlint/review-feedback.md` *and* in the terminal that launched
+  lands in `.agentlint/review-feedback.md` _and_ in the terminal that launched
   the review — that is the feedback loop back to the agent.
 - Or **Approve**: `check --ci` now exits 0. Edit the `dropTable` line afterwards
   and the approval invalidates automatically (hash-pinned).

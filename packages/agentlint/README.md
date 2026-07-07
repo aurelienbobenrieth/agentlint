@@ -141,7 +141,12 @@ agentlint ledger review --format jsonl # machine-readable, for PR bots
 agentlint ledger gc --write            # prune stale records
 ```
 
-`ledger review` is the PR surface: reviewers read reasons, not diffs of `.jsonl`.
+`ledger review` is the PR surface: reviewers read reasons, not diffs of `.jsonl`. This repo ships a reusable workflow ([.github/workflows/ledger-review.yml](../../.github/workflows/ledger-review.yml)) that posts the delta as a sticky PR comment; in a consumer repo the equivalent is:
+
+```yaml
+- run: npx agentlint ledger review --base "origin/${{ github.base_ref }}" --format jsonl > ledger-review.jsonl
+# render + upsert comment (see this repo's ledger-review.yml for the full recipe)
+```
 
 ### `agentlint rules`
 
