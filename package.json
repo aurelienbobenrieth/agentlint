@@ -20,7 +20,7 @@
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test && pnpm check:agentlint",
-    "check:agentlint": "agentlint rules test && agentlint check --all --ci"
+    "check:agentlint": "node packages/agentlint/dist/bin.mjs rules test && node packages/agentlint/dist/bin.mjs check --all --ci"
   },
   "devDependencies": {
     "@aurelienbbn/agentlint": "workspace:*",

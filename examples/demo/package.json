@@ -5,8 +5,9 @@
   "description": "Walkthrough project for the agentlint loop. See DEMO.md at the repo root.",
   "type": "module",
   "scripts": {
-    "check": "agentlint check --all",
-    "review": "agentlint review"
+    "agentlint": "node ../../packages/agentlint/dist/bin.mjs",
+    "check": "pnpm agentlint check --all",
+    "review": "pnpm agentlint review"
   },
   "devDependencies": {
     "@aurelienbbn/agentlint": "workspace:*"
