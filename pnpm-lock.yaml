@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@aurelienbbn/agentlint':
+        specifier: workspace:*
+        version: link:packages/agentlint
       '@changesets/changelog-github':
         specifier: ^0.7.0
         version: 0.7.0
