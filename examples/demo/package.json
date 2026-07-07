@@ -1,0 +1,14 @@
+{
+  "name": "@agentlint/demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Walkthrough project for the agentlint loop. See DEMO.md at the repo root.",
+  "type": "module",
+  "scripts": {
+    "check": "agentlint check --all",
+    "review": "agentlint review"
+  },
+  "devDependencies": {
+    "@aurelienbbn/agentlint": "workspace:*"
+  }
+}

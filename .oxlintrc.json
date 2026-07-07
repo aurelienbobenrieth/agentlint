@@ -16,7 +16,8 @@
     "**/__fixtures__/**",
     "packages/ui/src/components/ui/**",
     "packages/ui/src/hooks/**",
-    "apps/review/src/paraglide/**"
+    "apps/review/src/paraglide/**",
+    "examples/**"
   ],
   "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
   "jsPlugins": ["./scripts/oxlint-plugin-effect.js"],

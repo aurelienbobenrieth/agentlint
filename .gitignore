@@ -30,7 +30,7 @@ Thumbs.db
 *.log
 
 # agentlint ephemeral selector cache
-.agentlint/.cache/
+**/.agentlint/.cache/
 
 # Internal
 .agents/*
