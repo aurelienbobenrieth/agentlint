@@ -43,5 +43,6 @@ export type { RuleContext } from "./domain/rule-context.js";
 
 // Testing utilities for rule and plugin authors.
 export { runRuleFixtures, runRuleOnSource } from "./shared/pipeline/rule-tester.js";
+export { testRuleFixtures, testRuleOnSource } from "./testing.js";
 export type { FixtureFailure, FixtureReport } from "./shared/pipeline/rule-tester.js";
 export { PatternError } from "./shared/pipeline/pattern-match.js";
