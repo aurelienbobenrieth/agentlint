@@ -95,8 +95,8 @@ export function FindingsPage() {
   const visible = data.findings.filter((finding) => matchesFilter(finding, filter) && !hiddenRules.has(finding.ruleId));
 
   return (
-    <div className="grid min-h-[calc(100vh-53px)] grid-cols-[260px_1fr]">
-      <aside className="border-r bg-sidebar px-4 py-5">
+    <div className="grid min-h-[calc(100vh-53px)] grid-cols-1 lg:grid-cols-[260px_1fr]">
+      <aside className="border-b bg-sidebar px-4 py-5 lg:border-r lg:border-b-0">
         <BlockStack gap="xs">
           <Text tone="muted" size="xs" weight="semibold" className="uppercase tracking-wider">
             {m.sidebar_status()}

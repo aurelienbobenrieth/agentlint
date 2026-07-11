@@ -207,8 +207,8 @@ export function GuidedPage() {
   let lastSection: QueueSection | null = null;
 
   return (
-    <div className="grid min-h-[calc(100vh-53px)] grid-cols-[320px_1fr]">
-      <aside className="border-r bg-sidebar">
+    <div className="grid min-h-[calc(100vh-53px)] grid-cols-1 lg:grid-cols-[320px_1fr]">
+      <aside className="max-h-72 overflow-y-auto border-b bg-sidebar lg:max-h-none lg:border-r lg:border-b-0">
         <BlockStack gap="xs" className="border-b px-4 py-3">
           <InlineStack justify="between">
             <Text size="xs" weight="semibold" tone="muted" className="uppercase tracking-wider">
@@ -287,7 +287,7 @@ export function GuidedPage() {
         </BlockStack>
       </aside>
 
-      <main className="mx-auto w-full max-w-4xl px-6 py-6 pb-24">
+      <main className="mx-auto w-full min-w-0 max-w-4xl px-4 py-5 pb-24 sm:px-6 sm:py-6">
         {selected ? (
           <BlockStack gap="sm">
             <InlineStack gap="sm" wrap className="rounded-lg border border-dashed px-4 py-2.5">

@@ -1,4 +1,15 @@
-import { BlockStack, Button, Text, ThemeToggle } from "@agentlint/ui";
+import {
+  AlertDialog,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+  BlockStack,
+  Button,
+  Text,
+  ThemeToggle,
+} from "@agentlint/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { StrictMode, useState } from "react";
@@ -15,6 +26,7 @@ function Layout() {
   const { data } = useReviewState();
   const finish = useFinishReview();
   const [finished, setFinished] = useState<{ summary: string; feedbackPath: string | null } | null>(null);
+  const [finishOpen, setFinishOpen] = useState(false);
 
   if (finished) {
     return (
@@ -36,13 +48,16 @@ function Layout() {
   }
 
   const pending = data?.findings.filter((finding) => finding.status === "pending_approval").length ?? 0;
+  const needsDecision =
+    data?.findings.filter((finding) => finding.status === "pending_approval" || finding.status === "unresolved")
+      .length ?? 0;
 
   const navLinkClass =
     "rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground [&.active]:bg-accent [&.active]:font-semibold [&.active]:text-foreground";
 
   return (
     <>
-      <header className="sticky top-0 z-10 flex items-center gap-4 border-b bg-background/95 px-5 py-2 backdrop-blur">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-3 py-2 backdrop-blur sm:gap-4 sm:px-5">
         <Text mono weight="bold" className="text-amber-600 dark:text-amber-500">
           {m.app_title()}
         </Text>
@@ -51,7 +66,7 @@ function Layout() {
             {m.app_meta({ project: data.project, base: data.base })}
           </Text>
         ) : null}
-        <nav className="ml-2 flex gap-1">
+        <nav className="order-3 flex w-full gap-1 overflow-x-auto sm:order-none sm:ml-2 sm:w-auto">
           <Link to="/" activeOptions={{ exact: true }} className={navLinkClass}>
             {m.nav_review()}
             {pending > 0 ? ` (${pending})` : ""}
@@ -68,18 +83,38 @@ function Layout() {
         </nav>
         <span className="flex-1" />
         <ThemeToggle label={m.theme_toggle()} />
-        <Button
-          disabled={finish.isPending}
-          onClick={() => {
-            finish.mutate(undefined, {
-              onSuccess: (result) => setFinished({ summary: result.summary, feedbackPath: result.feedbackPath }),
-            });
-          }}
-        >
+        <Button disabled={finish.isPending} onClick={() => setFinishOpen(true)}>
           {m.finish_review()}
         </Button>
       </header>
       <Outlet />
+      <AlertDialog open={finishOpen} onOpenChange={setFinishOpen}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{m.finish_confirm_title()}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {needsDecision > 0 ? m.finish_confirm_incomplete({ count: needsDecision }) : m.finish_confirm_clean()}
+            </AlertDialogDescription>
+            {finish.error ? <Text tone="danger">{m.finish_error()}</Text> : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="ghost" onClick={() => setFinishOpen(false)}>
+              {m.action_cancel()}
+            </Button>
+            <Button
+              disabled={finish.isPending}
+              variant={needsDecision > 0 ? "destructive" : "default"}
+              onClick={() => {
+                finish.mutate(undefined, {
+                  onSuccess: (result) => setFinished({ summary: result.summary, feedbackPath: result.feedbackPath }),
+                });
+              }}
+            >
+              {m.finish_confirm_action()}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </>
   );
 }
