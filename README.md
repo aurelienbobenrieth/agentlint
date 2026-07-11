@@ -8,12 +8,17 @@ Deterministic triggers for contextual agent guidance and accountable resolution.
 
 Classic linters handle mechanical violations with one correct fix. Skills and prompts activate probabilistically. agentlint covers the gap between them: **deterministic activation, judgment-based resolution, accountable ledger**.
 
-Full documentation lives in the package README: **[packages/agentlint](packages/agentlint/README.md)**.
+Full documentation lives in the **[package README](packages/agentlint/README.md)**. See the
+**[0.2 migration guide](MIGRATION.md)** when upgrading and the
+**[GitHub Actions guide](docs/github-actions.md)** for merge enforcement.
 
 ```bash
-pnpm add -D @aurelienbbn/agentlint
-pnpm agentlint init
+npm install --save-dev @aurelienbbn/agentlint
+npx agentlint init
+npx agentlint check --all
 ```
+
+Prefer pnpm, yarn, or bun? `agentlint init` detects the consumer's package manager and prints matching commands.
 
 ## Workspace
 

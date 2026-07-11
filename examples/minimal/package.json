@@ -1,0 +1,13 @@
+{
+  "name": "@agentlint/minimal-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "agentlint check --all",
+    "rules:test": "agentlint rules test"
+  },
+  "devDependencies": {
+    "@aurelienbbn/agentlint": "workspace:^"
+  }
+}

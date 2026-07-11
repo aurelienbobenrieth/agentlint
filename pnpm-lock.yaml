@@ -73,6 +73,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/agentlint
 
+  examples/minimal:
+    devDependencies:
+      '@aurelienbbn/agentlint':
+        specifier: workspace:^
+        version: link:../../packages/agentlint
+
   packages/agentlint:
     dependencies:
       '@effect/platform-node':

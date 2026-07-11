@@ -27,10 +27,10 @@ findings -> fix code, record a disposition, or request human approval -> rerun c
 ## Quick Start
 
 ```bash
-pnpm add -D @aurelienbbn/agentlint
-pnpm agentlint init                          # config + gitignore
-pnpm agentlint init --harness claude-code    # optional: PostToolUse hook
-pnpm agentlint init --harness pre-commit     # optional: commit gate
+npm install --save-dev @aurelienbbn/agentlint
+npx agentlint init                          # config + gitignore
+npx agentlint init --harness claude-code    # optional: PostToolUse hook
+npx agentlint init --harness pre-commit     # optional: commit gate
 ```
 
 Create or edit `.agentlint/config.ts`:
@@ -224,7 +224,13 @@ Both are exported for plugin authors who want rule assertions inside their own v
 
 ## Repository layout
 
-This repo is a pnpm workspace: the publishable package at the root, the review SPA in [apps/review](../../apps/review) (Vite + TanStack Router/Query), and the presentational component library in [packages/ui](../ui) (COSS UI primitives + agentlint composition components).
+This repo is a pnpm workspace: the publishable package lives in `packages/agentlint`, the review SPA in [apps/review](../../apps/review) (Vite + TanStack Router/Query) builds into its `dist/ui`, and the presentational component library lives in [packages/ui](../ui).
+
+## More guides
+
+- [Upgrade from 0.1.x to 0.2.0](../../MIGRATION.md)
+- [Enforce agentlint with GitHub Actions](../../docs/github-actions.md)
+- [Run the complete ten-minute demo](../../DEMO.md)
 
 ## Contributing
 
