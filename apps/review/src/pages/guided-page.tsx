@@ -27,6 +27,8 @@ interface QueueItem {
   readonly why: string;
 }
 
+type QueueSeed = Omit<QueueItem, "finding">;
+
 /**
  * Order the review queue by where human attention matters most
  * (plannotator-style guided review):
@@ -77,11 +79,70 @@ export function GuidedPage() {
   const { data, isLoading, error } = useReviewState();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [manuallyReviewed, setManuallyReviewed] = useState<ReadonlySet<string>>(new Set());
+  const [queueSeed, setQueueSeed] = useState<ReadonlyArray<QueueSeed> | null>(null);
   // Fingerprints at first load: an item whose resolution state changed during
   // this session was handled through an action, no manual mark needed.
   const initialFingerprints = useRef<Map<string, string> | null>(null);
+  const restoredProgressKey = useRef<string | null>(null);
 
-  const queue = useMemo(() => (data ? buildQueue(data) : []), [data]);
+  const liveQueue = useMemo(() => (data ? buildQueue(data) : []), [data]);
+  const progressKey = data ? `agentlint:review-progress:${data.project}:${data.base}` : null;
+
+  useEffect(() => {
+    if (!progressKey || restoredProgressKey.current === progressKey) return;
+    restoredProgressKey.current = progressKey;
+    try {
+      const saved = new URLSearchParams(localStorage.getItem(progressKey) ?? "");
+      const savedSelectedKey = saved.get("selected");
+      const savedQueue = saved
+        .getAll("queue")
+        .map((value): QueueSeed | null => {
+          const item = new URLSearchParams(value);
+          const key = item.get("key");
+          const section = item.get("section") as QueueSection | null;
+          const why = item.get("why");
+          return key && section && why ? { key, section, why } : null;
+        })
+        .filter((item): item is QueueSeed => item !== null);
+      if (savedSelectedKey) setSelectedKey(savedSelectedKey);
+      setManuallyReviewed(new Set(saved.getAll("reviewed")));
+      setQueueSeed(
+        savedQueue.length > 0 ? savedQueue : liveQueue.map(({ key, section, why }) => ({ key, section, why })),
+      );
+    } catch {
+      // Review progress is optional and may be unavailable in private browsing.
+    }
+  }, [liveQueue, progressKey]);
+
+  useEffect(() => {
+    if (!progressKey || restoredProgressKey.current !== progressKey) return;
+    try {
+      const saved = new URLSearchParams();
+      if (selectedKey) saved.set("selected", selectedKey);
+      for (const key of manuallyReviewed) saved.append("reviewed", key);
+      for (const item of queueSeed ?? []) {
+        saved.append("queue", new URLSearchParams(item).toString());
+      }
+      localStorage.setItem(progressKey, saved.toString());
+    } catch {
+      // Server-side actions remain durable even when browser storage is unavailable.
+    }
+  }, [manuallyReviewed, progressKey, queueSeed, selectedKey]);
+
+  const findingsByKey = useMemo(
+    () =>
+      new Map<string, ReviewFindingPayload>(
+        (data?.findings ?? []).map((finding) => [`${finding.ruleId}:${finding.hash}`, finding]),
+      ),
+    [data],
+  );
+  const queue = (queueSeed ?? liveQueue)
+    .map((seed) => {
+      const finding = findingsByKey.get(seed.key);
+      return finding ? { ...seed, finding } : null;
+    })
+    .filter((item): item is QueueItem => item !== null);
+  const liveQueueKeys = new Set(liveQueue.map((item) => item.key));
 
   if (data && initialFingerprints.current === null) {
     initialFingerprints.current = new Map(queue.map((item) => [item.key, stateFingerprint(item.finding)]));
@@ -89,6 +150,7 @@ export function GuidedPage() {
 
   const isReviewed = (item: QueueItem): boolean => {
     if (manuallyReviewed.has(item.key)) return true;
+    if (!liveQueueKeys.has(item.key)) return true;
     const initial = initialFingerprints.current?.get(item.key);
     return initial !== undefined && initial !== stateFingerprint(item.finding);
   };

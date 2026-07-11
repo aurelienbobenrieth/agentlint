@@ -199,11 +199,10 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
     } satisfies ReviewActionResult;
   }
 
-  if (action.reason.trim().length === 0) {
-    return { ok: false, message: "A reason is required." } satisfies ReviewActionResult;
-  }
-
   if (action.type === "request_changes") {
+    if (action.reason.trim().length === 0) {
+      return { ok: false, message: "Describe the requested change." } satisfies ReviewActionResult;
+    }
     feedback.push({
       ruleId: action.ruleId,
       hash: action.hash,
@@ -212,7 +211,12 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
       message: entry.finding.message,
       comment: action.reason.trim(),
     });
-    return { ok: true, message: "Change request recorded for the agent." } satisfies ReviewActionResult;
+    const feedbackPath = yield* writeReviewFeedback(feedback);
+    return {
+      ok: true,
+      message: "Change request sent to the agent.",
+      feedbackPath,
+    } satisfies ReviewActionResult;
   }
 
   const policy = policyForRule(config, action.ruleId);
@@ -231,6 +235,13 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
         : action.type === "defer"
           ? ("deferred" as const)
           : ("no_fix" as const);
+  const defaultReasons = {
+    approved: "Approved in review UI.",
+    accepted: "Accepted in review UI.",
+    deferred: "Deferred in review UI.",
+    no_fix: "Marked as no fix in review UI.",
+  } as const;
+  const reason = action.reason.trim() || defaultReasons[status];
 
   yield* ledgerStore.append(
     new LedgerRecord({
@@ -239,7 +250,7 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
       ruleId: action.ruleId,
       hash: action.hash,
       status,
-      reason: action.reason.trim(),
+      reason,
       actor: reviewActor(),
       at: new Date().toISOString(),
       summary: undefined,

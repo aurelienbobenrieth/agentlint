@@ -83,6 +83,7 @@ export type ReviewAction = Schema.Schema.Type<typeof ReviewAction>;
 export interface ReviewActionResult {
   readonly ok: boolean;
   readonly message: string;
+  readonly feedbackPath?: string | null;
 }
 
 export interface ReviewFinishResult {

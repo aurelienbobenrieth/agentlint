@@ -130,7 +130,7 @@ Records an `approved` disposition. Refused for `agent:` actors — the guard is 
 
 ### `agentlint review`
 
-Opens a local review UI with a guided queue ordered by where human attention matters: pending approvals and human-gated findings first, then new agent dispositions since base (the self-acceptance audit surface), then the rest. Code context, guidance with examples/refs toggles, and a filterable findings list are one tab away. Approve or request changes with reasons; change requests are written to `.agentlint/review-feedback.md` and echoed to the terminal for the agent that launched the review. `--base <ref>` scopes the ledger delta; `--no-open` and `--port <n>` are available for automation.
+Opens a local review UI with a guided queue ordered by where human attention matters: pending approvals and human-gated findings first, then new agent dispositions since base (the self-acceptance audit surface), then the rest. Code context, guidance with examples/refs toggles, and a filterable findings list are one tab away. Approve, accept, defer, or mark no-fix in one click; an audit note is optional and a clear default is recorded when omitted. Change requests require actionable feedback, update `.agentlint/review-feedback.md` immediately, and stream progress to the terminal that launched the review. Unfinished notes and queue progress survive refreshes in browser-local session storage. `--base <ref>` scopes the ledger delta; `--no-open` and `--port <n>` are available for automation.
 
 ### `agentlint ledger`
 
@@ -224,7 +224,7 @@ Both are exported for plugin authors who want rule assertions inside their own v
 
 ## Repository layout
 
-This repo is a pnpm workspace: the publishable package at the root, the review SPA in [apps/review](../../apps/review) (Vite + TanStack Router/Query + Paraglide i18n), and the presentational component library in [packages/ui](../ui) (COSS UI primitives + agentlint composition components).
+This repo is a pnpm workspace: the publishable package at the root, the review SPA in [apps/review](../../apps/review) (Vite + TanStack Router/Query), and the presentational component library in [packages/ui](../ui) (COSS UI primitives + agentlint composition components).
 
 ## Contributing
 

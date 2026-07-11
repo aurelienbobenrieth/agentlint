@@ -14,7 +14,8 @@
 import { Console, Effect, FileSystem, Path, Schema } from "effect";
 import type { Context } from "effect";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Env } from "../../config/env.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { Git } from "../../shared/infrastructure/git.js";
@@ -51,10 +52,22 @@ const MIME_TYPES: Record<string, string> = {
   ".map": "application/json",
 };
 
+const MAX_BODY_BYTES = 64 * 1024;
+const SESSION_COOKIE = "agentlint_review";
+
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let size = 0;
+    request.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error("Request body exceeds 64 KiB."));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     request.on("error", reject);
   });
@@ -62,8 +75,38 @@ function readBody(request: IncomingMessage): Promise<string> {
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload);
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+  response.writeHead(status, {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8",
+  });
   response.end(body);
+}
+
+function requestToken(request: IncomingMessage): string | undefined {
+  const cookies = request.headers.cookie?.split(";") ?? [];
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split("=", 2);
+    if (name === SESSION_COOKIE) return value;
+  }
+  return undefined;
+}
+
+function tokenMatches(actual: string | undefined, expected: string): boolean {
+  if (!actual) return false;
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+/** @internal */
+export function isAuthorizedReviewRequest(
+  request: Pick<IncomingMessage, "headers" | "method">,
+  expectedToken: string,
+  allowedOrigins: ReadonlySet<string>,
+): boolean {
+  const authorized = tokenMatches(requestToken(request as IncomingMessage), expectedToken);
+  const trustedOrigin = request.method === "GET" || allowedOrigins.has(request.headers.origin ?? "");
+  return authorized && trustedOrigin;
 }
 
 /**
@@ -72,9 +115,13 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
  * @since 0.2.0
  */
 export function openBrowser(url: string, platform: string): void {
-  const command =
-    platform === "win32" ? `start "" "${url}"` : platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
-  exec(command, () => {
+  const [command, args] =
+    platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : platform === "darwin"
+        ? ["open", [url]]
+        : ["xdg-open", [url]];
+  execFile(command, args, () => {
     // Failure to open a browser is not an error - the URL is printed.
   });
 }
@@ -121,6 +168,8 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
 
   const feedback: ReviewFeedback[] = [];
   const actionCounts = new Map<string, number>();
+  const sessionToken = randomBytes(32).toString("hex");
+  let allowedOrigins = new Set<string>();
 
   // Node's request callbacks run outside the fiber, so capture the live
   // services once and provide them to every effect executed from a callback.
@@ -140,6 +189,27 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
         const url = new URL(request.url ?? "/", "http://localhost");
 
         try {
+          if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
+            if (!tokenMatches(url.searchParams.get("token") ?? undefined, sessionToken)) {
+              sendJson(response, 403, { ok: false, message: "Invalid review session." });
+              return;
+            }
+            response.writeHead(302, {
+              "cache-control": "no-store",
+              location: "/",
+              "set-cookie": `${SESSION_COOKIE}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/`,
+            });
+            response.end();
+            return;
+          }
+
+          if (url.pathname.startsWith("/api/")) {
+            if (!isAuthorizedReviewRequest(request, sessionToken, allowedOrigins)) {
+              sendJson(response, 403, { ok: false, message: "Invalid review session." });
+              return;
+            }
+          }
+
           if (url.pathname === "/api/state" && request.method === "GET") {
             const payload = await runInContext(buildReviewPayload(options.base));
             sendJson(response, 200, payload);
@@ -151,6 +221,7 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
             const result = await runInContext(applyReviewAction(action, feedback));
             if (result.ok) {
               actionCounts.set(action.type, (actionCounts.get(action.type) ?? 0) + 1);
+              await runInContext(Console.log(`Review update: ${action.type} ${action.ruleId} [${action.hash}]`));
             }
             sendJson(response, result.ok ? 200 : 409, result);
             return;
@@ -205,7 +276,8 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
     server.listen(options.port, "127.0.0.1", () => {
       const address = server.address();
       const port = typeof address === "object" && address !== null ? address.port : options.port;
-      const reviewUrl = `http://localhost:${port}`;
+      allowedOrigins = new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`]);
+      const reviewUrl = `http://localhost:${port}/?token=${sessionToken}`;
 
       void runInContext(Console.log(`agentlint review at ${reviewUrl} (Ctrl+C to abort)`));
       if (options.open) openBrowser(reviewUrl, env.platform);

@@ -48,7 +48,8 @@ export const m = {
   action_request_changes: () => "Request changes",
   action_confirm: (p: { action: string }) => `Confirm ${p.action}`,
   action_cancel: () => "Cancel",
-  reason_placeholder: (p: { action: string }) => `Reason for ${p.action}...`,
+  reason_placeholder_optional: (p: { action: string }) => `Optional note for ${p.action}...`,
+  reason_placeholder_required: () => "What should change?",
 
   guidance_show_examples: (p: { count: number }) => `Show examples (${p.count})`,
   guidance_hide_examples: () => "Hide examples",

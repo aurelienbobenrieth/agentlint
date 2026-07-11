@@ -2,6 +2,7 @@ import { BlockStack, Button, Card, CodeBlock, InlineStack, StatePill, Text, cn }
 import { useState } from "react";
 import { useReviewAction } from "@/api";
 import { actionLabel, statusLabel, statusTone } from "@/lib/labels";
+import { readReviewDraft, writeReviewDraft } from "@/lib/review-drafts";
 import { m } from "@/messages";
 import type { ReviewActionType, ReviewFindingPayload, ReviewRulePayload } from "@/types";
 import { GuidancePanel } from "./guidance-panel";
@@ -17,8 +18,10 @@ function availableActions(finding: ReviewFindingPayload, humanRule: boolean): Re
 
 export function FindingCard({ finding, rule }: { finding: ReviewFindingPayload; rule: ReviewRulePayload | undefined }) {
   const action = useReviewAction();
-  const [activeAction, setActiveAction] = useState<ReviewActionType | null>(null);
-  const [reason, setReason] = useState("");
+  const draftKey = `${finding.ruleId}:${finding.hash}`;
+  const initialDraft = readReviewDraft(draftKey);
+  const [activeAction, setActiveAction] = useState<ReviewActionType | null>(initialDraft?.action ?? null);
+  const [reason, setReason] = useState(initialDraft?.reason ?? "");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const humanRule = rule?.resolution === "human";
@@ -29,9 +32,21 @@ export function FindingCard({ finding, rule }: { finding: ReviewFindingPayload; 
     setErrorMessage(null);
     // Approving a pending request pre-fills the agent's stated reason so the
     // human edits or confirms rather than retyping.
-    setReason(
-      type === "approve" && finding.disposition?.status === "approval_requested" ? finding.disposition.reason : "",
-    );
+    const nextReason =
+      type === "approve" && finding.disposition?.status === "approval_requested" ? finding.disposition.reason : "";
+    setReason(nextReason);
+    writeReviewDraft(draftKey, { action: type, reason: nextReason });
+  };
+
+  const updateReason = (value: string) => {
+    setReason(value);
+    if (activeAction) writeReviewDraft(draftKey, { action: activeAction, reason: value });
+  };
+
+  const cancelAction = () => {
+    setActiveAction(null);
+    setReason("");
+    writeReviewDraft(draftKey, null);
   };
 
   const submit = () => {
@@ -40,8 +55,7 @@ export function FindingCard({ finding, rule }: { finding: ReviewFindingPayload; 
       { type: activeAction, ruleId: finding.ruleId, hash: finding.hash, reason },
       {
         onSuccess: () => {
-          setActiveAction(null);
-          setReason("");
+          cancelAction();
         },
         onError: (error) => setErrorMessage(error.message),
       },
@@ -96,9 +110,9 @@ export function FindingCard({ finding, rule }: { finding: ReviewFindingPayload; 
           <ReasonForm
             action={activeAction}
             reason={reason}
-            onReasonChange={setReason}
+            onReasonChange={updateReason}
             onConfirm={submit}
-            onCancel={() => setActiveAction(null)}
+            onCancel={cancelAction}
             isPending={action.isPending}
             errorMessage={errorMessage}
           />

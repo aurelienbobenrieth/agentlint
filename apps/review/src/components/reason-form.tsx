@@ -31,19 +31,24 @@ export function ReasonForm({
   errorMessage,
 }: ReasonFormProps) {
   const label = actionLabel(action);
+  const reasonRequired = action === "request_changes";
   return (
     <BlockStack gap="sm" className="px-4 pb-4">
       <Textarea
         autoFocus
         rows={3}
-        placeholder={m.reason_placeholder({ action: label.toLowerCase() })}
+        placeholder={
+          reasonRequired
+            ? m.reason_placeholder_required()
+            : m.reason_placeholder_optional({ action: label.toLowerCase() })
+        }
         value={reason}
         onChange={(event) => onReasonChange(event.target.value)}
       />
       <InlineStack gap="sm">
         <Button
           variant={CONFIRM_VARIANTS[action] === "primary" ? "default" : CONFIRM_VARIANTS[action]}
-          disabled={isPending || reason.trim().length === 0}
+          disabled={isPending || (reasonRequired && reason.trim().length === 0)}
           onClick={onConfirm}
         >
           {m.action_confirm({ action: label.toLowerCase() })}

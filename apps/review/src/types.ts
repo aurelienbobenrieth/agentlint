@@ -74,6 +74,7 @@ export interface ReviewActionRequest {
 export interface ReviewActionResult {
   readonly ok: boolean;
   readonly message: string;
+  readonly feedbackPath?: string | null;
 }
 
 export interface ReviewFinishResult {
