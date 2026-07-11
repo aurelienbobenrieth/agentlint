@@ -85,7 +85,7 @@ Prefer declarative `match` (pattern-by-example or tree-sitter `query`) over `cre
 This repo is a pnpm workspace:
 
 - root: the publishable `@aurelienbbn/agentlint` package (CLI + engine, Effect-first).
-- `apps/review`: the local review SPA (Vite, TanStack Router/Query, Paraglide i18n). Built into `dist/ui` and served by `agentlint review`.
+- `apps/review`: the local review SPA (Vite, TanStack Router/Query). Built into `dist/ui` and served by `agentlint review`.
 - `packages/ui`: `@agentlint/ui`, the presentational component library. `src/components/ui/**` are vendored COSS UI primitives (excluded from lint); agentlint-specific presentational components live in `src/components/*` and must stay free of data fetching and domain logic. Containers belong in the apps.
 
 ## AgentlintNode API
