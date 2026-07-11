@@ -1,11 +1,13 @@
 import { Effect, FileSystem, Layer } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
 import { initHandler } from "./handler.js";
 import { InitCommand } from "./request.js";
 
-const TEST_CWD = "/tmp/agentlint-test-init";
+const TEST_CWD = join(tmpdir(), "agentlint-test-init");
 const CONFIG_DIR = `${TEST_CWD}/.agentlint`;
 const CONFIG_PATH = `${CONFIG_DIR}/config.ts`;
 
