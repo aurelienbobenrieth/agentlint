@@ -6,10 +6,18 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -31,3 +39,12 @@ jobs:
 
       - name: Run validation suite
         run: pnpm run check
+
+      - name: Pack release artifact
+        id: package
+        run: |
+          pnpm --filter @aurelienbbn/agentlint pack --pack-destination "$RUNNER_TEMP"
+          echo "path=$(find "$RUNNER_TEMP" -name 'aurelienbbn-agentlint-*.tgz' -print -quit)" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test packed artifact
+        run: node scripts/smoke-package.mjs "${{ steps.package.outputs.path }}"
