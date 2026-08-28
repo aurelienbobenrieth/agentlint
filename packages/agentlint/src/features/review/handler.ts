@@ -1,300 +1,251 @@
-/**
- * Review session logic: payload assembly, action application, and the
- * feedback loop back to the agent.
- *
- * The review server is human-operated by definition — every action taken in
- * the UI is recorded with a `human:` actor. Rejections and change requests
- * are not ledger records: they land in `.agentlint/review-feedback.md`,
- * which the requesting agent reads after the session ends.
- *
- * @module
- * @since 0.2.0
- */
+/** Review payload and action application. @module @since 0.2.0 */
 
 import { Effect, FileSystem, Path } from "effect";
-import { userInfo } from "node:os";
 import { Env } from "../../config/env.js";
-import { normalizeConfig, policyForRule } from "../../domain/config.js";
+import { acceptanceSatisfies, findLineage } from "../../domain/acceptance.js";
+import { normalizeConfig } from "../../domain/config.js";
+import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
+import { findProposal } from "../../domain/proposal.js";
+import { acceptFinding } from "../accept/handler.js";
+import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { ledgerKey, LedgerRecord, LedgerStore } from "../../shared/infrastructure/ledger-store.js";
-import { buildReviewState } from "../../shared/pipeline/review-state.js";
+import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
+import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import type {
-  FindingStatus,
+  CalibrationFeedback,
+  EditorApplication,
   ReviewAction,
   ReviewActionResult,
+  ReviewFeedback,
   ReviewFindingPayload,
+  ReviewMode,
   ReviewStatePayload,
+  ReviewTransport,
 } from "./contract.js";
 
-const CONTEXT_RADIUS = 8;
+export interface ReviewSessionState {
+  readonly feedback: ReviewFeedback[];
+  readonly calibration: CalibrationFeedback[];
+  readonly requested: Set<string>;
+}
 
-function reviewActor(): string {
+const browserHref = (value: string): string | null => {
   try {
-    return `human:${userInfo().username}/review-ui`;
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
   } catch {
-    return "human:review-ui";
+    return null;
   }
+};
+
+export function makeReviewSessionState(): ReviewSessionState {
+  return { feedback: [], calibration: [], requested: new Set() };
 }
 
-function statusOf(disposition: { readonly status: string } | undefined): FindingStatus {
-  if (!disposition) return "unresolved";
-  switch (disposition.status) {
-    case "accepted":
-      return "accepted";
-    case "approved":
-      return "approved";
-    case "deferred":
-      return "deferred";
-    case "no_fix":
-      return "no_fix";
-    case "approval_requested":
-      return "pending_approval";
-    default:
-      return "unresolved";
-  }
+export interface BuildReviewPayloadOptions {
+  readonly base?: string | undefined;
+  readonly mode: ReviewMode;
+  readonly transport: ReviewTransport;
+  readonly source?: string | undefined;
+  readonly session?: ReviewSessionState | undefined;
+  readonly applications?: ReadonlyArray<EditorApplication> | undefined;
 }
 
-function contextAround(source: string, line: number): string {
-  const lines = source.split("\n");
-  const start = Math.max(0, line - 1 - CONTEXT_RADIUS);
-  const end = Math.min(lines.length, line + CONTEXT_RADIUS);
-  return lines
-    .slice(start, end)
-    .map((text, index) => `${String(start + index + 1).padStart(4)} | ${text}`)
-    .join("\n");
-}
-
-/**
- * Assemble the full state payload for the review UI.
- *
- * @since 0.2.0
- */
-export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (base: string | undefined) {
+export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (options: BuildReviewPayloadOptions) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configLoader = yield* ConfigLoader;
-
-  const config = normalizeConfig(yield* configLoader.load());
-  const state = yield* buildReviewState(base);
-
-  const newIdentities = new Set(
-    state.newRecords.map((record) => JSON.stringify([record.ruleId, record.hash, record.status, record.at])),
-  );
-
+  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const snapshot = yield* (yield* AcceptanceStore).read();
+  const proposals = yield* (yield* ProposalStore).read();
+  const collection = yield* collectFindings({ all: true, rules: [], base: options.base ?? config.base, files: [] });
   const sources = new Map<string, string>();
   const findings: ReviewFindingPayload[] = [];
-  for (const entry of state.findings) {
-    const finding = entry.finding;
+
+  for (const finding of collection.findings) {
+    const rule = config.rulesById.get(finding.ruleId);
+    if (!rule) continue;
+    const id = findingKey(finding);
+    const acceptance = snapshot.records.find((record) => acceptanceSatisfies(record, finding));
+    const lineage = findLineage(snapshot.records, finding);
+    const proposal = findProposal(proposals, finding);
+    const absoluteFile = path.resolve(env.cwd, finding.file);
+    const relativeFile = path.relative(env.cwd, absoluteFile);
+    const isInsideRepository =
+      relativeFile !== ".." &&
+      !relativeFile.startsWith("../") &&
+      !relativeFile.startsWith("..\\") &&
+      !path.isAbsolute(relativeFile);
     let source = sources.get(finding.file);
     if (source === undefined) {
       source = yield* fs.readFileString(path.resolve(env.cwd, finding.file)).pipe(Effect.orElseSucceed(() => ""));
       sources.set(finding.file, source);
     }
+    const guidance = normalizeGuidance(rule.standard.guidance);
+    const references: ReviewFindingPayload["guidance"]["references"][number][] = [];
+    if (rule.standard.source) {
+      references.push(
+        rule.standard.source.type === "url"
+          ? {
+              kind: "policy_url",
+              label: "Why this rule exists",
+              target: rule.standard.source.href,
+              href: browserHref(rule.standard.source.href),
+            }
+          : {
+              kind: "policy_file",
+              label: "Why this rule exists",
+              target: rule.standard.source.path,
+              href: null,
+            },
+      );
+    }
+    for (const ref of guidance.refs) {
+      references.push(
+        ref.type === "url"
+          ? { kind: "guidance_url", label: "Further reading", target: ref.href, href: browserHref(ref.href) }
+          : { kind: "agent_skill", label: "Agent skill", target: ref.id, href: null },
+      );
+    }
 
     findings.push({
-      hash: finding.hash,
+      id,
       ruleId: finding.ruleId,
+      ruleTitle: rule.standard.title,
+      lifecycle: finding.lifecycle,
+      authority: finding.authority,
       file: finding.file,
       line: finding.line,
       column: finding.column,
       message: finding.message,
-      snippet: finding.sourceSnippet,
-      context: contextAround(source, finding.line),
-      status: statusOf(entry.disposition),
-      disposition: entry.disposition
-        ? {
-            status: entry.disposition.status,
-            reason: entry.disposition.reason,
-            actor: entry.disposition.actor,
-            at: entry.disposition.at,
-            isNew: newIdentities.has(
-              JSON.stringify([
-                entry.disposition.ruleId,
-                entry.disposition.hash,
-                entry.disposition.status,
-                entry.disposition.at,
-              ]),
-            ),
-          }
+      editor: options.transport === "attached" && isInsideRepository ? { canOpen: true } : null,
+      code: {
+        source,
+        focus: {
+          startLine: finding.line,
+          startColumn: finding.column,
+          endLine: finding.endLine,
+          endColumn: finding.endColumn,
+        },
+      },
+      guidance: {
+        summary: rule.standard.summary ?? null,
+        standard: guidance.standard,
+        checks: [...guidance.checks],
+        examples: guidance.examples.map((example) => ({
+          label: example.label ?? null,
+          description: example.description ?? null,
+          code: example.code,
+        })),
+        references,
+      },
+      status: options.session?.requested.has(id) ? "changes_requested" : acceptance ? "accepted" : "unresolved",
+      acceptance: acceptance
+        ? { reason: acceptance.reason, actor: acceptance.actor ?? "unknown", at: acceptance.acceptedAt }
         : null,
+      lineageReason: lineage?.reason ?? null,
+      proposal: proposal
+        ? { summary: proposal.summary, diff: proposal.diff ?? null, actor: proposal.actor, at: proposal.proposedAt }
+        : null,
+      identity: { source: finding.source, fingerprint: finding.fingerprint, lineageKey: finding.lineageKey ?? null },
     });
   }
 
   return {
+    version: 1,
+    mode: options.mode,
+    transport: options.transport,
     project: path.basename(env.cwd),
-    base: state.base,
+    base: collection.base ?? options.base ?? config.base ?? "working tree",
     generatedAt: new Date().toISOString(),
-    rules: Object.values(config.rules)
-      .map((rule) => {
-        const guidance = normalizeGuidance(rule.guidance);
-        const policy = policyForRule(config, rule.id);
-        return {
-          id: rule.id,
-          description: rule.description,
-          standard: guidance.standard,
-          checks: guidance.checks,
-          examples: guidance.examples,
-          refs: guidance.refs,
-          persistence: policy.persistence ?? "ephemeral",
-          resolution: policy.resolution ?? "agent",
-        };
-      })
-      .toSorted((a, b) => a.id.localeCompare(b.id)),
+    applications: options.transport === "attached" ? [...(options.applications ?? [])] : [],
     findings,
-    ledger: [...state.findings]
-      .flatMap((entry) => (entry.disposition ? [entry.disposition] : []))
-      .map((record) => ({
-        ruleId: record.ruleId,
-        hash: record.hash,
-        status: record.status,
-        reason: record.reason,
-        actor: record.actor,
-        at: record.at,
-        isNew: newIdentities.has(JSON.stringify([record.ruleId, record.hash, record.status, record.at])),
-      })),
-    staleCount: state.staleRecords.length,
+    detached:
+      options.transport === "detached"
+        ? { source: options.source ?? "review artifact", canPersistAcceptances: false }
+        : null,
   } satisfies ReviewStatePayload;
 });
 
-/**
- * Feedback collected during a review session, returned to the agent.
- *
- * @since 0.2.0
- */
-export interface ReviewFeedback {
-  readonly ruleId: string;
-  readonly hash: string;
-  readonly file: string;
-  readonly line: number;
-  readonly message: string;
-  readonly comment: string;
+function replaceByFindingId<T extends { readonly findingId: string }>(items: T[], next: T): void {
+  const index = items.findIndex((item) => item.findingId === next.findingId);
+  if (index === -1) items.push(next);
+  else items[index] = next;
 }
 
-/**
- * Apply one review action. Ledger-affecting actions verify the finding
- * still exists at the recorded hash before writing.
- *
- * @since 0.2.0
- */
 export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
   action: ReviewAction,
-  feedback: ReviewFeedback[],
+  options: { readonly base?: string | undefined; readonly mode: ReviewMode; readonly session: ReviewSessionState },
 ) {
-  const configLoader = yield* ConfigLoader;
-  const ledgerStore = yield* LedgerStore;
-
-  const config = normalizeConfig(yield* configLoader.load());
-  const state = yield* buildReviewState(undefined);
-  const entry = state.findings.find(
-    (candidate) =>
-      ledgerKey(candidate.finding.ruleId, candidate.finding.hash) === ledgerKey(action.ruleId, action.hash),
-  );
-
-  if (!entry) {
+  const collection = yield* collectFindings({ all: true, rules: [], base: options.base, files: [] });
+  const finding = collection.findings.find((candidate) => findingKey(candidate) === action.findingId);
+  if (!finding) {
     return {
       ok: false,
-      message: "Finding no longer exists at this hash - the code changed. Refresh the review.",
+      message: "The finding changed or no longer exists. Refresh the review.",
     } satisfies ReviewActionResult;
+  }
+
+  const forget = (): void => {
+    options.session.requested.delete(action.findingId);
+    const index = options.session.feedback.findIndex((item) => item.findingId === action.findingId);
+    if (index !== -1) options.session.feedback.splice(index, 1);
+  };
+
+  if (action.type === "accept") {
+    if (options.mode !== "review") {
+      return { ok: false, message: "Calibration cannot create acceptances." } satisfies ReviewActionResult;
+    }
+    if (!action.reason?.trim()) {
+      return { ok: false, message: "An acceptance reason is required." } satisfies ReviewActionResult;
+    }
+    const result = yield* acceptFinding(finding, { authority: "human", reason: action.reason });
+    if (result.exitCode === 0) forget();
+    return { ok: result.exitCode === 0, message: result.message } satisfies ReviewActionResult;
+  }
+
+  if (action.type === "withdraw") {
+    // Undo a decision made in this session: drop the change request and any acceptance
+    // that currently satisfies this exact finding.
+    forget();
+    const store = yield* AcceptanceStore;
+    const snapshot = yield* store.read();
+    const kept = snapshot.records.filter((record) => !acceptanceSatisfies(record, finding));
+    if (kept.length !== snapshot.records.length) yield* store.write(kept);
+    return { ok: true, message: "Decision withdrawn." } satisfies ReviewActionResult;
   }
 
   if (action.type === "request_changes") {
-    if (action.reason.trim().length === 0) {
-      return { ok: false, message: "Describe the requested change." } satisfies ReviewActionResult;
-    }
-    feedback.push({
-      ruleId: action.ruleId,
-      hash: action.hash,
-      file: entry.finding.file,
-      line: entry.finding.line,
-      message: entry.finding.message,
-      comment: action.reason.trim(),
+    // An empty request still tells the agent exactly which finding to revisit; the
+    // finding message and standard carry the instruction.
+    replaceByFindingId(options.session.feedback, {
+      findingId: action.findingId,
+      ruleId: finding.ruleId,
+      file: finding.file,
+      line: finding.line,
+      message: finding.message,
+      comment: action.reason?.trim() || finding.message,
     });
-    const feedbackPath = yield* writeReviewFeedback(feedback);
-    return {
-      ok: true,
-      message: "Change request sent to the agent.",
-      feedbackPath,
-    } satisfies ReviewActionResult;
+    options.session.requested.add(action.findingId);
+    return { ok: true, message: "Change request recorded." } satisfies ReviewActionResult;
   }
 
-  const policy = policyForRule(config, action.ruleId);
-  if (action.type === "accept" && policy.resolution === "human") {
+  if (options.mode !== "calibration") {
     return {
       ok: false,
-      message: `${action.ruleId} requires approval - use approve instead of accept.`,
+      message: "Calibration labels are available only in calibration mode.",
     } satisfies ReviewActionResult;
   }
-
-  const status =
-    action.type === "approve"
-      ? ("approved" as const)
-      : action.type === "accept"
-        ? ("accepted" as const)
-        : action.type === "defer"
-          ? ("deferred" as const)
-          : ("no_fix" as const);
-  const defaultReasons = {
-    approved: "Approved in review UI.",
-    accepted: "Accepted in review UI.",
-    deferred: "Deferred in review UI.",
-    no_fix: "Marked as no fix in review UI.",
-  } as const;
-  const reason = action.reason.trim() || defaultReasons[status];
-
-  yield* ledgerStore.append(
-    new LedgerRecord({
-      version: 1,
-      persistence: policy.persistence === "durable" ? "durable" : undefined,
-      ruleId: action.ruleId,
-      hash: action.hash,
-      status,
-      reason,
-      actor: reviewActor(),
-      at: new Date().toISOString(),
-      summary: undefined,
-      adr: undefined,
-    }),
-  );
-
-  return { ok: true, message: `Recorded ${status}.` } satisfies ReviewActionResult;
-});
-
-/**
- * Write collected change requests to `.agentlint/review-feedback.md` so the
- * agent that requested the review can act on them.
- *
- * @since 0.2.0
- */
-export const writeReviewFeedback = Effect.fn("writeReviewFeedback")(function* (
-  feedback: ReadonlyArray<ReviewFeedback>,
-) {
-  if (feedback.length === 0) return null;
-
-  const env = yield* Env;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-
-  const lines: string[] = [
-    "# Review feedback",
-    "",
-    `Recorded ${new Date().toISOString()} via agentlint review. Address each item, then delete this file and rerun agentlint check.`,
-    "",
-  ];
-  for (const item of feedback) {
-    lines.push(`## ${item.ruleId} - ${item.file}:${item.line}`);
-    lines.push("");
-    lines.push(`Finding: ${item.message}`);
-    lines.push("");
-    lines.push(item.comment);
-    lines.push("");
+  if (!action.calibration) {
+    return { ok: false, message: "Select a calibration result." } satisfies ReviewActionResult;
   }
-
-  const feedbackPath = path.resolve(env.cwd, ".agentlint", "review-feedback.md");
-  yield* fs
-    .makeDirectory(path.resolve(env.cwd, ".agentlint"), { recursive: true })
-    .pipe(Effect.orElseSucceed(() => undefined));
-  yield* fs.writeFileString(feedbackPath, lines.join("\n")).pipe(Effect.orElseSucceed(() => undefined));
-  return ".agentlint/review-feedback.md";
+  replaceByFindingId(options.session.calibration, {
+    findingId: action.findingId,
+    ruleId: finding.ruleId,
+    file: finding.file,
+    classification: action.calibration,
+    note: action.note?.trim() ?? "",
+  });
+  return { ok: true, message: "Calibration feedback recorded." } satisfies ReviewActionResult;
 });
