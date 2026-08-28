@@ -6,10 +6,11 @@
  */
 
 import { Schema } from "effect";
-import { Authority } from "./acceptance.js";
 import { Fingerprint, FindingSource, findingIdentityKey } from "./fingerprint.js";
 import type { AgentlintNode } from "./node.js";
+import { Lifecycle, RuleAuthority } from "./rule.js";
 
+/** Evidence reported by a state detector. */
 export interface FindingOptions {
   readonly node: AgentlintNode;
   readonly message: string;
@@ -19,8 +20,8 @@ export interface FindingOptions {
 export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")({
   selector: Schema.UndefinedOr(Schema.String),
   ruleId: Schema.String,
-  lifecycle: Schema.Literals(["state", "change"]),
-  authority: Authority,
+  lifecycle: Lifecycle,
+  authority: RuleAuthority,
   source: FindingSource,
   fingerprint: Fingerprint,
   lineageKey: Schema.UndefinedOr(Schema.String),

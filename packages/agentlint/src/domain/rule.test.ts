@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { defineConfig, normalizeConfig } from "./config.js";
+import { ConfigError, defineConfig, normalizeConfig } from "./config.js";
 import type { ChangeRule, StateRule } from "./rule.js";
-import { defineRule, ruleId, ruleMatches } from "./rule.js";
+import { defineRule, RuleDefinitionError, ruleMatches } from "./rule.js";
 
 const standard = {
   id: "data/bounded-query",
@@ -73,7 +73,7 @@ const changeRule = defineRule({
 describe("defineRule", () => {
   it("preserves state inference and structured identities", () => {
     expect(stateRule.lifecycle).toBe("state");
-    expect(ruleId(stateRule)).toBe("api/bounded-prisma-query");
+    expect(stateRule.binding.id).toBe("api/bounded-prisma-query");
     expect(ruleMatches(stateRule)).toHaveLength(1);
     expectTypeOf(stateRule).toMatchTypeOf<StateRule<{ readonly clients: readonly ["db"] }>>();
     expectTypeOf(stateRule.detector.match).not.toEqualTypeOf<undefined>();
@@ -102,6 +102,23 @@ describe("defineRule", () => {
   });
 
   it("rejects invalid trigger combinations", () => {
+    let caught: unknown;
+    try {
+      defineRule({
+        lifecycle: "state",
+        standard,
+        detector: {
+          id: "invalid/both",
+          version: 1,
+          match: { pattern: "eval($$$ARGS)", query: "(call_expression)", message: "Review." },
+        },
+        binding: { id: "invalid/both", authority: "agent" },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(RuleDefinitionError);
+    expect(caught).toMatchObject({ ruleId: "invalid/both", reason: "ambiguous_match" });
     expect(() =>
       defineRule({
         lifecycle: "state",
@@ -136,6 +153,14 @@ describe("defineRule", () => {
         binding: { id: "binding", authority: "human" },
       }),
     ).toThrow("positive integer");
+    expect(() =>
+      defineRule({
+        lifecycle: "change",
+        standard,
+        detector: { id: " ", version: 1, detect() {} },
+        binding: { id: "binding", authority: "human" },
+      }),
+    ).toThrow("Rule binding: detector id must not be empty");
   });
 });
 
@@ -145,16 +170,30 @@ describe("defineConfig", () => {
     const config = normalizeConfig(
       defineConfig({ extends: [shared], rules: [changeRule], ignores: ["**/generated/**", "**/vendor/**"] }),
     );
-    expect(config.rules.map(ruleId)).toEqual(["api/bounded-prisma-query", "database/destructive-migration"]);
+    expect(config.rules.map((rule) => rule.binding.id)).toEqual([
+      "api/bounded-prisma-query",
+      "database/destructive-migration",
+    ]);
     expect(config.rulesById.get("database/destructive-migration")).toBe(changeRule);
     expect(config.ignores).toEqual(["**/generated/**", "**/vendor/**"]);
     expect(config.base).toBe("main");
   });
 
   it("rejects duplicate binding identities", () => {
-    expect(() => normalizeConfig(defineConfig({ rules: [stateRule, stateRule] }))).toThrow(
-      "Duplicate rule binding id: api/bounded-prisma-query",
-    );
+    let caught: unknown;
+    try {
+      normalizeConfig(defineConfig({ rules: [stateRule, stateRule] }));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    expect(caught).toMatchObject({ reason: "duplicate_binding", ruleId: "api/bounded-prisma-query" });
+    expect((caught as ConfigError).message).toBe("Duplicate rule binding id: api/bounded-prisma-query");
+  });
+
+  it("rejects empty base and ignore patterns", () => {
+    expect(() => defineConfig({ base: " " })).toThrow("Config base must not be empty");
+    expect(() => defineConfig({ ignores: [""] })).toThrow("Config ignore patterns must not be empty");
   });
 
   it("rejects config cycles", () => {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
+import { normalizeConfig } from "../../domain/config.js";
 import { defineRule } from "../../domain/rule.js";
 import { acceptFinding } from "../accept/handler.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
@@ -29,14 +30,16 @@ const TestEnv = Layer.succeed(
   Env,
   Env.of({ cwd, argv: [], actor: "agent:test", platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
 );
-const TestConfig = Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed({ rules: [rule] }) }));
+const TestConfig = Layer.succeed(
+  ConfigLoader,
+  ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [rule] })) }),
+);
 const TestGit = Layer.succeed(
   Git,
   Git.of({
     detectDefaultBranch: () => Effect.succeed("main"),
     changedFiles: () => Effect.succeed([]),
     changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
-    showFile: () => Effect.succeed(undefined),
   }),
 );
 const TestLayer = Layer.mergeAll(TestConfig, TestGit, Parser.layer, AcceptanceStore.layer, SelectorCache.layer).pipe(
@@ -85,6 +88,49 @@ describe("binary check and acceptance loop", () => {
     expect(changed.exitCode).toBe(1);
     expect(changed.lineage).toMatchObject([{ reason: "The sandbox owns this call.", authority: "agent" }]);
     expect(changed.staleCount).toBe(1);
+    expect(await Effect.runPromise(readStoredAcceptances)).toEqual([]);
+  });
+
+  it("prunes stale acceptances only for a complete view", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(writeSource('danger("x")\n'));
+    const first = await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)));
+    const finding = first.unresolved[0];
+    expect(finding).toBeDefined();
+    if (finding === undefined) return;
+    await Effect.runPromise(
+      acceptFinding(finding, { authority: "agent", reason: "The sandbox owns this call." }).pipe(
+        Effect.provide(TestLayer),
+      ),
+    );
+    // New evidence: the stored acceptance no longer matches any current finding.
+    await Effect.runPromise(writeSource('danger("x", "new evidence")\n'));
+
+    const partialCommands = [
+      new CheckCommand({ all: true, rules: ["security/danger"], base: undefined, files: [], format: "text" }),
+      new CheckCommand({ all: true, rules: [], base: undefined, files: ["src/demo.ts"], format: "text" }),
+      new CheckCommand({ all: false, rules: [], base: undefined, files: ["src/demo.ts"], format: "text" }),
+    ];
+    const partialRuns = await Effect.runPromise(
+      Effect.forEach(partialCommands, (partial) =>
+        Effect.all({
+          result: checkHandler(partial),
+          stored: Effect.flatMap(AcceptanceStore, (store) => store.read()).pipe(
+            Effect.map((snapshot) => snapshot.records),
+          ),
+        }),
+      ).pipe(Effect.provide(TestLayer)),
+    );
+    for (const { result, stored } of partialRuns) {
+      expect(result.scope).toBe("partial");
+      expect(result.exitCode).toBe(1);
+      expect(result.staleCount).toBe(0);
+      expect(stored).toHaveLength(1);
+    }
+
+    const complete = await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)));
+    expect(complete.scope).toBe("complete");
+    expect(complete.staleCount).toBe(1);
     expect(await Effect.runPromise(readStoredAcceptances)).toEqual([]);
   });
 });

@@ -41,7 +41,7 @@ describe("ConfigLoader", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(CONFIG_DIR, { recursive: true });
-        yield* fs.writeFileString(CONFIG_PATH, "export default { rules: {} }\n");
+        yield* fs.writeFileString(CONFIG_PATH, 'export default { rules: [], base: "main" }\n');
       }).pipe(Effect.provide(NodeServices.layer)),
     );
 
@@ -52,7 +52,8 @@ describe("ConfigLoader", () => {
       }).pipe(Effect.provide(TestLayer)),
     );
 
-    expect(config.rules).toEqual({});
+    expect(config.rules).toEqual([]);
+    expect(config.base).toBe("main");
 
     await Effect.runPromise(cleanup);
   });

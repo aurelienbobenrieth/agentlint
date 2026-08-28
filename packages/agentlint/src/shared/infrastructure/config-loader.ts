@@ -13,7 +13,7 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
-import type { AgentlintConfig } from "../../domain/config.js";
+import { normalizeConfig, type AgentlintConfig, type NormalizedConfig } from "../../domain/config.js";
 
 /**
  * Raised when the config file is missing, malformed, or fails to import.
@@ -21,7 +21,7 @@ import type { AgentlintConfig } from "../../domain/config.js";
  * @since 0.1.0
  * @category errors
  */
-export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
+export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agentlint/ConfigLoadError", {
   reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
   path: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
@@ -33,7 +33,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
       case "import_failed":
         return `Failed to load ${this.path}: ${this.detail}`;
       case "invalid_shape":
-        return `Invalid config at ${this.path}: must export an agentlint config object`;
+        return `Invalid config at ${this.path}: ${this.detail ?? "must export an agentlint config object"}`;
     }
   }
 }
@@ -52,20 +52,25 @@ const CONFIG_PATH = [".agentlint", "config.ts"] as const;
  * @since 0.1.0
  * @category internals
  */
-const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string): Effect.Effect<string, ConfigError> =>
+const discoverConfig = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  cwd: string,
+): Effect.Effect<string, ConfigLoadError> =>
   Effect.gen(function* () {
     const candidate = path.resolve(cwd, ...CONFIG_PATH);
     if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
       return candidate;
     }
-    return yield* new ConfigError({ reason: "not_found", path: cwd });
+    return yield* new ConfigLoadError({ reason: "not_found", path: cwd });
   });
 
 /**
  * Effect service that discovers and loads the agentlint config file.
  *
  * Uses `jiti` under the hood so TypeScript configs work without a
- * separate compilation step.
+ * separate compilation step. The config is imported and normalized once per
+ * service instance; later `load()` calls return the same result.
  *
  * @example
  * ```ts
@@ -75,7 +80,7 @@ const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string)
  * const program = Effect.gen(function* () {
  *   const loader = yield* ConfigLoader
  *   const config = yield* loader.load()
- *   yield* Console.log(Object.keys(config.rules))
+ *   yield* Console.log(config.rules.map((rule) => rule.binding.id))
  * })
  * ```
  *
@@ -85,8 +90,8 @@ const discoverConfig = (fs: FileSystem.FileSystem, path: Path.Path, cwd: string)
 export class ConfigLoader extends Context.Service<
   ConfigLoader,
   {
-    /** Discover and import the config file from the working directory. */
-    load(): Effect.Effect<AgentlintConfig, ConfigError>;
+    /** Discover, import, and normalize the config file from the working directory. Memoized. */
+    load(): Effect.Effect<NormalizedConfig, ConfigLoadError>;
   }
 >()("agentlint/ConfigLoader") {
   static readonly layer: Layer.Layer<ConfigLoader, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
@@ -96,35 +101,43 @@ export class ConfigLoader extends Context.Service<
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
 
-      return ConfigLoader.of({
-        load: () =>
-          Effect.gen(function* () {
-            const configPath = yield* discoverConfig(fs, path, env.cwd);
+      const load = Effect.gen(function* () {
+        const configPath = yield* discoverConfig(fs, path, env.cwd);
 
-            const config = yield* Effect.tryPromise({
-              try: async () => {
-                const { createJiti } = await import("jiti");
-                const jiti = createJiti(import.meta.url, {
-                  interopDefault: true,
-                });
-                const loaded = await jiti.import(configPath);
-                return (loaded as { default?: AgentlintConfig }).default ?? (loaded as AgentlintConfig);
-              },
-              catch: (error) =>
-                new ConfigError({
-                  reason: "import_failed",
-                  path: configPath,
-                  detail: error instanceof Error ? error.message : String(error),
-                }),
+        const config = yield* Effect.tryPromise({
+          try: async () => {
+            const { createJiti } = await import("jiti");
+            const jiti = createJiti(import.meta.url, {
+              interopDefault: true,
             });
+            const loaded = await jiti.import(configPath);
+            return (loaded as { default?: AgentlintConfig }).default ?? (loaded as AgentlintConfig);
+          },
+          catch: (error) =>
+            new ConfigLoadError({
+              reason: "import_failed",
+              path: configPath,
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+        });
 
-            if (!config || typeof config !== "object") {
-              return yield* new ConfigError({ reason: "invalid_shape", path: configPath });
-            }
+        if (!config || typeof config !== "object") {
+          return yield* new ConfigLoadError({ reason: "invalid_shape", path: configPath });
+        }
 
-            return config;
-          }),
+        return yield* Effect.try({
+          try: () => normalizeConfig(config),
+          catch: (error) =>
+            new ConfigLoadError({
+              reason: "invalid_shape",
+              path: configPath,
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+        });
       });
+
+      const cached = yield* Effect.cached(load);
+      return ConfigLoader.of({ load: () => cached });
     }),
   );
 }

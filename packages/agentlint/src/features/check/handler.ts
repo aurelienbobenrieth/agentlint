@@ -1,9 +1,9 @@
 /** Check application handler. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { acceptanceKey, findLineage, findingState } from "../../domain/acceptance.js";
-import { findingKey, withSelector } from "../../domain/finding.js";
-import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
+import { findLineage } from "../../domain/acceptance.js";
+import { findingKey, withSelector, type FindingRecord } from "../../domain/finding.js";
+import { AcceptanceStore, lookupAcceptance } from "../../shared/infrastructure/acceptance-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { CheckCommand, CheckResult } from "./request.js";
@@ -29,13 +29,16 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   }
 
   const snapshot = yield* store.read();
-  const unresolved = collected.findings.filter((finding) => findingState(finding, snapshot.records) === "unresolved");
-  const accepted = collected.findings.filter((finding) => findingState(finding, snapshot.records) === "accepted");
-  const currentKeys = new Set(collected.findings.map(findingKey));
+  const unresolved: FindingRecord[] = [];
+  const accepted: FindingRecord[] = [];
+  const currentKeys = new Set<string>();
+  for (const finding of collected.findings) {
+    currentKeys.add(findingKey(finding));
+    if (lookupAcceptance(snapshot, finding)) accepted.push(finding);
+    else unresolved.push(finding);
+  }
   const staleCount =
-    collected.scope === "complete"
-      ? snapshot.records.filter((record) => !currentKeys.has(acceptanceKey(record))).length
-      : 0;
+    collected.scope === "complete" ? [...snapshot.byKey.keys()].filter((key) => !currentKeys.has(key)).length : 0;
   const selected = unresolved.map((finding, index) => withSelector(finding, String(index + 1)));
   const lineage = unresolved.flatMap((finding) => {
     const prior = findLineage(snapshot.records, finding);
@@ -69,7 +72,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   return new CheckResult({
     findings: [...collected.findings],
     unresolved: selected,
-    accepted: [...accepted],
+    accepted,
     lineage,
     staleCount,
     scope: collected.scope,

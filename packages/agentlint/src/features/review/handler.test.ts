@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
+import { normalizeConfig } from "../../domain/config.js";
 import { defineRule } from "../../domain/rule.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
@@ -29,14 +30,16 @@ const TestEnv = Layer.succeed(
   Env,
   Env.of({ cwd, argv: [], actor: "agent:test", platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
 );
-const TestConfig = Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed({ rules: [rule] }) }));
+const TestConfig = Layer.succeed(
+  ConfigLoader,
+  ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [rule] })) }),
+);
 const TestGit = Layer.succeed(
   Git,
   Git.of({
     detectDefaultBranch: () => Effect.succeed("main"),
     changedFiles: () => Effect.succeed([]),
     changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
-    showFile: () => Effect.succeed(undefined),
   }),
 );
 const TestLayer = Layer.mergeAll(

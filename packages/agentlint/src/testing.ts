@@ -1,11 +1,11 @@
 /**
  * Promise-based testing helpers for rule and plugin authors.
  *
- * These wrap the Effect-based `runRuleFixtures`/`runRuleOnSource` with the
- * live parser layers so a vitest suite needs no Effect plumbing:
+ * These wrap the Effect-based fixture runners with the live parser layers so
+ * a vitest suite needs no Effect plumbing:
  *
  * ```ts
- * import { testRuleFixtures } from "@aurelienbbn/agentlint";
+ * import { testRuleFixtures } from "@aurelienbbn/agentlint/testing";
  *
  * it("fixtures hold", async () => {
  *   const report = await testRuleFixtures(myRule);
@@ -21,15 +21,24 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, Layer } from "effect";
 import { Env } from "./config/env.js";
 import type { FindingRecord } from "./domain/finding.js";
-import type { AgentlintRule, ChangeRule, ChangeSet, StateRule } from "./domain/rule.js";
+import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import {
+  normalizeChangeFixture,
   runRuleFixtures,
   runRuleOnChange,
   runRuleOnSource,
   type FixtureReport,
-  type ReportedChangeFinding,
 } from "./shared/pipeline/rule-tester.js";
+
+export {
+  normalizeChangeFixture,
+  runRuleFixtures,
+  runRuleOnChange,
+  runRuleOnSource,
+  runRuleOnSources,
+} from "./shared/pipeline/rule-tester.js";
+export type { FixtureFailure, FixtureReport } from "./shared/pipeline/rule-tester.js";
 
 const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 
@@ -44,8 +53,8 @@ export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
 }
 
 /**
- * Run a rule against one in-memory snippet with real parsing. `file` is a
- * pseudo-filename whose extension selects the grammar (default `fixture.tsx`).
+ * Run a state rule against one in-memory snippet with real parsing. `file` is
+ * a pseudo-filename whose extension selects the grammar (default `fixture.tsx`).
  *
  * @since 0.2.0
  * @category constructors
@@ -58,7 +67,14 @@ export function testRuleOnSource(
   return Effect.runPromise(runRuleOnSource(rule, source, file).pipe(Effect.provide(TestingLayer)));
 }
 
-/** Run a change rule against normalized, caller-provided change evidence. */
-export function testRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<ReportedChangeFinding> {
-  return runRuleOnChange(rule, change);
+/**
+ * Run a change rule against one fixture, either compact before/after
+ * repositories or an exact normalized change set. Returns the same
+ * `FindingRecord` shape `agentlint check` produces.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function testRuleOnChange(rule: ChangeRule, fixture: ChangeFixture): Promise<ReadonlyArray<FindingRecord>> {
+  return Promise.resolve(runRuleOnChange(rule, normalizeChangeFixture(fixture)));
 }

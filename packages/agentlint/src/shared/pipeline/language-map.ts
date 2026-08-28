@@ -44,13 +44,3 @@ const EXTENSION_TO_GRAMMAR: HashMap.HashMap<string, string> = HashMap.make(
 export function grammarForExtension(ext: string): string | undefined {
   return Option.getOrUndefined(HashMap.get(EXTENSION_TO_GRAMMAR, ext));
 }
-
-/**
- * Return all file extensions that agentlint can parse.
- *
- * @since 0.1.0
- * @category constructors
- */
-export function supportedExtensions(): ReadonlyArray<string> {
-  return [...HashMap.keys(EXTENSION_TO_GRAMMAR)];
-}

@@ -15,10 +15,11 @@ import {
   sameFingerprint,
   sameFindingSource,
 } from "./fingerprint.js";
+import { RuleAuthority } from "./rule.js";
 
-/** The authority path that made or is required to make a decision. */
-export const Authority = Schema.Literals(["agent", "human"]);
-export type Authority = Schema.Schema.Type<typeof Authority>;
+/** The authority path that made or is required to make a decision. Same literals as `RuleAuthority`. */
+export const Authority = RuleAuthority;
+export type Authority = RuleAuthority;
 
 const NonEmptyString = Schema.String.check(Schema.isPattern(/\S/));
 

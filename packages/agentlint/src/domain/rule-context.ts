@@ -7,11 +7,14 @@ import type { AgentlintNode } from "./node.js";
 import type { StateRule } from "./rule.js";
 import { findingSourceForRule } from "./rule-identity.js";
 
+/** What a state detector sees while one file is being walked. */
 export interface RuleContext {
-  getFilename(): string;
-  getFilePath(): string;
-  getSourceCode(): string;
-  getLinesAround(line: number, radius?: number): string;
+  /** Absolute filesystem path of the current file. */
+  readonly absolutePath: string;
+  /** Repository-relative, forward-slash path of the current file. */
+  readonly path: string;
+  /** Full source text of the current file. */
+  readonly source: string;
   report(options: FindingOptions): void;
 }
 
@@ -45,26 +48,16 @@ export class RuleContextImpl implements RuleContext {
     return this.findings.splice(0);
   }
 
-  getFilename(): string {
+  get absolutePath(): string {
     return this.#absolutePath;
   }
 
-  getFilePath(): string {
+  get path(): string {
     return this.#file;
   }
 
-  getSourceCode(): string {
+  get source(): string {
     return this.#source;
-  }
-
-  getLinesAround(line: number, radius = 10): string {
-    const lines = this.#source.split("\n");
-    const start = Math.max(0, line - 1 - radius);
-    const end = Math.min(lines.length, line + radius);
-    return lines
-      .slice(start, end)
-      .map((value, index) => `${String(start + index + 1).padStart(4)} | ${value}`)
-      .join("\n");
   }
 
   report(options: FindingOptions): void {

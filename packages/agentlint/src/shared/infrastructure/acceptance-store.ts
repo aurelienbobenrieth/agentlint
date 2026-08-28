@@ -10,7 +10,7 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
-import { AcceptanceRecord, acceptanceKey, sameLineage } from "../../domain/acceptance.js";
+import { AcceptanceRecord, acceptanceKey, acceptanceSatisfies, sameLineage } from "../../domain/acceptance.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
 
@@ -52,6 +52,18 @@ function snapshot(records: ReadonlyArray<AcceptanceRecord>): AcceptanceSnapshot 
   };
 }
 
+/**
+ * Find the acceptance that opens the gate for `finding`, using the exact
+ * identity index. Equivalent to scanning `records` with `acceptanceSatisfies`.
+ */
+export function lookupAcceptance(
+  acceptances: AcceptanceSnapshot,
+  finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
+): AcceptanceRecord | undefined {
+  const record = acceptances.byKey.get(findingIdentityKey(finding.source, finding.fingerprint));
+  return record !== undefined && acceptanceSatisfies(record, finding) ? record : undefined;
+}
+
 /** Parse and strictly validate a current-state JSONL file. */
 export function parseAcceptances(content: string): AcceptanceRecord[] {
   const records: AcceptanceRecord[] = [];
@@ -89,7 +101,19 @@ export function parseAcceptances(content: string): AcceptanceRecord[] {
 
 /** Sort records by their complete identity, independently of insertion order. */
 export function sortAcceptances(records: ReadonlyArray<AcceptanceRecord>): AcceptanceRecord[] {
-  return records.toSorted((left, right) => acceptanceKey(left).localeCompare(acceptanceKey(right)));
+  return sortByKey(records, keyIndex(records));
+}
+
+function keyIndex(records: ReadonlyArray<AcceptanceRecord>): Map<AcceptanceRecord, string> {
+  return new Map(records.map((record) => [record, acceptanceKey(record)]));
+}
+
+function sortByKey(
+  records: ReadonlyArray<AcceptanceRecord>,
+  keys: ReadonlyMap<AcceptanceRecord, string>,
+): AcceptanceRecord[] {
+  const keyOf = (record: AcceptanceRecord) => keys.get(record) ?? acceptanceKey(record);
+  return records.toSorted((left, right) => keyOf(left).localeCompare(keyOf(right)));
 }
 
 /** Serialize sorted current state as JSONL. */
@@ -110,10 +134,12 @@ export function reconcileAcceptanceRecords(
   input: ReconcileInput,
 ): ReconcileResult {
   const currentKeys = new Set(input.current.map((finding) => findingIdentityKey(finding.source, finding.fingerprint)));
+  const keys = keyIndex([...existing, ...(input.accepted ?? [])]);
+  const keyOf = (record: AcceptanceRecord) => keys.get(record) ?? acceptanceKey(record);
   let records = [...existing];
 
   for (const record of input.accepted ?? []) {
-    const key = acceptanceKey(record);
+    const key = keyOf(record);
     if (!currentKeys.has(key)) {
       throw new AcceptanceStoreError({
         reason: "invalid_acceptance",
@@ -121,18 +147,18 @@ export function reconcileAcceptanceRecords(
         line: undefined,
       });
     }
-    records = records.filter((candidate) => acceptanceKey(candidate) !== key && !sameLineage(candidate, record));
+    records = records.filter((candidate) => keyOf(candidate) !== key && !sameLineage(candidate, record));
     records.push(record);
   }
 
   if (input.scope === "complete") {
-    records = records.filter((record) => currentKeys.has(acceptanceKey(record)));
+    records = records.filter((record) => currentKeys.has(keyOf(record)));
   }
 
-  const keys = new Set(records.map(acceptanceKey));
-  const removed = existing.filter((record) => !keys.has(acceptanceKey(record)));
-  const sorted = sortAcceptances(records);
-  return { ...snapshot(sorted), removed };
+  const keptKeys = new Set(records.map(keyOf));
+  const removed = existing.filter((record) => !keptKeys.has(keyOf(record)));
+  const sorted = sortByKey(records, keys);
+  return { records: sorted, byKey: new Map(sorted.map((record) => [keyOf(record), record])), removed };
 }
 
 export class AcceptanceStore extends Context.Service<

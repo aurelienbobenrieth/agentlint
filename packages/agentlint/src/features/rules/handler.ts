@@ -1,7 +1,6 @@
 /** Rule listing, fixture testing, and calibration handlers. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { normalizeConfig } from "../../domain/config.js";
 import type { AgentlintRule } from "../../domain/rule.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { collectFindings, ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
@@ -23,7 +22,7 @@ function selectRules(
 }
 
 export const rulesListHandler = Effect.fn("rulesListHandler")(function* (command: RulesListCommand) {
-  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const config = yield* (yield* ConfigLoader).load();
   const file = command.file?.replace(/\\/g, "/");
   return new RulesListResult({
     rules: config.rules
@@ -41,7 +40,7 @@ export const rulesListHandler = Effect.fn("rulesListHandler")(function* (command
 });
 
 export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command: RulesTestCommand) {
-  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const config = yield* (yield* ConfigLoader).load();
   const rules = selectRules(config.rules, command.rules).toSorted((left, right) =>
     left.binding.id.localeCompare(right.binding.id),
   );

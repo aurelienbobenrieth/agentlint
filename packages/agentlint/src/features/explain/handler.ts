@@ -3,7 +3,6 @@
 import { Effect } from "effect";
 import { findLineage, findingState } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
-import { normalizeConfig } from "../../domain/config.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
 import type { AgentlintRule } from "../../domain/rule.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
@@ -53,7 +52,7 @@ function explainRule(rule: AgentlintRule): string {
 }
 
 export const explainHandler = Effect.fn("explainHandler")(function* (command: ExplainCommand) {
-  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const config = yield* (yield* ConfigLoader).load();
   const directRule = config.rulesById.get(command.selector);
   if (directRule) return new ExplainResult({ output: explainRule(directRule), found: true });
 

@@ -15,7 +15,6 @@ import type { AgentlintNode } from "./node.js";
 import type { TreeSitterNodeType } from "./node-types.js";
 import type { RuleContext } from "./rule-context.js";
 import { Guidance } from "./guidance.js";
-import type { Guidance as GuidanceType } from "./guidance.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
@@ -58,13 +57,14 @@ export type RuleMatch = Schema.Schema.Type<typeof RuleMatch>;
 /** Callback invoked for a matching syntax node. */
 export type VisitorHandler = (node: AgentlintNode) => void;
 
-/** Imperative AST visitor escape hatch. */
-export type Visitors = {
-  before?: ((filename: string) => boolean | void) | undefined;
-  after?: (() => void) | undefined;
-} & { [K in TreeSitterNodeType]?: VisitorHandler } & {
-  [nodeType: string]: VisitorHandler | ((filename: string) => boolean | void) | (() => void) | undefined;
-};
+/** File lifecycle hooks of an imperative detector. `before` returns `false` to skip the file. */
+export interface VisitorHooks {
+  before?(path: string): boolean | void;
+  after?(): void;
+}
+
+/** Imperative AST visitor escape hatch, keyed by grammar node type. */
+export type Visitors = VisitorHooks & Partial<Record<TreeSitterNodeType, VisitorHandler>>;
 
 /** One in-memory repository used by a detector fixture. */
 export interface FixtureRepository {
@@ -174,8 +174,13 @@ export interface ChangeRuleContext {
   report(finding: ChangeFindingOptions): void;
 }
 
+/** Who may accept a finding produced by a binding. */
 export const RuleAuthority = Schema.Literals(["agent", "human"]);
 export type RuleAuthority = Schema.Schema.Type<typeof RuleAuthority>;
+
+/** Which evidence a detector judges: current source or a normalized change. */
+export const Lifecycle = Schema.Literals(["state", "change"]);
+export type Lifecycle = Schema.Schema.Type<typeof Lifecycle>;
 
 /** Repository-owned policy and material detector configuration. */
 export interface RuleBinding<Options = unknown> {
@@ -219,24 +224,58 @@ export interface ChangeRule<Options = unknown> extends RuleBase<Options> {
 
 export type AgentlintRule<Options = unknown> = StateRule<Options> | ChangeRule<Options>;
 
+/**
+ * Raised by `defineRule` when a rule is structurally invalid.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class RuleDefinitionError extends Schema.TaggedError<RuleDefinitionError>()("agentlint/RuleDefinitionError", {
+  ruleId: Schema.String,
+  reason: Schema.Literals([
+    "empty_field",
+    "invalid_detector_version",
+    "ambiguous_match",
+    "missing_state_implementation",
+    "missing_change_detect",
+  ]),
+  field: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "empty_field":
+        return `Rule ${this.ruleId}: ${this.field} must not be empty`;
+      case "invalid_detector_version":
+        return `Rule ${this.ruleId}: detector version must be a positive integer`;
+      case "ambiguous_match":
+        return `Rule ${this.ruleId}: each match needs exactly one of "pattern" or "query"`;
+      case "missing_state_implementation":
+        return `Rule ${this.ruleId}: state detector must define "match" or "createOnce"`;
+      case "missing_change_detect":
+        return `Rule ${this.ruleId}: change detector must define "detect"`;
+    }
+  }
+}
+
 const StandardDecoder = Schema.decodeUnknownSync(RuleStandard);
 const MatchDecoder = Schema.decodeUnknownSync(RuleMatch);
 const AuthorityDecoder = Schema.decodeUnknownSync(RuleAuthority);
 
-function assertNonEmpty(value: string, field: string): void {
-  if (value.trim().length === 0) throw new Error(`${field} must not be empty`);
+function assertNonEmpty(ruleId: string, value: string, field: string): void {
+  if (value.trim().length === 0) throw new RuleDefinitionError({ ruleId, reason: "empty_field", field });
 }
 
 function validateCommon(rule: AgentlintRule): void {
+  const ruleId = rule.binding.id;
   StandardDecoder(rule.standard);
-  assertNonEmpty(rule.binding.id, "Rule binding id");
+  assertNonEmpty(ruleId, ruleId, "binding id");
   AuthorityDecoder(rule.binding.authority);
-  assertNonEmpty(rule.detector.id, "Rule detector id");
+  assertNonEmpty(ruleId, rule.detector.id, "detector id");
   if (!Number.isSafeInteger(rule.detector.version) || rule.detector.version < 1) {
-    throw new Error(`Rule ${rule.binding.id}: detector version must be a positive integer`);
+    throw new RuleDefinitionError({ ruleId, reason: "invalid_detector_version" });
   }
   for (const pattern of [...(rule.binding.include ?? []), ...(rule.binding.exclude ?? [])]) {
-    assertNonEmpty(pattern, `Rule ${rule.binding.id} scope pattern`);
+    assertNonEmpty(ruleId, pattern, "scope pattern");
   }
 }
 
@@ -244,41 +283,36 @@ function validateCommon(rule: AgentlintRule): void {
  * Define one effective rule while preserving option and lifecycle inference.
  *
  * This is the only rule constructor. Narrow `rule.lifecycle` to access the
- * corresponding detector and fixture contract.
+ * corresponding detector and fixture contract. Throws `RuleDefinitionError`
+ * for structural mistakes.
  */
 export function defineRule<const Options>(rule: StateRule<Options>): StateRule<Options>;
 export function defineRule<const Options>(rule: ChangeRule<Options>): ChangeRule<Options>;
 export function defineRule(rule: AgentlintRule): AgentlintRule {
   validateCommon(rule);
+  const ruleId = rule.binding.id;
   if (rule.lifecycle === "state") {
     const matches = ruleMatches(rule);
     for (const match of matches) {
       MatchDecoder(match);
       if ((match.pattern === undefined) === (match.query === undefined)) {
-        throw new Error(`Rule ${rule.binding.id}: each match needs exactly one of "pattern" or "query"`);
+        throw new RuleDefinitionError({ ruleId, reason: "ambiguous_match" });
       }
     }
     if (matches.length === 0 && !rule.detector.createOnce) {
-      throw new Error(`Rule ${rule.binding.id}: state detector must define "match" or "createOnce"`);
+      throw new RuleDefinitionError({ ruleId, reason: "missing_state_implementation" });
     }
   } else if (rule.lifecycle === "change") {
     if (typeof rule.detector.detect !== "function") {
-      throw new Error(`Rule ${rule.binding.id}: change detector must define "detect"`);
+      throw new RuleDefinitionError({ ruleId, reason: "missing_change_detect" });
     }
   }
   return rule;
 }
 
-/** Normalize the declarative matches of a state rule. */
+/** Normalize the declarative matches of a state rule. Internal to the engine. */
 export function ruleMatches(rule: StateRule): ReadonlyArray<RuleMatch> {
   const matches = rule.detector.match;
   if (!matches) return [];
   return Array.isArray(matches) ? matches : [matches as RuleMatch];
 }
-
-/** Effective repository identity. */
-export function ruleId(rule: AgentlintRule): string {
-  return rule.binding.id;
-}
-
-export type RuleGuidance = GuidanceType;

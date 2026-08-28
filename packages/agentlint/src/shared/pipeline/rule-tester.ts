@@ -1,11 +1,12 @@
 /** Detector fixture runners. @module @since 0.2.0 */
 
+import { createHash } from "node:crypto";
 import { Effect } from "effect";
+import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import {
   ruleMatches,
   type AgentlintRule,
-  type ChangeFindingOptions,
   type ChangeFixture,
   type ChangeRule,
   type ChangeSet,
@@ -14,7 +15,6 @@ import {
   type StateRule,
 } from "../../domain/rule.js";
 import { RuleContextImpl } from "../../domain/rule-context.js";
-import { fnv1a7 } from "../../domain/hash.js";
 import { Parser } from "../infrastructure/parser.js";
 import { grammarForExtension } from "./language-map.js";
 import { compileMatches, PatternError, resolveWhereClauses, runMatches } from "./pattern-match.js";
@@ -62,17 +62,20 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
   return yield* runRuleOnSources(rule, [[file, source]]);
 });
 
-export interface ReportedChangeFinding extends ChangeFindingOptions {}
-
-/** Run one change detector against an already normalized change. */
-export function runRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<ReportedChangeFinding> {
-  const findings: ReportedChangeFinding[] = [];
-  rule.detector.detect({ change, report: (finding) => findings.push(finding) }, rule.binding.options);
-  return findings;
+/**
+ * Run one change detector against an already normalized change. Findings use
+ * the same fingerprint and lineage construction as `agentlint check`; the
+ * absolute path is the fixture path itself.
+ */
+export function runRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<FindingRecord> {
+  const context = new ChangeRuleContextImpl(rule, change, (file) => file);
+  rule.detector.detect(context, rule.binding.options);
+  return context.findings;
 }
 
+/** Same digest as the Git change source, so fixture snapshots match real evidence. */
 function snapshot(content: string): { readonly content: string; readonly digest: string } {
-  return { content, digest: fnv1a7(content.replace(/\r\n/g, "\n")) };
+  return { content, digest: createHash("sha256").update(content).digest("hex") };
 }
 
 /** Normalize a compact before-and-after fixture to the public change contract. */

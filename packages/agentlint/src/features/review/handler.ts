@@ -3,7 +3,6 @@
 import { Effect, FileSystem, Path } from "effect";
 import { Env } from "../../config/env.js";
 import { acceptanceSatisfies, findLineage } from "../../domain/acceptance.js";
-import { normalizeConfig } from "../../domain/config.js";
 import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
 import { findProposal } from "../../domain/proposal.js";
@@ -56,7 +55,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const config = yield* (yield* ConfigLoader).load();
   const snapshot = yield* (yield* AcceptanceStore).read();
   const proposals = yield* (yield* ProposalStore).read();
   const collection = yield* collectFindings({ all: true, rules: [], base: options.base ?? config.base, files: [] });

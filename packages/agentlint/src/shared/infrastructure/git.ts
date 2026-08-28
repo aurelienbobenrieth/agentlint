@@ -25,11 +25,11 @@ export class GitError extends Schema.TaggedError<GitError>()("agentlint/GitError
   }
 }
 
-const parseLines = (output: string): ReadonlyArray<string> =>
-  output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+const parseNulSeparated = (output: string): ReadonlyArray<string> =>
+  output.split("\0").filter((entry) => entry.length > 0);
+
+/** `git show <ref>:<path>` reports a missing path with one of these messages. */
+const MISSING_PATH_PATTERN = /does not exist in|exists on disk, but not in/;
 
 const normalizePath = (value: string): string => value.replace(/\\/g, "/");
 
@@ -118,9 +118,9 @@ export class Git extends Context.Service<
   Git,
   {
     detectDefaultBranch(): Effect.Effect<string, GitError>;
+    /** Paths that exist in the working tree and differ from the merge base. Deleted paths are excluded. */
     changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, GitError>;
     changeSet(baseRef?: string): Effect.Effect<ChangeSet, GitError>;
-    showFile(ref: string, filePath: string): Effect.Effect<string | undefined, GitError>;
   }
 >()("agentlint/Git") {
   static readonly layer: Layer.Layer<Git, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
@@ -170,13 +170,17 @@ export class Git extends Context.Service<
           return { ref, commit } as const;
         });
 
-      const showFile = (ref: string, filePath: string) =>
+      /** Read a file at `ref`. A path absent from `ref` is `undefined`; other failures propagate. */
+      const showFile = (ref: string, filePath: string): Effect.Effect<string | undefined, GitError> =>
         prefix().pipe(
           Effect.flatMap((projectPrefix) =>
             runRaw("file read", ["show", `${ref}:${projectPrefix}${normalizePath(filePath)}`]),
           ),
           Effect.map((content): string | undefined => content),
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.catchIf(
+            (error) => MISSING_PATH_PATTERN.test(error.detail),
+            () => Effect.succeed(undefined),
+          ),
         );
 
       const readWorkingFile = (filePath: string) =>
@@ -199,8 +203,8 @@ export class Git extends Context.Service<
             ]),
           );
           const trackedPaths = new Set(tracked.map((entry) => entry.path));
-          const untracked = parseLines(
-            yield* run("untracked file collection", ["ls-files", "--others", "--exclude-standard"]),
+          const untracked = parseNulSeparated(
+            yield* runRaw("untracked file collection", ["ls-files", "--others", "--exclude-standard", "-z"]),
           );
           return [
             ...tracked,
@@ -231,7 +235,7 @@ export class Git extends Context.Service<
               "--",
               beforePath,
               ...(entry.previousPath ? [entry.path] : []),
-            ]).pipe(Effect.catch(() => Effect.succeed("")));
+            ]);
             const parsedHunks = parseUnifiedHunks(diff);
             const hunks =
               parsedHunks.length === 0 && entry.status === "added" && afterContent !== undefined
@@ -262,13 +266,14 @@ export class Git extends Context.Service<
           };
         });
 
-      return Git.of({
-        detectDefaultBranch,
-        changedFiles: (baseRef) =>
-          changeSet(baseRef).pipe(Effect.map((change) => change.files.map((file) => file.path))),
-        changeSet,
-        showFile,
-      });
+      const changedFiles = (baseRef?: string) =>
+        Effect.gen(function* () {
+          const baseline = yield* resolveBaseline(baseRef);
+          const statuses = yield* collectStatus(baseline.commit);
+          return statuses.filter((entry) => entry.status !== "deleted").map((entry) => entry.path);
+        });
+
+      return Git.of({ detectDefaultBranch, changedFiles, changeSet });
     }),
   );
 }

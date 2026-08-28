@@ -16,7 +16,7 @@ const structuredEffectErrors = defineRule({
       examples: [
         {
           label: "Structured tagged error",
-          code: 'class E extends Schema.TaggedErrorClass<E>()("app/E", { reason: Schema.Literals(["io", "parse"]), detail: Schema.String }) { override get message() { return `${this.reason}: ${this.detail}` } }',
+          code: 'class E extends Schema.TaggedError<E>()("app/E", { reason: Schema.Literals(["io", "parse"]), detail: Schema.String }) { override get message() { return `${this.reason}: ${this.detail}` } }',
         },
       ],
     },
@@ -26,14 +26,14 @@ const structuredEffectErrors = defineRule({
     id: "typescript/tagged-error-message-field",
     version: 1,
     match: {
-      pattern: "Schema.TaggedErrorClass<$T>()($TAG, $FIELDS)",
+      pattern: "Schema.TaggedError<$T>()($TAG, $FIELDS)",
       where: { has: "message: Schema.String" },
       message: "Tagged error $TAG declares a stringly message field.",
     },
     fixtures: {
-      mustReport: ['class E extends Schema.TaggedErrorClass<E>()("E", { message: Schema.String }) {}'],
+      mustReport: ['class E extends Schema.TaggedError<E>()("E", { message: Schema.String }) {}'],
       mustStaySilent: [
-        'class E extends Schema.TaggedErrorClass<E>()("app/E", { reason: Schema.Literals(["io"]), detail: Schema.String }) {}',
+        'class E extends Schema.TaggedError<E>()("app/E", { reason: Schema.Literals(["io"]), detail: Schema.String }) {}',
       ],
     },
   },

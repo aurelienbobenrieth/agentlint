@@ -332,6 +332,22 @@ function interpolateQuery(message: string, captures: ReadonlyArray<{ name: strin
 export interface RunnableMatches {
   readonly compiled: ReadonlyArray<CompiledMatch>;
   readonly resolvedWhere: ReadonlyMap<CompiledMatch, ResolvedWhere>;
+  /** Pattern matches bucketed by the node type they can match, computed once. */
+  readonly byType: ReadonlyMap<string, ReadonlyArray<CompiledPattern>>;
+  /** Raw tree-sitter query matches, computed once. */
+  readonly queries: ReadonlyArray<CompiledQuery>;
+}
+
+/**
+ * Release the native tree-sitter queries held by a compiled match set.
+ * Pattern trees stay alive because their nodes may still be referenced.
+ * The set must not be run again afterwards.
+ *
+ * @since 0.2.0
+ * @category execution
+ */
+export function disposeMatches(runnable: RunnableMatches): void {
+  for (const query of runnable.queries) query.query.delete();
 }
 
 /**
@@ -356,7 +372,18 @@ export const resolveWhereClauses = Effect.fn("resolveWhereClauses")(function* (
         : undefined;
     resolvedWhere.set(match, { has, notHas });
   }
-  return { compiled, resolvedWhere } satisfies RunnableMatches;
+  const byType = new Map<string, CompiledPattern[]>();
+  const queries: CompiledQuery[] = [];
+  for (const match of compiled) {
+    if (match.kind === "query") {
+      queries.push(match);
+      continue;
+    }
+    const bucket = byType.get(match.rootType);
+    if (bucket) bucket.push(match);
+    else byType.set(match.rootType, [match]);
+  }
+  return { compiled, resolvedWhere, byType, queries } satisfies RunnableMatches;
 });
 
 const EMPTY_WHERE: ResolvedWhere = { has: undefined, notHas: undefined };
@@ -369,15 +396,10 @@ const EMPTY_WHERE: ResolvedWhere = { has: undefined, notHas: undefined };
  * @category execution
  */
 export function runMatches(tree: Tree, runnable: RunnableMatches, context: RuleContextImpl): void {
-  const patterns = runnable.compiled.filter((match) => match.kind === "pattern");
-  const queries = runnable.compiled.filter((match) => match.kind === "query");
+  const { byType, queries } = runnable;
 
-  if (patterns.length > 0) {
+  if (byType.size > 0) {
     const root = wrapNode(tree.rootNode);
-    const byType = new Map<string, CompiledPattern[]>();
-    for (const pattern of patterns) {
-      byType.set(pattern.rootType, [...(byType.get(pattern.rootType) ?? []), pattern]);
-    }
 
     const visit = (node: AgentlintNode): void => {
       const candidates = byType.get(node.type);

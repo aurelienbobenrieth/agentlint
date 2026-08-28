@@ -52,7 +52,9 @@ export function parseProposals(content: string): ProposalRecord[] {
 }
 
 export function sortProposals(records: ReadonlyArray<ProposalRecord>): ProposalRecord[] {
-  return records.toSorted((left, right) => proposalKey(left).localeCompare(proposalKey(right)));
+  const keys = new Map(records.map((record) => [record, proposalKey(record)]));
+  const keyOf = (record: ProposalRecord) => keys.get(record) ?? proposalKey(record);
+  return records.toSorted((left, right) => keyOf(left).localeCompare(keyOf(right)));
 }
 
 export function serializeProposals(records: ReadonlyArray<ProposalRecord>): string {

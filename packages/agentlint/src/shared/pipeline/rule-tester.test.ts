@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defineRule } from "../../domain/rule.js";
-import { testRuleFixtures } from "../../testing.js";
-import { normalizeChangeFixture, runRuleOnChange } from "./rule-tester.js";
+import { testRuleFixtures, testRuleOnChange } from "../../testing.js";
+import { normalizeChangeFixture } from "./rule-tester.js";
 
 const standard = {
   id: "database/safe-change",
@@ -42,6 +42,7 @@ describe("rule fixtures", () => {
     ]);
     expect(change.files[0]?.hunks[0]?.oldStart).toBe(0);
     expect(change.files[2]?.hunks[0]?.newStart).toBe(0);
+    expect(change.files[0]?.after?.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("checks change fixtures and reports stable evidence", async () => {
@@ -75,14 +76,20 @@ describe("rule fixtures", () => {
     expect(report.failures).toEqual([]);
     const fixture = rule.detector.fixtures?.mustReport?.[0];
     if (!fixture) throw new Error("Expected a mustReport fixture");
-    const findings = runRuleOnChange(rule, normalizeChangeFixture(fixture));
-    expect(findings).toEqual([
-      {
-        key: "migration.sql:drop-column",
-        file: "migration.sql",
-        message: "Review data removal.",
-        evidence: { operation: "drop-column" },
-      },
-    ]);
+    const findings = await testRuleOnChange(rule, fixture);
+    expect(findings).toHaveLength(1);
+    const [finding] = findings;
+    expect(finding).toMatchObject({
+      ruleId: "database/drop-column",
+      lifecycle: "change",
+      authority: "human",
+      file: "migration.sql",
+      absolutePath: "migration.sql",
+      message: "Review data removal.",
+      sourceSnippet: "ALTER TABLE users DROP COLUMN email;",
+    });
+    expect(finding?.source.detectorId).toBe("sql/drop-column");
+    const again = await testRuleOnChange(rule, fixture);
+    expect(again[0]?.fingerprint).toEqual(finding?.fingerprint);
   });
 });

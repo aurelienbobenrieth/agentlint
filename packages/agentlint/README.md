@@ -302,7 +302,16 @@ Provider adapters (pull-request comments, ownership routing, signed human author
 
 ## Public API
 
-The package exports `defineConfig`, `defineRule`, state/change evidence schemas and types, `AgentlintNode`, rule fixture runners, and promise-based testing helpers. It intentionally exports no bundled standards, detectors, rules, or presets.
+`@aurelienbbn/agentlint` exports what a rule or config author needs and nothing else:
+
+- `defineConfig` and `defineRule`, with the `AgentlintConfig`, `AgentlintRule`, `StateRule`, `ChangeRule`, `RuleBinding`, `RuleStandard`, `Guidance`, `RuleMatch`, and `Visitors` types.
+- `RuleContext` (`absolutePath`, `path`, `source`, `report`) and `ChangeRuleContext` for detector implementations, plus `AgentlintNode` and `TreeSitterNodeType`.
+- The change evidence schemas (`ChangeSet`, `ChangedFile`, `ChangeHunk`, `ChangeLine`, `FileSnapshot`, `ChangeBaseline`) and `FindingRecord` as runtime values, so a consumer can construct or decode them.
+- Tagged errors: `RuleDefinitionError`, `ConfigError`, `PatternError`, `ParserError`.
+
+`@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, and `testRuleOnChange`, the Effect-based runners `runRuleFixtures`, `runRuleOnSource`, `runRuleOnSources`, and `runRuleOnChange`, `normalizeChangeFixture`, and the `FixtureReport` and `FixtureFailure` types.
+
+The package intentionally exports no bundled standards, detectors, rules, or presets.
 
 ## Security boundary
 

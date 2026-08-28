@@ -37,8 +37,9 @@ interface RuleEntry {
  * @internal
  */
 export function visitorKeys(visitors: Visitors): ReadonlyArray<string> {
-  return Object.keys(visitors).filter(
-    (key) => key !== "before" && key !== "after" && typeof visitors[key] === "function",
+  const handlers = visitors as Readonly<Record<string, unknown>>;
+  return Object.keys(handlers).filter(
+    (key) => key !== "before" && key !== "after" && typeof handlers[key] === "function",
   );
 }
 
@@ -46,7 +47,7 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
   const dispatchTable = new Map<string, VisitorHandler[]>();
   for (const entry of rules) {
     for (const key of visitorKeys(entry.visitors)) {
-      const handler = entry.visitors[key] as VisitorHandler;
+      const handler = (entry.visitors as Readonly<Record<string, unknown>>)[key] as VisitorHandler;
       const existing = dispatchTable.get(key);
       if (existing) {
         existing.push(handler);

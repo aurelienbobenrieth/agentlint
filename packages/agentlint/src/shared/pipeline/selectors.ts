@@ -3,7 +3,7 @@
  *
  * Supported selectors:
  * - latest-check ordinals: `1` or `[1]`
- * - full finding hash
+ * - full finding hash, or a unique fingerprint digest prefix of at least 7 hex characters
  * - `file:line`
  *
  * @module
@@ -16,6 +16,9 @@ import type { SelectorCachePayload } from "../infrastructure/selector-cache.js";
 export type SelectorResolution =
   | { readonly ok: true; readonly finding: FindingRecord }
   | { readonly ok: false; readonly message: string };
+
+/** A hexadecimal digest prefix long enough to be intentional. */
+const HASH_PREFIX = /^[0-9a-f]{7,}$/;
 
 function normalizeSelector(selector: string): string {
   return selector.trim().replace(/^\[(\d+)\]$/, "$1");
@@ -38,6 +41,20 @@ export function resolveFindingSelector(
   const hashMatch = findings.find((finding) => findingKey(finding) === hash || finding.fingerprint.digest === hash);
   if (hashMatch) {
     return { ok: true, finding: hashMatch };
+  }
+
+  if (HASH_PREFIX.test(normalized)) {
+    const prefixed = findings.filter((finding) => finding.fingerprint.digest.startsWith(normalized));
+    const [match] = prefixed;
+    if (prefixed.length === 1 && match) {
+      return { ok: true, finding: match };
+    }
+    if (prefixed.length > 1) {
+      return {
+        ok: false,
+        message: `Selector "${selector}" is ambiguous. Use the latest-check ordinal or a longer hash.`,
+      };
+    }
   }
 
   const fileLineMatch = normalized.match(/^(.+):(\d+)$/);

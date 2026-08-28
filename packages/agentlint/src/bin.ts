@@ -6,7 +6,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Console, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { formatCheckJsonl, formatCheckText } from "./cli/reporter.js";
 import { Env } from "./config/env.js";
-import { normalizeConfig } from "./domain/config.js";
 import { AcceptanceRecord } from "./domain/acceptance.js";
 import { acceptHandler } from "./features/accept/handler.js";
 import { AcceptCommand } from "./features/accept/request.js";
@@ -199,7 +198,7 @@ const runCheck = (args: ReadonlyArray<string>) =>
       (yield* Env).setExitCode(2);
       return;
     }
-    const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+    const config = yield* (yield* ConfigLoader).load();
     const output =
       format === "jsonl"
         ? formatCheckJsonl(result.unresolved, config, result.lineage)

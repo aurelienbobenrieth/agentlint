@@ -2,8 +2,9 @@
  * File resolution service.
  *
  * Determines which files to scan by applying the filter pipeline:
- * 1. Candidate files (from git diff or all files)
- * 2. Config files/ignores
+ * 1. Candidate files (positional paths and globs, all files, or Git-changed files)
+ * 2. Config ignores
+ * 3. Files with an extension
  *
  * @module
  */
@@ -13,17 +14,22 @@ import { Env } from "../../config/env.js";
 import picomatch from "picomatch";
 
 /**
- * Raised when file resolution fails — e.g. a git error bubbling up
- * from the changed-files query.
+ * Raised when candidate files cannot be enumerated.
  *
  * @since 0.1.0
  * @category errors
  */
 export class FileResolverError extends Schema.TaggedError<FileResolverError>()("agentlint/FileResolverError", {
+  reason: Schema.Literals(["git", "filesystem"]),
   detail: Schema.String,
 }) {
   override get message(): string {
-    return `Git error: ${this.detail}`;
+    switch (this.reason) {
+      case "git":
+        return `Git error: ${this.detail}`;
+      case "filesystem":
+        return `Cannot list files: ${this.detail}`;
+    }
   }
 }
 
@@ -38,8 +44,6 @@ export const ResolveOptions = Schema.Struct({
   all: Schema.Boolean,
   /** Git ref to diff against. Defaults to the detected default branch. */
   baseRef: Schema.optional(Schema.String),
-  /** Global file globs from the config file. */
-  configFiles: Schema.optional(Schema.Array(Schema.String)),
   /** Global ignore globs from the config file. */
   configIgnores: Schema.optional(Schema.Array(Schema.String)),
   /** Explicit file paths passed as CLI positional arguments. */
@@ -58,6 +62,8 @@ const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make(
   ".agents",
 );
 
+const LIST_CONCURRENCY = 16;
+
 function hasGlobSyntax(value: string): boolean {
   return /[*?[\]{}()!+@]/.test(value);
 }
@@ -71,36 +77,43 @@ function toProjectPath(file: string, cwd: string, path: Path.Path): string {
 /**
  * Recursively list all files under `dir`, returning paths relative to `base`.
  *
- * Skips `node_modules`, `.git`, and `dist` directories. Errors (e.g.
- * permission denied) are silently swallowed.
- *
- * Uses the Effect `FileSystem` and `Path` services for cross-platform
- * file system access.
+ * Skips `node_modules`, `.git`, and build output directories. An entry that
+ * cannot be inspected (permission denied, dangling link) is dropped on its
+ * own; its siblings are still listed. Failing to read `dir` itself fails the
+ * listing.
  *
  * @since 0.1.0
  * @category internals
  */
-function listAllFiles(dir: string, base: string, fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<string[]> {
+function listAllFiles(
+  dir: string,
+  base: string,
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+): Effect.Effect<string[], FileResolverError> {
   return Effect.gen(function* () {
-    const entries = yield* fs.readDirectory(dir);
-    const results: string[] = [];
-
-    for (const name of entries) {
-      if (HashSet.has(SKIP_DIRS, name)) continue;
-
-      const fullPath = path.resolve(dir, name);
-      const info = yield* fs.stat(fullPath);
-      const relPath = path.relative(base, fullPath).replace(/\\/g, "/");
-
-      if (info.type === "Directory") {
-        results.push(...(yield* listAllFiles(fullPath, base, fs, path)));
-      } else {
-        results.push(relPath);
-      }
-    }
-
-    return results;
-  }).pipe(Effect.catch(() => Effect.succeed([] as string[])));
+    const entries = yield* fs
+      .readDirectory(dir)
+      .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
+    const listed = yield* Effect.forEach(
+      entries.filter((name) => !HashSet.has(SKIP_DIRS, name)),
+      (name) => {
+        const fullPath = path.resolve(dir, name);
+        return fs.stat(fullPath).pipe(
+          Effect.option,
+          Effect.flatMap((info) => {
+            if (info._tag === "None") return Effect.succeed([] as string[]);
+            if (info.value.type === "Directory") {
+              return listAllFiles(fullPath, base, fs, path).pipe(Effect.orElseSucceed(() => [] as string[]));
+            }
+            return Effect.succeed([path.relative(base, fullPath).replace(/\\/g, "/")]);
+          }),
+        );
+      },
+      { concurrency: LIST_CONCURRENCY },
+    );
+    return listed.flat();
+  });
 }
 
 /**
@@ -123,7 +136,7 @@ export function resolveFiles(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const { cwd } = env;
-    let candidates: string[];
+    let candidates: ReadonlyArray<string>;
 
     if (options.positionalFiles && options.positionalFiles.length > 0) {
       const literalFiles: string[] = [];
@@ -142,22 +155,18 @@ export function resolveFiles(
     } else if (options.all) {
       candidates = yield* listAllFiles(cwd, cwd, fs, path);
     } else {
-      const changed = yield* Effect.mapError(
+      candidates = yield* Effect.mapError(
         gitService.changedFiles(options.baseRef),
-        (e) => new FileResolverError({ detail: String(e) }),
+        (error) => new FileResolverError({ reason: "git", detail: String(error) }),
       );
-      candidates = [...changed];
     }
 
-    const filesMatcher = options.configFiles?.length ? picomatch(options.configFiles as string[]) : undefined;
-    const ignoreMatcher = options.configIgnores?.length ? picomatch(options.configIgnores as string[]) : undefined;
+    const ignoreMatcher = options.configIgnores?.length ? picomatch([...options.configIgnores]) : undefined;
+    const unique = new Set(candidates.map((file) => toProjectPath(file, cwd, path)));
 
-    return candidates
-      .map((f) => toProjectPath(f, cwd, path))
-      .filter((f, index, files) => files.indexOf(f) === index)
-      .filter((f) => !filesMatcher || filesMatcher(f))
-      .filter((f) => !ignoreMatcher || !ignoreMatcher(f))
-      .filter((f) => path.extname(f).length > 0)
+    return [...unique]
+      .filter((file) => !ignoreMatcher || !ignoreMatcher(file))
+      .filter((file) => path.extname(file).length > 0)
       .toSorted();
   });
 }
