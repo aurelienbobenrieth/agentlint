@@ -20,7 +20,7 @@ import { initHandler } from "./features/init/handler.js";
 import { InitCommand } from "./features/init/request.js";
 import { proposeHandler } from "./features/propose/handler.js";
 import { ProposeCommand } from "./features/propose/request.js";
-import type { ReviewArtifact, ReviewStatePayload } from "./features/review/contract.js";
+import { ReviewArtifact } from "./features/review/contract.js";
 import { buildReviewPayload } from "./features/review/handler.js";
 import { runReviewSession } from "./features/review/server.js";
 import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features/rules/handler.js";
@@ -71,32 +71,16 @@ const selectorArgument = Argument.string("selector").pipe(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function isReviewState(value: unknown): value is ReviewStatePayload {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { version?: unknown }).version === 1 &&
-    Array.isArray((value as { findings?: unknown }).findings)
-  );
-}
-
 const readArtifact = Effect.fn("readArtifact")(function* (file: string) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const absolute = path.resolve(env.cwd, file);
   const raw = yield* fs.readFileString(absolute);
-  const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
-  const decoded = yield* Effect.try({
-    try: () => decodeJson(raw),
-    catch: (cause) => new Error("invalid JSON", { cause }),
-  });
-  const state =
-    typeof decoded === "object" && decoded !== null && "state" in decoded
-      ? (decoded as { state: unknown }).state
-      : decoded;
-  if (!isReviewState(state)) return yield* Effect.fail(new Error(`${file} is not an agentlint review artifact.`));
-  return { state, source: absolute };
+  const artifact = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewArtifact))(raw).pipe(
+    Effect.mapError((cause) => new Error(`${file} is not an agentlint review artifact: ${cause.message}`, { cause })),
+  );
+  return { state: artifact.state, source: absolute };
 });
 
 const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (file: string, base?: string) {
