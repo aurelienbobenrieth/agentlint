@@ -7,3 +7,11 @@ onlyBuiltDependencies:
   - "@parcel/watcher"
   - esbuild
   - msgpackr-extract
+
+catalog:
+  "@effect/platform-browser": 4.0.0-beta.107
+  "@effect/platform-node": 4.0.0-beta.107
+  "@tanstack/intent": 0.3.7
+  effect: 4.0.0-beta.107
+  typescript: 7.0.2
+  vitest: 4.1.11

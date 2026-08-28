@@ -32,6 +32,8 @@ Stable engineering boundaries for agentlint. See [CONTRIBUTING.md](CONTRIBUTING.
 
 - Effect 4 beta is intentionally pinned. Services use `Context.Service`; layers compose in `bin.ts`.
 - `web-tree-sitter` stays at 0.25.10 until the packaged grammar WASM set supports the 0.26 ABI.
+- `foldkit` stays below 0.149 until `apps/review` migrates from the removed `m` export to `defineMessageUnion`.
+- Shared versions (Effect, TypeScript, Vitest, intent) are pinned once in the `catalog` of `pnpm-workspace.yaml`.
 - Public runtime contracts use Effect Schema where practical.
 - Tagged errors expose structured fields and derive `message`; do not add stringly `message: Schema.String` fields.
 
