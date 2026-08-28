@@ -1,4 +1,7 @@
-declare module "*.css" {
-  const content: string;
-  export default content;
+/// <reference types="vite/client" />
+
+declare module "*.css";
+
+interface Window {
+  readonly __AGENTLINT_REVIEW__?: unknown;
 }

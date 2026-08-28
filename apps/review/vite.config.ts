@@ -1,19 +1,12 @@
 import { resolve } from "node:path";
-import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react";
+import { foldkit } from "@foldkit/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  root: __dirname,
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      "@": resolve(__dirname, "src"),
-      "@ui": resolve(__dirname, "..", "..", "packages", "ui", "src"),
-    },
-  },
+  root: import.meta.dirname,
+  plugins: [foldkit()],
   build: {
-    outDir: resolve(__dirname, "..", "..", "packages", "agentlint", "dist", "ui"),
+    outDir: resolve(import.meta.dirname, "..", "..", "packages", "agentlint", "dist", "ui"),
     emptyOutDir: true,
   },
   server: {

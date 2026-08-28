@@ -1,0 +1,54 @@
+name: agentlint review
+
+on:
+  pull_request:
+
+concurrency:
+  group: agentlint-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Check standards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build agentlint
+        run: pnpm --filter @aurelienbbn/agentlint build
+
+      - name: Test repository rules
+        run: node packages/agentlint/dist/bin.mjs rules test
+
+      - name: Run gate and create detached review
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          node packages/agentlint/dist/bin.mjs check --all \
+            --base "origin/${{ github.base_ref }}" \
+            --review-output artifacts/agentlint-review.json
+
+      - name: Upload review artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentlint-review
+          path: artifacts/agentlint-review.json
