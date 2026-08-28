@@ -29,6 +29,8 @@ pnpm add -D @aurelienbbn/agentlint
 pnpm agentlint init
 ```
 
+Every command accepts `--help`. `--rule` may be repeated or comma-separated.
+
 `init` creates `.agentlint/config.ts` and ignores only the ephemeral selector cache. Commit the config and `.agentlint/acceptances.jsonl` when it exists.
 
 ## Define a state rule
@@ -242,6 +244,7 @@ agentlint approve <selector> --reason "..." [--base ref]
 agentlint propose <selector> --summary "..." [--diff-file path] [--base ref]
 agentlint explain <rule-id|selector>
 agentlint review [--base ref] [--mode review|calibration] [--from artifact]
+                 [--port number] [--no-open]
 agentlint rules list|test|scan
 agentlint acceptances list|clean|import
 agentlint init
