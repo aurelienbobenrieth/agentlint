@@ -1,28 +1,5 @@
 # Changelog
 
-## 0.2.0
-
-### Minor Changes
-
-- Rebuild agentlint around deterministic findings and explicit judgment gates.
-
-  This release is a deliberate breaking rewrite:
-
-  - One discriminated `defineRule` API supports state and change lifecycles.
-  - Standards, detectors, and repository bindings have separate identities and versions.
-  - Rules declare representative `mustReport` and `mustStaySilent` fixtures.
-  - The gate is binary. A current finding is accepted or unresolved.
-  - Repository-owned `.agentlint/acceptances.jsonl` replaces the event ledger.
-  - Versioned fingerprints preserve formatting-only state decisions and invalidate material changes.
-  - Agent and human authority policies control who can accept a finding.
-  - Git change rules inspect the merge-base-to-working-tree change, including untracked files.
-  - The FoldKit review SPA supports attached local review and detached CI artifacts.
-  - The CLI adds `accept`, `approve`, `acceptances`, calibration scans, and review artifact workflows.
-  - Core no longer ships product rules, presets, MCP, harness adapters, learned notes, or the separate UI package.
-  - The package includes the production SPA and tree-sitter WASM assets.
-
-  There is no automated migration from prerelease 0.1 state. See `MIGRATION.md`.
-
 ## 0.1.5
 
 ### Patch Changes
