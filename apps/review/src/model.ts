@@ -1,18 +1,15 @@
 import { Schema as S } from "effect";
-import { ts } from "foldkit/schema";
+import { defineTaggedUnion } from "foldkit/schema";
 
-import { ReviewStatePayload } from "./types";
-import { EditorApplicationId } from "./types";
+import { EditorApplicationId, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 
-export const Loading = ts("Loading");
-export const LoadFailed = ts("LoadFailed", { message: S.String });
-export const Reviewing = ts("Reviewing", { state: ReviewStatePayload });
-export const Finished = ts("Finished", {
-  summary: S.String,
-  feedback: S.String,
-  acceptanceOutput: S.String,
+export const Screen = defineTaggedUnion({
+  Loading: {},
+  LoadFailed: { message: S.String },
+  Reviewing: { state: ReviewStatePayload },
+  Finished: { summary: S.String, feedback: S.String, acceptanceOutput: S.String },
 });
-export const Screen = S.Union([Loading, LoadFailed, Reviewing, Finished]);
+export type Screen = typeof Screen.Type;
 
 /** Queue holds everything a reviewer still owes a decision. Decisions holds what is already accepted. */
 export const View = S.Literals(["queue", "decisions"]);
@@ -124,13 +121,15 @@ export const Model = S.Struct({
   toasts: S.Array(Toast),
   nextToastId: S.Number,
   saveState: S.Literals(["idle", "saving", "saved", "failed"]),
+  /** Bumped by every debounced save request. Only the timer carrying the latest version writes. */
+  saveVersion: S.Number,
 });
 export type Model = typeof Model.Type;
 
 export const emptyFacets = (): Facets => ({ statuses: [], authorities: [], lifecycles: [], ruleIds: [] });
 
-export const SIDEBAR_MIN = 240;
-export const SIDEBAR_MAX = 520;
+const SIDEBAR_MIN = 240;
+const SIDEBAR_MAX = 520;
 export const SIDEBAR_DEFAULT = 300;
 export const clampSidebarWidth = (width: number): number =>
   Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(width)));

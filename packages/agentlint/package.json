@@ -39,6 +39,11 @@
     "./testing": {
       "types": "./dist/testing.d.mts",
       "import": "./dist/testing.mjs"
+    },
+    "./contract": {
+      "source": "./src/features/review/contract.ts",
+      "types": "./dist/contract.d.mts",
+      "import": "./dist/contract.mjs"
     }
   },
   "scripts": {

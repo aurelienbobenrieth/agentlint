@@ -14,6 +14,7 @@ const pkg = PackageJsonFromString(readFileSync(resolve(__dirname, "package.json"
 export default defineConfig({
   entry: {
     bin: "src/bin.ts",
+    contract: "src/features/review/contract.ts",
     index: "src/index.ts",
     testing: "src/testing.ts",
   },

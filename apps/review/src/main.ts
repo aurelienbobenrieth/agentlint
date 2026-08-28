@@ -1,21 +1,16 @@
-import { Effect, Option, Schema as S, Stream } from "effect";
 import { Runtime, Subscription } from "foldkit";
 
-import { LoadReview } from "./command";
+import { LoadReview } from "./features/session/command";
+import { sidebarResize } from "./features/shell/subscription";
+import { keyboard } from "./features/shortcuts/subscription";
 import { Message } from "./message";
-import { Loading, Model, SIDEBAR_DEFAULT } from "./model";
-import { isEditable, shortcutFor } from "./shortcuts";
-import { EndedSidebarResize, PressedShortcut, ResizedSidebar } from "./message";
+import { Model, Screen, SIDEBAR_DEFAULT } from "./model";
 import { update } from "./update";
 import { view } from "./view";
 
-export const Flags = S.Struct({});
-export type Flags = typeof Flags.Type;
-export const flags = Effect.succeed({});
-
-export const init: Runtime.ApplicationInit<Model, Message, Flags> = () => [
-  {
-    screen: Loading(),
+export const init: Runtime.ApplicationInit<Model, Message> = () => ({
+  model: {
+    screen: Screen.Loading(),
     view: "queue",
     facets: { statuses: [], authorities: [], lifecycles: [], ruleIds: [] },
     groupBy: "file",
@@ -35,56 +30,14 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = () => [
     toasts: [],
     nextToastId: 1,
     saveState: "idle",
+    saveVersion: 0,
   },
-  [LoadReview()],
-];
+  commands: [LoadReview()],
+});
 
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
-  sidebarResize: entry(
-    { resizing: S.Boolean },
-    {
-      modelToDependencies: (model) => ({ resizing: model.resizingSidebar }),
-      dependenciesToStream: ({ resizing }) =>
-        Stream.when(
-          Stream.merge(
-            Subscription.fromEvent<PointerEvent, Message>({
-              target: () => window,
-              type: "pointermove",
-              toMessage: (event) => ResizedSidebar({ width: event.clientX }),
-            }),
-            Subscription.fromEvent<PointerEvent, Message>({
-              target: () => window,
-              type: "pointerup",
-              toMessage: () => EndedSidebarResize(),
-            }),
-          ),
-          Effect.sync(() => resizing),
-        ),
-    },
-  ),
-  keyboard: entry(
-    {},
-    Subscription.persistent(
-      Subscription.fromEventFilterMap<KeyboardEvent, Message>({
-        target: () => window,
-        type: "keydown",
-        toMessage: (event) => {
-          if (event.isComposing || event.repeat) return Option.none();
-          const action = shortcutFor({
-            key: event.key,
-            ctrlKey: event.ctrlKey,
-            metaKey: event.metaKey,
-            altKey: event.altKey,
-            shiftKey: event.shiftKey,
-            editable: isEditable(event.target),
-          });
-          if (action === null) return Option.none();
-          if (action !== "escape") event.preventDefault();
-          return Option.some(PressedShortcut({ action }));
-        },
-      }),
-    ),
-  ),
+  sidebarResize: sidebarResize(entry),
+  keyboard: keyboard(entry),
 }));
 
 export { Message, Model, update, view };

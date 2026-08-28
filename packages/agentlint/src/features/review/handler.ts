@@ -14,7 +14,7 @@ import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import type {
   CalibrationFeedback,
   EditorApplication,
-  ReviewAction,
+  ReviewActionRequest,
   ReviewActionResult,
   ReviewFeedback,
   ReviewFindingPayload,
@@ -174,7 +174,7 @@ function replaceByFindingId<T extends { readonly findingId: string }>(items: T[]
 }
 
 export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
-  action: ReviewAction,
+  action: ReviewActionRequest,
   options: { readonly base?: string | undefined; readonly mode: ReviewMode; readonly session: ReviewSessionState },
 ) {
   const collection = yield* collectFindings({ all: true, rules: [], base: options.base, files: [] });

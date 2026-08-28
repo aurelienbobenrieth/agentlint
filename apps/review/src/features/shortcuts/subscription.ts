@@ -1,4 +1,9 @@
-import type { Shortcut } from "./model";
+import { Option } from "effect";
+import { Subscription } from "foldkit";
+
+import { Message } from "../../message";
+import type { Shortcut } from "../../model";
+import type { SubscriptionEntry } from "../../shared/subscription";
 
 export const isEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
@@ -55,3 +60,28 @@ export const shortcutFor = (event: {
       return null;
   }
 };
+
+export const keyboard = (entry: SubscriptionEntry) =>
+  entry(
+    {},
+    Subscription.persistent(
+      Subscription.fromEventFilterMap<KeyboardEvent, Message>({
+        target: () => window,
+        type: "keydown",
+        toMessage: (event) => {
+          if (event.isComposing || event.repeat) return Option.none();
+          const action = shortcutFor({
+            key: event.key,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey,
+            editable: isEditable(event.target),
+          });
+          if (action === null) return Option.none();
+          if (action !== "escape") event.preventDefault();
+          return Option.some(Message.PressedShortcut({ action }));
+        },
+      }),
+    ),
+  );

@@ -3,12 +3,10 @@ import { Runtime } from "foldkit";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./styles.css";
-import { Flags, Message, Model, flags, init, subscriptions, update, view } from "./main";
+import { Message, Model, init, subscriptions, update, view } from "./main";
 
 const application = Runtime.makeApplication({
   Model,
-  Flags,
-  flags,
   init,
   update,
   view,

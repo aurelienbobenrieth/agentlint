@@ -30,7 +30,7 @@ This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.
 
 ## Boundaries
 
-- The review wire contract is `packages/agentlint/src/features/review/contract.ts`. `apps/review/src/types.ts` mirrors it. Change both together.
+- The review wire contract is `packages/agentlint/src/features/review/contract.ts`: Effect Schemas over plain JSON, published as the `@aurelienbbn/agentlint/contract` subpath. `apps/review` imports it from there (the `source` export condition resolves to the TypeScript file in the workspace) and decodes every server response with it. The contract imports nothing but `effect`; keep it browser-safe.
 - Only `packages/agentlint/src/config/env.ts` touches `process.*`. Everything else depends on the `Env` service. A repository rule enforces this.
 - Use public package exports between workspaces. No cross-package relative imports.
 - Tagged errors carry structured fields and derive `message`. No `message: Schema.String` fields. A repository rule enforces this.

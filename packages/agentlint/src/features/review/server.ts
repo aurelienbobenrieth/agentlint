@@ -12,7 +12,7 @@ import { Git } from "../../shared/infrastructure/git.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import {
-  ReviewAction,
+  ReviewActionRequest,
   ReviewOpenRequest,
   type ReviewFinishResult,
   type ReviewMode,
@@ -47,7 +47,7 @@ export class ReviewServerError extends Schema.TaggedError<ReviewServerError>()("
   }
 }
 
-const ActionDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewAction));
+const ActionDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewActionRequest));
 const OpenRequestDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewOpenRequest));
 const MAX_BODY_BYTES = 128 * 1024;
 const SESSION_COOKIE = "agentlint_review";
