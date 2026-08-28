@@ -12,3 +12,7 @@ export function UsersPage() {
     </ul>
   );
 }
+
+export async function inviteSupportAdministrator(email: string) {
+  return createUser({ email, role: "admin" });
+}

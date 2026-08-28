@@ -1,28 +1,43 @@
 import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
-const ownedTodo = defineRule({
-  id: "docs/owned-todo",
-  description: "Flags TODO comments without an owner.",
-  guidance: {
-    standard: "TODOs carry an owner or ticket.",
-    checks: ["Use TODO(name) or TODO(PROJECT-123)."],
+const idempotentPaymentCapture = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "payments/idempotent-capture",
+    revision: 1,
+    title: "Payment captures are safe to retry",
+    guidance: {
+      standard: "Every payment capture supplies a stable idempotency key derived from the business operation.",
+      checks: [
+        "Confirm the key is stable across retries and unique across distinct purchases.",
+        "A request-scoped random value does not satisfy the standard.",
+      ],
+      examples: [
+        {
+          label: "Order identity survives retries",
+          code: "payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })",
+        },
+      ],
+    },
   },
-  createOnce(context) {
-    return {
-      comment(node) {
-        if (/\bTODO\b/.test(node.text) && !/\bTODO\([^)]+\)/.test(node.text)) {
-          context.report({ node, message: "TODO needs an owner or ticket." });
-        }
-      },
-    };
+  detector: {
+    id: "typescript/payment-capture-without-idempotency-key",
+    version: 1,
+    match: {
+      pattern: "$CLIENT.capture($$$ARGS)",
+      where: { notHas: "idempotencyKey: $_" },
+      message: "Payment capture has no explicit idempotency key.",
+    },
+    fixtures: {
+      mustReport: ["payments.capture({ orderId, amount })"],
+      mustStaySilent: ["payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })"],
+    },
   },
-  fixtures: {
-    invalid: ["// TODO: paginate"],
-    valid: ["// TODO(PROJECT-123): paginate"],
+  binding: {
+    id: "payments/idempotent-capture",
+    authority: "agent",
+    include: ["src/**/*.ts"],
   },
 });
 
-export default defineConfig({
-  files: ["src/**/*.ts"],
-  rules: { "docs/owned-todo": ownedTodo },
-});
+export default defineConfig({ rules: [idempotentPaymentCapture] });

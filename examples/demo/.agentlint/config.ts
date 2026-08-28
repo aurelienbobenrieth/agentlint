@@ -1,180 +1,260 @@
-import { boundedQuery, defineConfig, defineRule, queryStateCoverage } from "@aurelienbbn/agentlint";
+import { defineConfig, defineRule, type ChangeHunk } from "@aurelienbbn/agentlint";
 
-/**
- * Demo configuration - a tour of the rule surface:
- *
- * - `danger/lossy-migration`: pattern match, human-gated, durable.
- * - `security/no-eval`: raw tree-sitter query, durable.
- * - `http/fetch-needs-timeout`: pattern + `where.notHas` constraint.
- * - `tests/no-focused-tests`: plain patterns over test files.
- * - `docs/todo-needs-owner`: `createOnce` escape hatch (comment scanning).
- * - `data/bounded-query`, `ui/query-state-coverage`: shipped rules, routed
- *   off test files through `overrides`.
- */
+/** Working-tree line number of the hunk line at `index`. */
+const newLineAt = (hunk: ChangeHunk, index: number): number =>
+  hunk.newStart + hunk.lines.slice(0, index).filter((line) => line.kind !== "deletion").length;
 
-const lossyMigration = defineRule({
-  id: "danger/lossy-migration",
-  description: "Flags schema operations that can destroy data.",
-  guidance: {
-    standard: "Destructive schema operations require an explicit human sign-off.",
-    checks: [
-      "Dropping tables or columns must be intentional, and reversible or backed up.",
-      "Renames disguised as drop-and-recreate count as destructive.",
-    ],
-    examples: [
-      {
-        label: "Migrate then drop",
-        bad: 'db.dropTable("users_old"); // data not verified copied',
-        good: 'await verifyBackfill("users_v2"); db.dropTable("users_old");',
-      },
-    ],
+const boundedQueries = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "data/bounded-queries",
+    revision: 1,
+    title: "Production queries have a growth bound",
+    guidance: {
+      standard: "Queries that scale with production data use a limit, cursor, or documented finite boundary.",
+      checks: [
+        "A hard limit, pagination contract, or proven finite tenant boundary can satisfy the standard.",
+        "Internal jobs still need a deliberate batch size so retries and memory use stay predictable.",
+      ],
+      examples: [{ label: "Explicit limit", code: "db.users.findMany({ take: 50 })" }],
+      refs: [{ type: "url", href: "https://www.prisma.io/docs/orm/prisma-client/queries/pagination" }],
+    },
   },
-  match: [
-    {
-      pattern: "$DB.dropTable($$$ARGS)",
-      message: "dropTable on $DB destroys data and needs human approval.",
+  detector: {
+    id: "prisma/find-many-without-take",
+    version: 1,
+    match: {
+      pattern: "$DB.findMany($$$ARGS)",
+      where: { notHas: "take: $_" },
+      message: "$DB has no explicit query bound.",
     },
-    {
-      pattern: "$DB.dropColumn($$$ARGS)",
-      message: "dropColumn on $DB destroys data and needs human approval.",
+    fixtures: {
+      mustReport: ["db.users.findMany({ where: { active: true } })"],
+      mustStaySilent: ["db.users.findMany({ take: 50 })"],
     },
-  ],
-  fixtures: {
-    invalid: ["db.dropTable('users');", "db.dropColumn('users', 'legacy_flag');"],
-    valid: ["db.createTable('users');", "db.renameColumn('users', 'a', 'b');"],
+  },
+  binding: {
+    id: "data/bounded-queries",
+    authority: "agent",
+    include: ["src/**/*.{ts,tsx}"],
+    exclude: ["**/*.test.ts"],
   },
 });
 
-const noEval = defineRule({
-  id: "security/no-eval",
-  description: "Flags dynamic code evaluation.",
-  guidance: {
-    standard: "Dynamic evaluation of strings as code is a code-injection surface and defeats static analysis.",
-    checks: [
-      "Prefer a parser, a lookup table, or JSON.parse with a schema.",
-      "Vendored code that cannot be edited can be recorded as no-fix with a replacement plan.",
-    ],
-  },
-  match: [
-    {
-      // Raw tree-sitter query: grammar-level precision when a code-shaped
-      // pattern cannot express the constraint.
-      query: '(call_expression function: (identifier) @fn (#eq? @fn "eval")) @match',
-      message: "eval() executes arbitrary strings as code.",
+const idempotentPaymentCapture = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "payments/idempotent-capture",
+    revision: 1,
+    title: "Payment captures are safe to retry",
+    guidance: {
+      standard: "Every payment capture supplies a stable idempotency key derived from the business operation.",
+      checks: [
+        "Confirm the key is stable across retries and unique across distinct purchases.",
+        "A request-scoped random value does not satisfy the standard.",
+      ],
+      examples: [
+        {
+          label: "Order identity survives retries",
+          code: "payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })",
+        },
+      ],
+      refs: [{ type: "url", href: "https://docs.stripe.com/api/idempotent_requests" }],
     },
-  ],
-  fixtures: {
-    file: "fixture.js",
-    invalid: ["const result = eval(userInput);"],
-    valid: ["const result = evaluate(userInput);", "const s = 'eval(x) in a string';"],
   },
-});
-
-const fetchNeedsTimeout = defineRule({
-  id: "http/fetch-needs-timeout",
-  description: "Flags fetch calls without an abort signal or timeout.",
-  guidance: {
-    standard:
-      "Network calls should carry an AbortSignal (or an equivalent timeout) so a slow upstream cannot hang the caller.",
-    checks: [
-      "AbortSignal.timeout(ms) or a passed-through signal satisfies the standard.",
-      "Fire-and-forget calls where hanging is acceptable can be accepted with a reason.",
-    ],
-    examples: [
-      {
-        label: "Bounded fetch",
-        bad: "await fetch(url);",
-        good: "await fetch(url, { signal: AbortSignal.timeout(5000) });",
-      },
-    ],
-  },
-  match: [
-    {
-      pattern: "fetch($$$ARGS)",
-      where: { notHas: "signal" },
-      message: "fetch call has no abort signal or timeout.",
+  detector: {
+    id: "typescript/payment-capture-without-idempotency-key",
+    version: 1,
+    match: {
+      pattern: "$CLIENT.capture($$$ARGS)",
+      where: { notHas: "idempotencyKey: $_" },
+      message: "Payment capture has no explicit idempotency key.",
     },
-  ],
-  fixtures: {
-    invalid: ["await fetch('/api/users');"],
-    valid: [
-      "await fetch('/api/users', { signal: AbortSignal.timeout(5000) });",
-      "await fetch('/api/users', { signal });",
-    ],
+    fixtures: {
+      mustReport: ["payments.capture({ orderId, amount })"],
+      mustStaySilent: ["payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })"],
+    },
+  },
+  binding: {
+    id: "payments/idempotent-capture",
+    authority: "agent",
+    include: ["src/payments/**/*.ts"],
   },
 });
 
-const noFocusedTests = defineRule({
-  id: "tests/no-focused-tests",
-  description: "Flags focused tests that silently skip the rest of the suite.",
-  guidance: {
-    standard: "Focused tests (.only) must not land on main - they disable every other test in the file.",
-    checks: ["Remove .only before merging; keep it only in local debugging sessions."],
+const focusedTests = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "testing/no-focused-tests",
+    revision: 1,
+    title: "Focused tests never reach a shared branch",
+    guidance: {
+      standard: "Committed test suites execute the complete selected test scope rather than a local-only focused case.",
+      checks: ["Remove .only before handing work off; use the test runner's CLI filter for local iteration."],
+      examples: [{ label: "Normal test", code: 'it("lists active users", async () => { /* … */ })' }],
+    },
   },
-  match: ["it", "describe", "test"].map((fn) => ({
-    pattern: `${fn}.only($$$ARGS)`,
-    message: `${fn}.only skips the rest of the suite.`,
-  })),
-  fixtures: {
-    invalid: ["it.only('works', () => {});", "describe.only('suite', () => {});"],
-    valid: ["it('works', () => {});", "it.skip('flaky', () => {});"],
+  detector: {
+    id: "typescript/focused-test",
+    version: 1,
+    match: {
+      pattern: "it.only($$$ARGS)",
+      message: "Focused test would exclude the rest of the suite.",
+    },
+    fixtures: {
+      mustReport: ['it.only("works", () => {})'],
+      mustStaySilent: ['it("works", () => {})'],
+    },
+  },
+  binding: {
+    id: "testing/no-focused-tests",
+    authority: "agent",
+    include: ["src/**/*.{test,spec}.ts"],
   },
 });
 
-const todoNeedsOwner = defineRule({
-  id: "docs/todo-needs-owner",
-  description: "Flags TODO/FIXME comments without an owner or ticket.",
-  guidance: {
-    standard: "TODOs need an owner or a ticket so they are debt, not folklore.",
-    checks: [
-      "TODO(name) or TODO(TICKET-123) satisfies the standard.",
-      "A TODO that is really a design note should become one.",
-    ],
+const dynamicCodeExecution = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "security/dynamic-code-execution",
+    revision: 1,
+    title: "Dynamic code execution has an explicit trust boundary",
+    guidance: {
+      standard:
+        "Code assembled from runtime input is never executed without a documented, human-reviewed trust boundary.",
+      checks: [
+        "Prefer a constrained parser or an allowlisted expression interpreter.",
+        "If execution is unavoidable, prove the input provenance, isolation boundary, and failure containment.",
+      ],
+      examples: [{ label: "Constrained evaluator", code: "formulaEngine.evaluate(expression, { allowedFunctions })" }],
+      refs: [{ type: "url", href: "https://owasp.org/www-community/attacks/Code_Injection" }],
+    },
   },
-  // createOnce escape hatch: comments are not expressions, so a code-shaped
-  // pattern cannot match inside their text.
-  createOnce(context) {
-    return {
-      comment(node) {
-        const marker = node.text.match(/\b(TODO|FIXME)\b/);
-        if (!marker) return;
-        if (/\b(?:TODO|FIXME)\s*\(([^)]+)\)/.test(node.text)) return;
-        context.report({ node, message: `${marker[1]} without an owner or ticket.` });
-      },
-    };
+  detector: {
+    id: "javascript/eval-call",
+    version: 1,
+    match: {
+      pattern: "eval($_)",
+      message: "Runtime input reaches dynamic code execution.",
+    },
+    fixtures: {
+      mustReport: [{ file: "fixture.js", source: "eval(expression)" }],
+      mustStaySilent: [{ file: "fixture.js", source: "formulaEngine.evaluate(expression)" }],
+    },
   },
-  fixtures: {
-    invalid: ["// TODO: paginate this list"],
-    valid: ["// TODO(aurel): paginate this list", "// plain comment"],
+  binding: {
+    id: "security/dynamic-code-execution",
+    authority: "human",
+    include: ["src/**/*.{js,ts}"],
+  },
+});
+
+const destructiveMigrations = defineRule({
+  lifecycle: "change",
+  standard: {
+    id: "database/destructive-migrations",
+    revision: 1,
+    title: "Destructive migrations receive human review",
+    guidance: {
+      standard: "Destructive schema changes include a verified backfill, rollback, and deployment sequence.",
+      checks: ["Verify expand/backfill/contract ordering and a tested restoration path."],
+      examples: [{ code: "// Deploy expansion, backfill and verify, then contract in a later release." }],
+      refs: [{ type: "url", href: "https://martinfowler.com/articles/evodb.html" }],
+    },
+  },
+  detector: {
+    id: "text/destructive-schema-addition",
+    version: 1,
+    detect(context) {
+      for (const file of context.change.files) {
+        for (const hunk of file.hunks) {
+          const index = hunk.lines.findIndex(
+            (candidate) =>
+              candidate.kind === "addition" && /drop(?:Table|Column)|DROP\s+(?:TABLE|COLUMN)/i.test(candidate.content),
+          );
+          const line = hunk.lines[index];
+          if (!line) continue;
+          context.report({
+            key: `${file.path}:destructive-schema`,
+            lineageKey: `${file.path}:destructive-schema`,
+            file: file.path,
+            message: "This change adds a destructive schema operation.",
+            evidence: { operation: line.content.trim() },
+            excerpt: line.content,
+            startLine: newLineAt(hunk, index),
+          });
+        }
+      }
+    },
+    fixtures: {
+      mustReport: [{ before: {}, after: { "migration.ts": 'db.dropTable("legacy_users")' } }],
+      mustStaySilent: [{ before: {}, after: { "migration.ts": 'db.createTable("users")' } }],
+    },
+  },
+  binding: {
+    id: "database/destructive-migrations",
+    authority: "human",
+    include: ["src/migrations/**"],
+  },
+});
+
+const privilegeWidening = defineRule({
+  lifecycle: "change",
+  standard: {
+    id: "authorization/privilege-widening",
+    revision: 1,
+    title: "Privilege widening is deliberate and reviewable",
+    guidance: {
+      standard: "New administrative access paths carry a narrow scope, an authorization test, and a named reviewer.",
+      checks: [
+        "Trace the permission from transport through policy enforcement to the protected operation.",
+        "Verify that the default role remains least-privileged.",
+      ],
+      examples: [{ code: "const canManageBilling = policy.allows(actor, 'billing:manage', account)" }],
+    },
+  },
+  detector: {
+    id: "diff/administrative-role-addition",
+    version: 1,
+    detect(context) {
+      for (const file of context.change.files) {
+        for (const hunk of file.hunks) {
+          let ordinal = 0;
+          for (const [index, line] of hunk.lines.entries()) {
+            if (line.kind !== "addition" || !/role:\s*["']admin["']|isAdmin:\s*true/.test(line.content)) continue;
+            context.report({
+              key: `${file.path}:admin-access:${ordinal}`,
+              lineageKey: `${file.path}:admin-access`,
+              file: file.path,
+              message: "This change introduces an administrative access path.",
+              evidence: { addition: line.content.trim() },
+              excerpt: line.content,
+              startLine: newLineAt(hunk, index),
+            });
+            ordinal++;
+          }
+        }
+      }
+    },
+    fixtures: {
+      mustReport: [{ before: {}, after: { "route.ts": 'createUser({ role: "admin" })' } }],
+      mustStaySilent: [{ before: {}, after: { "route.ts": 'createUser({ role: "member" })' } }],
+    },
+  },
+  binding: {
+    id: "authorization/privilege-widening",
+    authority: "human",
+    include: ["src/api/**", "src/pages/**"],
   },
 });
 
 export default defineConfig({
-  rules: {
-    "data/bounded-query": boundedQuery,
-    "ui/query-state-coverage": queryStateCoverage,
-    "danger/lossy-migration": lossyMigration,
-    "security/no-eval": noEval,
-    "http/fetch-needs-timeout": fetchNeedsTimeout,
-    "tests/no-focused-tests": noFocusedTests,
-    "docs/todo-needs-owner": todoNeedsOwner,
-  },
-  policy: {
-    "danger/lossy-migration": { persistence: "durable", resolution: "human" },
-    "security/no-eval": { persistence: "durable" },
-  },
-  files: ["src/**/*.{ts,tsx,js}"],
-  overrides: [
-    // UI/data judgment rules are noise inside tests; the focused-test rule
-    // is the one that matters there.
-    {
-      files: ["**/*.test.*"],
-      rules: {
-        "ui/query-state-coverage": "off",
-        "data/bounded-query": "off",
-        "http/fetch-needs-timeout": "off",
-      },
-    },
+  rules: [
+    boundedQueries,
+    idempotentPaymentCapture,
+    focusedTests,
+    dynamicCodeExecution,
+    destructiveMigrations,
+    privilegeWidening,
   ],
-  notes: { dirs: [".agents/learn"] },
 });
