@@ -31,6 +31,7 @@ Stable engineering boundaries for agentlint. See [CONTRIBUTING.md](CONTRIBUTING.
 ## Effect conventions
 
 - Effect 4 beta is intentionally pinned. Services use `Context.Service`; layers compose in `bin.ts`.
+- Pin every Effect package the CLI resolves (`effect`, `@effect/platform-node`, `@effect/platform-node-shared`) to the same exact version. A caret range on a transitive package can pull a newer prerelease and load two Effect runtimes, which crashes consumers at startup; `scripts/smoke-package.mjs` catches this.
 - `web-tree-sitter` stays at 0.25.10 until the packaged grammar WASM set supports the 0.26 ABI.
 - `foldkit` stays below 0.149 until `apps/review` migrates from the removed `m` export to `defineMessageUnion`.
 - Shared versions (Effect, TypeScript, Vitest, intent) are pinned once in the `catalog` of `pnpm-workspace.yaml`.
