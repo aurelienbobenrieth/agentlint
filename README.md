@@ -17,7 +17,7 @@ pnpm agentlint rules test
 pnpm agentlint check --all
 ```
 
-Read the [package guide](packages/agentlint/README.md), try the [product demo](DEMO.md), or start with the [0.2 decisions](docs/decisions/README.md).
+Read the [package guide](packages/agentlint/README.md), try the [product demo](examples/demo/README.md), or start with the [0.2 decisions](docs/decisions/README.md).
 
 ## Workspace
 

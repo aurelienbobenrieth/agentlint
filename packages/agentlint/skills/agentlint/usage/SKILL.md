@@ -8,8 +8,8 @@ metadata:
   library: agentlint
   library_version: "0.2.0"
 sources:
-  - "aurelienbobenrieth/agentlint:README.md"
-  - "aurelienbobenrieth/agentlint:src/bin.ts"
+  - "aurelienbobenrieth/agentlint:packages/agentlint/README.md"
+  - "aurelienbobenrieth/agentlint:packages/agentlint/src/bin.ts"
 ---
 
 # agentlint usage

@@ -9,7 +9,7 @@ metadata:
   library: agentlint
   library_version: "0.2.0"
 sources:
-  - "aurelienbobenrieth/agentlint:README.md"
+  - "aurelienbobenrieth/agentlint:packages/agentlint/README.md"
   - "aurelienbobenrieth/agentlint:CONTRIBUTING.md"
 ---
 

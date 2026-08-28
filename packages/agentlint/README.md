@@ -251,15 +251,54 @@ The selector cache under `.agentlint/.cache/` only maps short run-local numbers 
 
 ## CI
 
-Run the same complete gate used locally:
+CI runs the same binary gate as local development. There is no CI-only severity model: every current finding must disappear or have an exact compatible acceptance.
 
 ```yaml
-- run: pnpm install --frozen-lockfile
-- run: pnpm agentlint rules test
-- run: pnpm agentlint check --all --base "origin/${{ github.base_ref }}"
+name: agentlint
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm agentlint rules test
+      - run: pnpm agentlint check --all --base "origin/${{ github.base_ref }}" --review-output artifacts/agentlint-review.json
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: agentlint-review
+          path: artifacts/agentlint-review.json
 ```
 
-See [docs/github-actions.md](../../docs/github-actions.md) for artifacts and fork-safe review guidance.
+`fetch-depth: 0` is required because change rules use the merge base. The artifact step is safe on untrusted pull requests: it uploads repository-derived review data and needs no write permission, secret, bot, or waiting browser. Open it locally with `pnpm agentlint review --from agentlint-review.json` and bring decisions back through `acceptances import` (see [Detached CI review](#detached-ci-review)).
+
+## Integration boundary
+
+The core package contains no MCP server, harness hook, GitHub bot, or provider SDK. Integrations call the CLI and read its exit code:
+
+| Exit code | Meaning                                             |
+| --------- | --------------------------------------------------- |
+| `0`       | Every current finding has a compatible acceptance.  |
+| `1`       | One or more findings are unresolved.                |
+| `2`       | The command, configuration, or evidence is invalid. |
+
+A harness can continue after a non-blocking `check` during a work loop, but it must report unresolved findings before it finishes. Use `check --all` as the hard gate at a checkpoint and in CI.
+
+Provider adapters (pull-request comments, ownership routing, signed human authority) belong outside the engine. They must preserve the same current-finding and acceptance semantics, and they are added only when the CLI and artifact contract cannot provide the required experience.
 
 ## Public API
 

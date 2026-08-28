@@ -33,11 +33,9 @@ Thumbs.db
 **/.agentlint/.cache/
 
 # Internal
-.agents/*
-!.agents/learn/
-!.agents/learn/**
+.agents/
 .claude/
-
+skills-lock.json
 
 # Local package tarballs
 local-packages/

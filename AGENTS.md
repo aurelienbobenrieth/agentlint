@@ -37,4 +37,4 @@ Stable engineering boundaries for agentlint. See [CONTRIBUTING.md](CONTRIBUTING.
 
 ## References
 
-`.agents/ref-repos/` contains gitignored reference repositories. Pull before relying on them. Useful sources are `effect-smol`, `plannotator`, `oxc`, and `eslint`.
+`.agents/ref-repos/` holds gitignored reference clones. Run `pnpm refs:sync` to create or refresh them. Sources: `effect` (Effect-TS/effect `main`, Effect V4; `effect-smol` is archived), `eslint`, `oxc`, `foldkit`, `t3code`, and `executor`.

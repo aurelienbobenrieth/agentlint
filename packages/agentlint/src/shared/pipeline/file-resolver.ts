@@ -56,7 +56,6 @@ const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make(
   "coverage",
   ".cache",
   ".agents",
-  ".audit",
 );
 
 function hasGlobSyntax(value: string): boolean {

@@ -9,14 +9,7 @@
     "builtin": true,
     "node": true
   },
-  "ignorePatterns": [
-    "**/*.d.ts",
-    ".agents/**",
-    "**/*.wasm",
-    "**/__fixtures__/**",
-    "apps/review/src/paraglide/**",
-    "examples/**"
-  ],
+  "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**", "examples/**"],
   "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
   "jsPlugins": ["./scripts/oxlint-plugin-effect.js"],
   "rules": {

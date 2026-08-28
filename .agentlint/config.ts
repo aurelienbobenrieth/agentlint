@@ -87,5 +87,5 @@ const processBoundary = defineRule({
 
 export default defineConfig({
   rules: [structuredEffectErrors, processBoundary],
-  ignores: ["dist/**", "coverage/**", "**/node_modules/**", ".agents/**", ".audit/**"],
+  ignores: ["dist/**", "coverage/**", "**/node_modules/**", ".agents/**"],
 });

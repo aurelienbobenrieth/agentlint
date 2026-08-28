@@ -8,6 +8,6 @@
     "rules:test": "agentlint rules test"
   },
   "devDependencies": {
-    "@aurelienbbn/agentlint": "workspace:^"
+    "@aurelienbbn/agentlint": "workspace:*"
   }
 }
