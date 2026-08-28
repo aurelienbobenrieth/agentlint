@@ -1,160 +1,97 @@
-# agentlint in 10 minutes
+# agentlint 0.2 demo
 
-A guided tour of the whole loop using [examples/demo](examples/demo) — a small
-app you "inherit" complete with a committed ledger: some findings were already
-resolved by an agent, one was approved by a human, one is deferred, and five
-are waiting for you.
+This demo shows the full product loop against a small commerce application. Six repository-owned rules cover query bounds, payment retries, focused tests, dynamic execution, destructive migrations, and privilege widening. The fixture deliberately mixes state and change findings, agent and human authority, dense rule groups, accepted work, and an invalidated prior judgment.
 
-Prerequisites: `pnpm install && pnpm build` at the repo root, then:
+The package supplies the engine and review tools. The repository supplies every rule.
+
+## Prepare
 
 ```bash
+pnpm install
+pnpm build
 cd examples/demo
 ```
 
-## 1. See the findings
+## Prove the rules
 
 ```bash
-pnpm agentlint check --all
+node ../../packages/agentlint/dist/bin.mjs rules test
 ```
 
-Five unresolved findings across the tree, each from a different kind of rule:
+Each detector has `mustReport` fixtures and `mustStaySilent` fixtures. These examples define the detection boundary. They do not try to list every bad program.
 
-| Finding                                             | Rule                      | Shows                                   |
-| --------------------------------------------------- | ------------------------- | --------------------------------------- |
-| `it.only(...)` in `src/__tests__/users.test.ts`     | `tests/no-focused-tests`  | plain pattern match                     |
-| `TODO` without owner in `src/pages/users-page.tsx`  | `docs/todo-needs-owner`   | `createOnce` escape hatch (comments)    |
-| unbounded `useQuery` in `src/pages/users-page.tsx`  | `data/bounded-query`      | structural callee + argument inspection |
-| same call, missing UI states                        | `ui/query-state-coverage` | two rules, one trigger site             |
-| `db.dropTable(...)` in `src/migrations/2026-07-...` | `danger/lossy-migration`  | **human-gated**: no `--accept` offered  |
+## Calibrate on the repository
 
-The summary line also says `4 resolved hidden; 1 deferred` — that's the
-inherited history. And note the dim **Context notes**: two of the three learned notes in
-`.agents/learn/` matched your files (the migrations one fires precisely on
-`dropTable|dropColumn` in `src/migrations/**`).
-
-## 2. Read the inherited ledger
+Before enforcing a new rule, scan real repository code and review every match:
 
 ```bash
-pnpm agentlint ledger list
-cat .agentlint/ledger.jsonl
+node ../../packages/agentlint/dist/bin.mjs rules scan --rule data/bounded-queries --review
 ```
 
-Every status is represented, with actor and reason:
+The calibration workspace lets a rule author label each match as applies, does not apply, or unsure. These temporary labels do not accept findings and do not change the gate. They expose false positives, missing context, and binding mistakes while the rule is still cheap to revise.
 
-- **accepted** (`agent:claude`) — the `findMany` in `src/api/users.ts`, bounded by org size.
-- **deferred** (`agent:claude`) — the `fetch` without timeout, waiting on a product decision. Deferred does not block you locally, but try `pnpm agentlint check --all --ci`: it blocks CI.
-- **no_fix** (`agent:claude`) — `eval()` in `src/vendor/legacy-parser.js`: vendored, can't be edited, replacement planned.
-- **approval_requested → approved** — the 2026-06 `dropColumn` migration: the agent requested with its evidence, `human:aurel` approved. The full trail is two lines in the ledger.
+Use the results to refine the detector, repository binding, standard guidance, and representative fixtures. Run `rules test` again, then repeat the repository scan until the evidence is useful enough to enforce.
 
-All of it is hash-pinned: edit `src/api/users.ts` line 7 and the acceptance
-resurfaces as unresolved on the next check.
-
-## 3. Rules vs notes — the same concern, two artifacts
-
-The migration topic exists in this repo as **both** a rule and a note, on
-purpose — they answer different questions:
-
-|              | Rule (`danger/lossy-migration`)               | Note (`drop-column-backfill`)            |
-| ------------ | --------------------------------------------- | ---------------------------------------- |
-| Encodes      | a **standard** — "this always needs judgment" | a **fact** — "here is what we learned"   |
-| Trigger      | code shape (AST pattern)                      | situation (file globs + grep)            |
-| Output       | blocking finding, demands a disposition       | dim non-blocking `Context notes` pointer |
-| Ledger       | every resolution is recorded and hash-pinned  | never — nothing to resolve               |
-| Context cost | guidance printed with the finding             | one pointer line; the body stays on disk |
-
-You already saw both fire on the same file in step 1: the `dropTable` finding
-_blocks_, while the backfill note just points at
-`.agents/learn/drop-column-backfill.md`.
-
-Now the layered-activation part:
+## Run the gate
 
 ```bash
-pnpm agentlint notes list
+node ../../packages/agentlint/dist/bin.mjs check --all --base origin/main
 ```
 
-Three notes, two activation tiers:
+The demo produces a realistic review queue across API, background job, payment, test, migration, page, and vendored code. Some rules produce several findings so grouping, filtering, and full-file source navigation are visible in the workspace.
 
-- `drop-column-backfill` and `query-cache-gotcha` have `triggers:` frontmatter
-  (globs + grep) — they surface **deterministically** whenever a scanned file
-  matches.
-- `expo-sheet-ivs-reload` has **no triggers** — deliberately. It is too niche
-  to earn a place in anyone's context, so it never auto-surfaces; it waits on
-  disk for `rg "IVS" .agents/learn/` the day the stream reloads again.
+Query, payment, and test rules permit agent acceptance. Dynamic execution, migration, and authorization rules require human acceptance. The seeded state shows the three situations the review UI is built for:
 
-That is the whole memory model: deterministic trigger when one can be
-expressed, plain search as the fallback — and never a paragraph of base
-context spent either way. If a note starts feeling normative ("we should
-always..."), that is the signal to promote it into a rule and let the ledger
-hold people to it.
+- **An agent fixed it and asks for sign-off.** `2026-06-drop-legacy-flag.ts` drops a column. The agent added a backfill and recorded a proposal with the diff (`agentlint propose`). The human reads the diff next to the evidence and accepts or requests changes.
+- **An agent could not fix it.** `legacy-parser.js` calls `eval` in vendored code. The agent recorded a proposal without a diff explaining why it needs a product decision.
+- **An agent already decided.** `reconcile-orders.ts` has a bounded-query finding the agent accepted with a concrete reason. It appears in **Decisions** with actor and time, where a human can request a correction.
 
-## 4. Prove the rules are precise
+`2026-07-drop-legacy-users.ts` is accepted by a human and also appears in **Decisions**.
+
+## Use the text loop
 
 ```bash
-pnpm agentlint rules test
+node ../../packages/agentlint/dist/bin.mjs check --all
+node ../../packages/agentlint/dist/bin.mjs explain 2
+node ../../packages/agentlint/dist/bin.mjs accept 2 --reason "The endpoint has a verified finite tenant bound."
+node ../../packages/agentlint/dist/bin.mjs approve 7 --reason "Backup, rollback, and deployment order are verified."
 ```
 
-Seven rules, each shipping `valid`/`invalid` fixtures run against real parses —
-strings, comments, shorthand properties, and wrapper calls don't false-positive.
-Look at [.agentlint/config.ts](examples/demo/.agentlint/config.ts): it uses
-code-shaped patterns (`$DB.dropTable($$$ARGS)`), a `where` constraint
-(`fetch` unless a `signal` is anywhere in the args), a raw tree-sitter query
-(`security/no-eval`), and one imperative visitor (TODO comments).
+`accept` cannot accept a human-authority finding. `approve` records human authority. `propose <selector> --summary "..." [--diff-file path]` records agent work on a finding it cannot accept.
 
-## 5. Resolve like an agent would
+## Use the review workspace
 
 ```bash
-pnpm agentlint explain 8          # full guidance: examples, refs, ledger context
-pnpm agentlint resolve 1 --no-fix --reason "Debug leftover; removing the .only instead." # then actually fix it
-pnpm agentlint resolve 5 --accept --reason "trust me"        # refused: human-gated
-pnpm agentlint resolve 5 --request-approval --reason "legacy_users fully backfilled to users_v2, verified in staging."
+node ../../packages/agentlint/dist/bin.mjs review --base origin/main
 ```
 
-Check the semantics:
+**Queue** lists what still needs a decision, grouped by file. Each finding shows the code, why it was flagged, the agent's proposal when there is one, and a single reason field with **Accept** / **Request changes**. **Decisions** lists what is already accepted, by whom and when; a human can request a correction on an agent acceptance. Search, the filter popover (status, authority, rule, group by file or rule), and the active-filter chips keep large queues manageable. The final screen gives a copyable handoff for the coding agent.
+
+## Use a detached CI review
 
 ```bash
-pnpm agentlint check --all        # exit 0 once the rest is fixed/resolved - the agent can finish
-pnpm agentlint check --all --ci   # exit 1 - deferred + pending approval block the merge
+node ../../packages/agentlint/dist/bin.mjs check --all --base origin/main --review-output agentlint-review.json
+node ../../packages/agentlint/dist/bin.mjs review --from agentlint-review.json
 ```
 
-## 6. Review as the human
+Detached review does not write to the source repository. Export the accepted decisions and import them after checkout:
 
 ```bash
-pnpm agentlint review
+node ../../packages/agentlint/dist/bin.mjs acceptances import agentlint-acceptances.jsonl --base origin/main
 ```
 
-The browser opens on the **guided review** (plannotator-style): a queue
-ordered by where your attention matters - blocking items first (pending
-approvals, human-gated findings), then **Audit** (dispositions agents recorded
-since base, so self-acceptances get human eyes), then the rest. `j`/`k` moves
-through the queue; the progress bar tracks what you have handled.
+The import recomputes current findings. It rejects stale or incompatible records.
 
-- The pending `dropTable` approval sits on top, with the agent's stated
-  reason pre-filled on Approve.
-- The **Ledger** tab shows the whole history — filter to "new since main" to
-  see exactly what this branch added (the same delta the `ledger-review`
-  GitHub Action posts on PRs).
-- Toggle **examples/refs** on any card; the Findings tab keeps the filterable list view.
-- Try **Request changes** with a comment, then **Finish review**: the comment
-  lands in `.agentlint/review-feedback.md` _and_ in the terminal that launched
-  the review — the feedback loop back to the agent.
-- Or **Approve**: `check --ci` unblocks (once the other findings are dealt
-  with). Edit the `dropTable` line afterwards and the approval invalidates
-  automatically.
+## Test acceptance lifetime
 
-CLI equivalents: `pnpm agentlint approve <selector> --reason "..."` (refused
-for agent actors) and `pnpm agentlint ledger review --base main`.
+A formatting-only edit keeps a state acceptance when the matched syntax has the same semantic structure. A material syntax edit invalidates it.
 
-## 7. Reset the playground
+A change acceptance is valid only for the exact versioned Git-change fingerprint. A later material change creates a new unresolved finding. The old reason can appear as context, but it cannot open the gate.
+
+Run a complete check to remove dead acceptance records:
 
 ```bash
-git checkout -- ../../examples/demo && git clean -fd ../../examples/demo
+node ../../packages/agentlint/dist/bin.mjs check --all --base origin/main
 ```
 
-## Where to look next
-
-- Repo dogfooding: [.agentlint/config.ts](.agentlint/config.ts) enforces
-  AGENTS.md conventions on agentlint's own source, gated in CI.
-- Harness integrations: `agentlint init --harness claude-code` (PostToolUse
-  hook), `agentlint mcp` (MCP server), `agentlint hook claude-code`.
-- PR surface: the `ledger-review` workflow comments new dispositions and
-  pending approvals on every PR — this branch's own PR has one.
+The committed file `.agentlint/acceptances.jsonl` contains only current accepted results. Git supplies its history.

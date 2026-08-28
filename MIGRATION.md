@@ -1,42 +1,46 @@
-# Migrate from agentlint 0.1.x to 0.2.0
+# agentlint 0.2 is a clean break
 
-0.2.0 replaces the reviewed-flag workflow with findings, guidance, explicit dispositions, and an append-only ledger. Treat the upgrade as a deliberate cutover.
+0.2 intentionally provides no automated migration from 0.1 development state. Delete the old ledger, notes configuration, presets, MCP or hook setup, and old rule shapes. Keep the repository standards worth enforcing and express them through the smaller model.
 
-## 1. Move the config
+## Replace rules
 
-Move `agentlint.config.ts` to `.agentlint/config.ts`. Root-level configs are no longer discovered.
+Every configured rule is now one `defineRule` value with:
 
-## 2. Update rules
+- `lifecycle: "state" | "change"`;
+- a revisioned `standard`;
+- a versioned `detector`;
+- a repository `binding` with scope and authority;
+- focused `mustReport` and `mustStaySilent` fixtures when useful.
 
-Rules now use `id`, `description`, `guidance`, and either structural `match` entries or `createOnce(context)`. Report findings with `context.report({ node, message })`. Move file routing and resolution policy into `defineConfig`.
+Config uses a `rules` array. Core no longer ships presets or product rules.
 
-```ts
-const rule = defineRule({
-  id: "data/bounded-query",
-  description: "Flags queries without a bound.",
-  guidance: {
-    standard: "Queries that grow with production data need an explicit bound.",
-    checks: ["A limit, cursor, or documented finite dataset satisfies the standard."],
-  },
-  match: [{ pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB is unbounded." }],
-  fixtures: { invalid: ["db.findMany({})"], valid: ["db.findMany({ take: 50 })"] },
-});
+## Replace dispositions
+
+The old append-only `.agentlint/ledger.jsonl` and its deferred, no-fix, approval-requested, and approved states are gone. The only stored outcome is an acceptance in `.agentlint/acceptances.jsonl`. A current finding is either accepted or unresolved.
+
+Do not translate old records automatically. Re-run the new detectors and make current decisions against the new fingerprints.
+
+## Replace commands
+
+| Removed 0.1 surface     | 0.2 surface                             |
+| ----------------------- | --------------------------------------- |
+| `resolve --accept`      | `accept <selector> --reason`            |
+| `approve` over requests | `approve <selector> --reason`           |
+| `ledger list/gc/review` | `acceptances list/clean/import`         |
+| learned notes           | repository documentation or a rule      |
+| MCP and Claude hook     | call the CLI from the harness           |
+| bundled presets         | repository or third-party rule packages |
+
+`check` has the same gate semantics locally and in CI. `--all` controls scan completeness, not strictness.
+
+## Cut over
+
+```bash
+rm .agentlint/ledger.jsonl
+pnpm agentlint init
+pnpm agentlint rules test
+pnpm agentlint rules scan --review
+pnpm agentlint check --all
 ```
 
-## 3. Replace commands
-
-| 0.1.x                     | 0.2.0                                                  |
-| ------------------------- | ------------------------------------------------------ |
-| `agentlint list`          | `agentlint rules list`                                 |
-| `agentlint review <hash>` | `agentlint resolve <selector> --accept --reason "..."` |
-| `.agentlint-state`        | committed `.agentlint/ledger.jsonl`                    |
-
-Run `agentlint rules test`, then `agentlint check --all`. Resolve each finding deliberately; do not translate old reviewed flags automatically because the new ledger records an accountable reason and actor.
-
-## 4. Add CI
-
-Use `agentlint check --all --ci` so deferred and approval-requested findings block merges. Copy the complete workflow from [docs/github-actions.md](docs/github-actions.md).
-
-## 5. Review the result
-
-Run `agentlint review` to inspect human-gated findings, new agent dispositions, and unresolved work. Commit `.agentlint/ledger.jsonl`; keep `.agentlint/.cache/` ignored.
+Review and commit the new config and any resulting acceptances. Read the [package guide](packages/agentlint/README.md) for the complete model.

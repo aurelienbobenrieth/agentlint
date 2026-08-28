@@ -1,62 +1,40 @@
 ---
-name: agentlint/usage
+name: usage
 description: >
-  Run agentlint after code changes and resolve every finding through the
-  guidance, approval, and ledger loop. Activate before completion, before
-  commits, or when the developer asks to scan code with agentlint.
-type: core
-library: agentlint
-library_version: "0.2.0"
+  Run the repository's agentlint gate after code changes, apply its standards,
+  and finish only after every current finding is fixed or validly accepted.
+metadata:
+  type: core
+  library: agentlint
+  library_version: "0.2.0"
 sources:
   - "aurelienbobenrieth/agentlint:README.md"
   - "aurelienbobenrieth/agentlint:src/bin.ts"
 ---
 
-# agentlint
+# agentlint usage
 
-Use the repo package manager and resolve `<agentlint-cmd>` first:
+Resolve `<agentlint-cmd>` from the repository package manager: `pnpm agentlint`, `npm exec agentlint --`, `yarn agentlint`, or `bun run agentlint`.
 
-- npm: `npm exec agentlint --`
-- pnpm: `pnpm agentlint`
-- yarn: `yarn agentlint`
-- bun: `bun run agentlint`
+1. Run `<agentlint-cmd> check` after a coherent change and `check --all` at a completion checkpoint.
+2. Treat every unresolved finding as mandatory work. Read its standard and inspect `<agentlint-cmd> explain <selector>` when the compact output is insufficient.
+3. Prefer changing the evidence so the standard is clearly satisfied.
+4. For an `agent` authority finding that is already permitted, run `<agentlint-cmd> accept <selector> --reason "..."` with the concrete fact that satisfies the standard. Do not use a generic reason.
+5. Never create human authority. For a `human` finding, do the work you can, then run `<agentlint-cmd> propose <selector> --summary "..." [--diff-file path]` so the reviewer sees your change or your reason for not changing it next to the evidence. Then ask the user to run the review UI or `approve` command.
+6. A prior lineage reason is context only. Re-evaluate the changed evidence; do not assume the old acceptance still applies.
+7. Rerun the gate after changes or acceptance. Stop only when the applicable check reports the gate open.
 
-Loop:
-
-1. Run `<agentlint-cmd> check` after code changes; use `--all` when validating the whole repo and `--ci` for CI-equivalent gating.
-2. Treat every finding as mandatory work: fix it, or record `--accept`, `--defer`, or `--no-fix` with a concrete reason.
-3. Findings marked "Requires human approval" cannot be accepted by you. Fix the code, or record `--request-approval --reason "..."` explaining why the flagged code is correct. A human unblocks it later (`agentlint approve` or the review UI); pending requests do not block your local completion but do block CI.
-4. Never run `agentlint approve` yourself. Approvals are reserved for humans; the ledger records the actor for every disposition.
-5. Use the finding message, standard, and checks from `check` as the normal action guidance.
-6. Run `<agentlint-cmd> explain <selector>` when you need examples, refs, ledger context, or boundary-case calibration.
-7. Use latest-check selectors such as `1` or `[1]`; rerun `check` if a selector is stale.
-8. If `.agentlint/review-feedback.md` exists, a human reviewed your work and requested changes: address each item, delete the file, and rerun `check`.
-9. Dim "Context notes" lines in `check` output point to learned notes relevant to the files you touched. Read the note file when its description matches your situation.
-10. Stop only after `<agentlint-cmd> check` reports no unresolved blocking findings.
-
-Commands:
+Useful commands:
 
 ```bash
 <agentlint-cmd> check
+<agentlint-cmd> check --all
 <agentlint-cmd> check --format jsonl
 <agentlint-cmd> explain 1
-<agentlint-cmd> resolve 1 --accept --reason "..."
-<agentlint-cmd> resolve 1 --defer --reason "..."
-<agentlint-cmd> resolve 1 --no-fix --reason "..."
-<agentlint-cmd> resolve 1 --request-approval --reason "..."
-<agentlint-cmd> ledger list
-<agentlint-cmd> ledger review --base main
-<agentlint-cmd> ledger gc
+<agentlint-cmd> accept 1 --reason "..."
 <agentlint-cmd> rules list
 <agentlint-cmd> rules test
+<agentlint-cmd> acceptances list
 ```
 
-Guidance shape:
-
-- `standard` and `checks` are normal `check` feedback and should be enough for straightforward fixes.
-- `examples` calibrate edge cases and acceptable fixes; load them through `explain`.
-- `refs` identify the source of truth for rules tied to external docs or platform contracts; load them through `explain` when verifying current authority.
-
-Independent review pattern (optional, harness-level): for findings that deserve a second opinion, pass `check --format jsonl` output to a fresh session that did not author the code and let that session record dispositions with its own actor.
-
-When stuck on a weird, repeated, dependency-specific, or platform-specific issue, search `.agents/learn/` with `rg` before rediscovering the same fix. Write a short learned note only after non-obvious investigation that would plausibly save a future session; add `triggers:` frontmatter (files globs, grep regex) so future `check` runs surface it deterministically.
+The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.

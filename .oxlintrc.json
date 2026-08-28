@@ -14,8 +14,6 @@
     ".agents/**",
     "**/*.wasm",
     "**/__fixtures__/**",
-    "packages/ui/src/components/ui/**",
-    "packages/ui/src/hooks/**",
     "apps/review/src/paraglide/**",
     "examples/**"
   ],

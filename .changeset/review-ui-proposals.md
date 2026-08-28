@@ -1,0 +1,5 @@
+---
+"@aurelienbbn/agentlint": minor
+---
+
+Rework the review UI around a human approval queue: a Queue/Decisions split, file-grouped findings, Polaris-style filter popover with active-filter chips, a compact detail layout (evidence, agent proposal, one decision field), a dark-only neutral theme, Linear-style keyboard shortcuts with tooltips and a `?` cheat sheet, a resizable list, anchored popovers, editor brand icons, stacked toasts, and syntax-highlighted proposal diffs and examples. Decisions can be withdrawn (`withdraw` review action removes the change request or the acceptance). Change requests no longer require text; editors are opened through their command-line launcher when one is on PATH (`--goto file:line:col`; Windows `.cmd` shims resolve to the executable) with the `scheme://` URI as fallback; `explorer.exe`'s non-zero exit code no longer reports a failed open on Windows. Add `agentlint propose` and `.agentlint/proposals.jsonl` so an agent can attach a summary and diff to a finding it cannot accept; the review payload exposes it as `proposal`.

@@ -4,28 +4,24 @@
 
 ### Minor Changes
 
-- [#28](https://github.com/aurelienbobenrieth/agentlint/pull/28) [`8fbcccd`](https://github.com/aurelienbobenrieth/agentlint/commit/8fbcccdf08b28c67b9588a24de4e943bdb345700) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Move the project config file to `.agentlint/config.ts`.
+- Rebuild agentlint around deterministic findings and explicit judgment gates.
 
-  This is a breaking change: root-level `agentlint.config.*` files are no longer discovered, and `agentlint init` now creates `.agentlint/config.ts`.
+  This release is a deliberate breaking rewrite:
 
-- [#31](https://github.com/aurelienbobenrieth/agentlint/pull/31) [`39b5280`](https://github.com/aurelienbobenrieth/agentlint/commit/39b528036c002c04c6ed4a62b999feaa3762bf54) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Replace the reviewed-flag workflow with the v0 finding, guidance, and ledger loop.
+  - One discriminated `defineRule` API supports state and change lifecycles.
+  - Standards, detectors, and repository bindings have separate identities and versions.
+  - Rules declare representative `mustReport` and `mustStaySilent` fixtures.
+  - The gate is binary. A current finding is accepted or unresolved.
+  - Repository-owned `.agentlint/acceptances.jsonl` replaces the event ledger.
+  - Versioned fingerprints preserve formatting-only state decisions and invalidate material changes.
+  - Agent and human authority policies control who can accept a finding.
+  - Git change rules inspect the merge-base-to-working-tree change, including untracked files.
+  - The FoldKit review SPA supports attached local review and detached CI artifacts.
+  - The CLI adds `accept`, `approve`, `acceptances`, calibration scans, and review artifact workflows.
+  - Core no longer ships product rules, presets, MCP, harness adapters, learned notes, or the separate UI package.
+  - The package includes the production SPA and tree-sitter WASM assets.
 
-  Breaking changes:
-  - Rule definitions now use `id`, `description`, `guidance`, and `createOnce(context)` with `context.report(...)`.
-  - Config owns `files`, `ignores`, `overrides`, `policy`, and `extends`; rule-level `meta`, `languages`, `include`, `ignore`, and `instruction` are removed.
-  - `agentlint review` and `agentlint list` are replaced by `agentlint resolve`, `agentlint rules list`, and `agentlint ledger`.
-  - `.agentlint-state` is removed. Explicit dispositions are written to committed `.agentlint/ledger.jsonl`; latest-check selector cache lives under gitignored `.agentlint/.cache/`.
-  - `agentlint check` now supports `--format jsonl` and disposition-aware local versus CI gating.
-  - `agentlint check` now includes short guidance checks in text and JSONL output; examples and refs remain available through `agentlint explain`.
-  - The package exports the new rule/config/guidance/finding APIs plus the first internal presets and rules.
-
-  Also updates `agentlint init`, README, contributor guidance, and packaged skills for the new workflow.
-
-  The local review experience adds a guided queue, immediate durable actions, optional audit notes, refresh-safe drafts and progress, live agent feedback, and session-bound request protection.
-
-### Patch Changes
-
-- [#31](https://github.com/aurelienbobenrieth/agentlint/pull/31) [`a34d97d`](https://github.com/aurelienbobenrieth/agentlint/commit/a34d97d5e9eaa165109064409bc0c53e14c6d555) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Update the Effect beta runtime, TypeScript, Vitest, oxlint, and Changesets tooling baseline, add the Effect language-service TypeScript plugin, and keep the tree-sitter runtime pinned to the latest grammar-compatible release.
+  There is no automated migration from prerelease 0.1 state. See `MIGRATION.md`.
 
 ## 0.1.5
 

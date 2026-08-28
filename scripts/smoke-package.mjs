@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const tarball = process.argv[2] ? resolve(process.argv[2]) : undefined;
@@ -11,7 +11,9 @@ if (!tarball || !existsSync(tarball)) {
 }
 
 const root = mkdtempSync(join(tmpdir(), "agentlint-package-smoke-"));
-const npm = "npm";
+const npm = process.platform === "win32" ? process.execPath : "npm";
+const npmPrefix =
+  process.platform === "win32" ? [join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")] : [];
 const bin = join(root, "node_modules", "@aurelienbbn", "agentlint", "dist", "bin.mjs");
 const env = { ...process.env, PATH: `${join(root, "node_modules", ".bin")}${delimiter}${process.env.PATH ?? ""}` };
 
@@ -20,35 +22,49 @@ function run(command, args, expected = 0, cwd = root) {
   process.stdout.write(result.stdout ?? "");
   process.stderr.write(result.stderr ?? "");
   if (result.status !== expected) {
-    throw new Error(`${command} ${args.join(" ")} exited ${result.status}; expected ${expected}`);
+    throw new Error(
+      `${command} ${args.join(" ")} exited ${result.status}; expected ${expected}${result.error ? `: ${result.error.message}` : ""}`,
+    );
   }
 }
 
 try {
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "agentlint-package-smoke", private: true }));
-  run(npm, ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball]);
+  run(npm, [...npmPrefix, "install", "--ignore-scripts", "--no-audit", "--no-fund", tarball]);
 
   run(process.execPath, [bin, "init"]);
   writeFileSync(
     join(root, ".agentlint", "config.ts"),
     `import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 const rule = defineRule({
-  id: "smoke/comment",
-  description: "Package smoke rule.",
-  guidance: { standard: "TODO comments carry an owner.", checks: ["Confirm the TODO has an owner."] },
-  fixtures: { invalid: ["// TODO: later"], valid: ["// TODO(owner): later"] },
-  createOnce(context) { return { comment(node) { if (node.text.includes("TODO:")) context.report({ node, message: "TODO needs an owner." }); } }; },
+  lifecycle: "state",
+  standard: {
+    id: "smoke/reviewed-danger-call",
+    revision: 1,
+    title: "Danger calls have explicit review",
+    guidance: "Confirm that the danger call has an applicable sandbox.",
+  },
+  detector: {
+    id: "typescript/danger-call",
+    version: 1,
+    match: { pattern: "danger($ARG)", message: "Danger call needs judgment." },
+    fixtures: {
+      mustReport: ["danger('later')"],
+      mustStaySilent: ["safe('later')"],
+    },
+  },
+  binding: { id: "smoke/reviewed-danger-call", authority: "agent", include: ["src/**/*.ts"] },
 });
-export default defineConfig({ rules: { "smoke/comment": rule }, files: ["src/**/*.ts"] });
+export default defineConfig({ rules: [rule] });
 `,
   );
   mkdirSync(join(root, "src"), { recursive: true });
-  writeFileSync(join(root, "src", "smoke.ts"), "// TODO: later\nexport const value = true;\n");
+  writeFileSync(join(root, "src", "smoke.ts"), "danger('later');\n");
 
   run(process.execPath, [bin, "rules", "test"]);
   run(process.execPath, [bin, "check", "--all"], 1);
   run(process.execPath, [bin, "explain", "1"]);
-  run(process.execPath, [bin, "resolve", "1", "--accept", "--reason", "Package smoke disposition."]);
+  run(process.execPath, [bin, "accept", "1", "--reason", "The call runs inside the verified test sandbox."]);
   run(process.execPath, [bin, "check", "--all"]);
 
   for (const required of ["dist/bin.mjs", "dist/ui/index.html", "dist/wasm/tree-sitter.wasm"]) {

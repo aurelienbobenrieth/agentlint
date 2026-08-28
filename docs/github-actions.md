@@ -1,51 +1,59 @@
 # GitHub Actions
 
-CI is the authoritative agentlint gate. Hooks and MCP shorten feedback distance, but `check --ci` is what protects the merge.
+CI runs the same binary gate as local development. There is no CI-only severity model: every current finding must disappear or have an exact compatible acceptance.
 
 ```yaml
 name: agentlint
 
 on:
   pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: agentlint-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  check:
+  gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx agentlint rules test
-      - run: npx agentlint check --all --ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm agentlint rules test
+      - run: pnpm agentlint check --all --base "origin/${{ github.base_ref }}" --review-output artifacts/agentlint-review.json
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: agentlint-review
+          path: artifacts/agentlint-review.json
 ```
 
-`--ci` blocks unresolved, deferred, and approval-requested findings. An ordinary local check allows deferred work and pending human approval so an agent can finish its turn.
+`fetch-depth: 0` is required because change rules use the merge base. The artifact step is safe on untrusted pull requests: it uploads repository-derived review data and does not require write permissions, secrets, a bot, or a waiting browser.
 
-## Review ledger changes
-
-Produce a reviewer-facing summary with:
+After downloading an artifact:
 
 ```bash
-npx agentlint ledger review --base "origin/${{ github.base_ref }}"
+pnpm agentlint review --from agentlint-review.json
 ```
 
-The repository workflow posts a sticky PR comment for same-repository branches. Fork pull requests receive the same report in the workflow job summary because GitHub correctly removes comment-write permission from forked code.
+Detached review can export change requests and human acceptance JSONL. Commit reviewed acceptances through:
 
-## Release safety
+```bash
+pnpm agentlint acceptances import agentlint-acceptances.jsonl --base origin/main
+pnpm agentlint check --all --base origin/main
+```
 
-For libraries, build and pack before publishing, install the tarball into a clean temporary project, and publish that exact tested tarball. agentlint's own CI follows this flow through `scripts/smoke-package.mjs`.
+Import is deliberately not a blind file copy. It recomputes current findings and rejects stale or incompatible decisions.
+
+## Local speed
+
+Use `agentlint check` during development to inspect changed state files and all configured change rules. Use `agentlint check --all` at a refactor checkpoint and in CI. Both have identical acceptance and exit semantics; only their state-rule scan scope differs.
+
+## Provider review
+
+GitHub comments, CODEOWNERS, signed receipts, and protected-environment approval are future adapters. They belong outside the core until they can add verifiable authority without weakening the local workflow. The current artifact is intentionally provider-neutral.

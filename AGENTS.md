@@ -1,71 +1,40 @@
 # AGENTS.md
 
-Principles and boundaries that stay true while implementations churn. For local
-development, rule authoring, and the release flow see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Stable engineering boundaries for agentlint. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and rule-authoring details.
 
-## Task Completion
+## Completion
 
-- Full gates for merge-ready work: `pnpm check` (typecheck across all packages,
-  oxlint, oxfmt, intent validate, vitest).
-- Run the narrowest useful verification for a change: `pnpm --filter
-@aurelienbbn/agentlint test` for engine work, `pnpm --filter @agentlint/review
-typecheck` for UI work.
-- Run `pnpm fmt` before committing; oxfmt owns formatting.
-- `pnpm build` produces `packages/agentlint/dist` including the review UI
-  (`dist/ui`) and grammar WASM (`dist/wasm`). `pnpm pack` inside
-  `packages/agentlint` is the release artifact; verify it installs before
-  publishing.
+- Run `pnpm check` for merge-ready work: typecheck, oxlint, oxfmt, skill validation, tests, and the dogfood gate.
+- Run `pnpm fmt` before committing.
+- `pnpm build` creates the CLI, declarations, review UI under `dist/ui`, and grammar WASM under `dist/wasm`.
+- Verify the tarball from `pnpm pack` installs and runs in an empty consumer before publishing.
 
-## Package Roles
+## Product boundaries
 
-- `packages/agentlint`: the product. CLI, engine (tree-sitter pipeline, pattern
-  matching, ledger, notes), MCP server, harness hook adapters, packaged skills.
-  The only publishable package; everything else composes into it.
-- `packages/ui` (`@agentlint/ui`): presentational components only. No data
-  fetching, no routing, no agentlint domain logic. `src/components/ui/**` are
-  vendored COSS UI primitives (lint-excluded; refresh via
-  `pnpm dlx shadcn@latest add @coss/<name>` from the package directory, do not
-  hand-edit). agentlint composition components live in `src/components/*`.
-- `apps/review`: the review SPA. Containers, pages, and all user-facing copy
-  centralized in `src/messages.ts` (never inline literals in components). Imports `@agentlint/ui` public exports only — never
-  deep paths into the ui package. Builds into
-  `packages/agentlint/dist/ui`, served by `agentlint review`.
+- `packages/agentlint` is the only publishable package. It owns the CLI, engine, state/change pipelines, acceptances, and packaged skills.
+- `apps/review` is a FoldKit SPA. It owns presentation and browser-local detached decisions. Domain semantics stay in the package.
+- The review wire contract lives in `packages/agentlint/src/features/review/contract.ts`; `apps/review/src/types.ts` mirrors it. Change both together.
+- Use public package exports. Do not introduce cross-package relative imports.
+- Only `packages/agentlint/src/config/env.ts` may touch `process.*`.
 
-## Boundaries
+## Domain invariants
 
-- Keep package boundaries clear; use public package exports, not cross-package
-  relative imports. The `@ui/*` alias exists for the ui package's internal
-  imports, not for consumers.
-- `src/config/env.ts` is the only module in `packages/agentlint` that touches
-  `process.*`. Everything else depends on the `Env` service.
-- The review server wire contract lives in
-  `packages/agentlint/src/features/review/contract.ts`;
-  `apps/review/src/types.ts` mirrors it. Change both together.
-- The ledger (`.agentlint/ledger.jsonl` in consumer repos) is committed,
-  append-only project state keyed by finding hashes. Never change hash inputs
-  or record shapes without a migration story.
+- One `defineRule` discriminated union represents `state` and `change` rules.
+- A rule composes a versioned standard, a versioned detector, and a repository-owned binding.
+- Core ships no rules or presets.
+- Gate state is binary: a current finding is accepted or unresolved.
+- `.agentlint/acceptances.jsonl` stores only current acceptances. Partial scans never remove unexamined records; complete scans may remove stale ones.
+- Acceptance requires exact compatible source identity and fingerprint. Lineage is context and never opens a gate.
+- Fingerprint schemes and persisted record schemas are versioned. Never change their meaning silently.
+- A change rule always evaluates the merge base of an explicit or detected Git base against the complete working tree, including staged, unstaged, and untracked files.
 
-## Effect Conventions
+## Effect conventions
 
-- Effect 4 (beta, pinned). Services via `Context.Service`, layers compose in
-  `bin.ts`. Follow `effect-smol` style for services/Schema and JSDoc
-  (`@since`/`@category`).
-- Tagged errors carry structured fields with namespaced tags
-  (`agentlint/LedgerError`) and derive `message` getters from those fields.
-  Never define a stringly `message: Schema.String` field on new error types.
-- Prefer `Effect Schema` for public data contracts and runtime validation;
-  derive types from schemas.
+- Effect 4 beta is intentionally pinned. Services use `Context.Service`; layers compose in `bin.ts`.
+- `web-tree-sitter` stays at 0.25.10 until the packaged grammar WASM set supports the 0.26 ABI.
+- Public runtime contracts use Effect Schema where practical.
+- Tagged errors expose structured fields and derive `message`; do not add stringly `message: Schema.String` fields.
 
-## Reference Repos
+## References
 
-`.agents/ref-repos/` holds gitignored clones for patterns: `effect-smol`
-(service/Schema style), `executor` and `opencode` (Effect-first product
-organization), `plannotator` (review UX), `oxc`/`eslint` (rule conventions).
-Pull latest before relying on one.
-
-## Learned Notes
-
-`.agents/learn/` holds rare, expensive debugging knowledge with trigger
-frontmatter. Search it with `rg` when a bug looks familiar; add a note only
-after non-obvious investigation.
+`.agents/ref-repos/` contains gitignored reference repositories. Pull before relying on them. Useful sources are `effect-smol`, `plannotator`, `oxc`, and `eslint`.

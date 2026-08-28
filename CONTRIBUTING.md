@@ -1,127 +1,66 @@
 # Contributing
 
-## Local Development
+## Development
 
-- Node 22+ and pnpm 10+
-- `pnpm install`
-- `pnpm check` runs typecheck, lint, format check, intent validation, and tests
-- `pnpm build` builds the package with tsdown
+Use Node 22.19+ and pnpm 10+.
 
 ```bash
+pnpm install
 pnpm typecheck
-pnpm lint
-pnpm fmt:check
 pnpm test
 pnpm build
 pnpm check
 ```
 
-The repo uses `@effect/language-service` through `tsconfig.json`. Configure your editor to use the workspace TypeScript version so Effect diagnostics are active.
+The repository uses the Effect language service. Configure your editor to use the workspace TypeScript version.
 
-## Engineering Expectations
+## Architecture
 
-- Prefer Effect Schema for public data contracts and runtime validation.
-- Prefer Effect services/layers for shared infrastructure.
-- Derive TypeScript types from schemas where practical.
-- Keep rule, parser, CLI, and ledger changes covered by typecheck and tests.
-- Inspect relevant local references under `.agents/ref-repos/` before architectural changes:
-  - `effect-smol` for Effect service and Schema style
-  - `oxc` for visitor lifecycle and config-owned routing
-  - `eslint` for rule and preset conventions
-  - `skills` for packaged skill shape
+- Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI separate.
+- Prefer Effect services for infrastructure and Effect Schema for public or persisted contracts.
+- The core package must remain useful without a model, server account, hosted service, or harness adapter.
+- Add product rules in consumer packages or repositories, never in core.
+- Treat acceptance compatibility as gate-critical code. Test changes to source identity, fingerprints, authority, lineage, and cleanup.
 
-## Writing Rules
+## Authoring rules
 
-Rules use `defineRule()` with `id`, `description`, `guidance`, and `createOnce`. Config and presets own file routing and persistence policy.
-Use `standard` for the invariant, `checks` for the short criteria agents should apply during `check`, `examples` for boundary-case calibration, and `refs` for source-of-truth links that belong in `explain`.
+Every effective rule is one `defineRule` value with three explicit parts:
+
+- `standard`: durable intent and guidance, with an identity and revision.
+- `detector`: executable state or change detection, with an identity and version.
+- `binding`: repository scope, detector options, and required authority.
+
+Fixtures are activation evidence, not a catalogue of everything wrong. `mustReport` proves the detector activates on representative evidence. `mustStaySilent` protects important boundaries and false-positive regressions. Permitted examples in guidance show the right path to agents; fixture source is not included in normal feedback.
 
 ```ts
-import { defineRule } from "@aurelienbbn/agentlint";
-
-export const myRule = defineRule({
-  id: "domain/my-rule",
-  description: "Flags code that needs a judgment call.",
-  guidance: {
-    standard: "State the expected standard assertively.",
-    checks: ["Name the short decision criterion agents should apply during check."],
-    examples: [
-      {
-        label: "Boundary case",
-        bad: "Show a tempting but wrong shape.",
-        good: "Show the acceptable shape.",
-      },
-    ],
-    refs: [{ type: "url", href: "https://example.com/source-of-truth" }],
+const rule = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "data/bounded-reads",
+    revision: 1,
+    title: "Production reads are bounded",
+    guidance: {
+      standard: "Reads that scale with production data have an explicit bound or pagination contract.",
+      examples: [{ code: "db.users.findMany({ take: 50 })" }],
+    },
   },
-  createOnce(context) {
-    return {
-      before(filename) {
-        return !filename.endsWith(".generated.ts");
-      },
-      call_expression(node) {
-        context.report({
-          node,
-          message: "Explain the concrete local concern.",
-        });
-      },
-      after() {},
-    };
+  detector: {
+    id: "prisma/find-many-without-take",
+    version: 1,
+    match: { pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB is unbounded." },
+    fixtures: {
+      mustReport: ["db.users.findMany({})"],
+      mustStaySilent: ["db.users.findMany({ take: 50 })"],
+    },
   },
+  binding: { id: "data/bounded-reads", authority: "agent", include: ["src/**/*.ts"] },
 });
 ```
 
-Lifecycle:
+Use declarative `pattern` or tree-sitter `query` matching for local syntax. Use `createOnce` for stateful repository analysis. Use `lifecycle: "change"` when the judgment depends on before/after evidence rather than current source alone.
 
-- `createOnce(context)` runs once per rule run.
-- `before(filename)` runs before each matching file and may return `false`.
-- Visitor handlers record findings with `context.report`.
-- `after()` runs after traversal and can emit aggregate findings.
-- Broad routing belongs in config `files`, `ignores`, and `overrides`.
-
-Prefer declarative `match` (pattern-by-example or tree-sitter `query`) over `createOnce` when the trigger has no cross-node state, and always ship `fixtures` — `agentlint rules test` runs them, and they are the rule's precision proof.
-
-## Workspace layout
-
-This repo is a pnpm workspace:
-
-- root: the publishable `@aurelienbbn/agentlint` package (CLI + engine, Effect-first).
-- `apps/review`: the local review SPA (Vite, TanStack Router/Query). Built into `dist/ui` and served by `agentlint review`.
-- `packages/ui`: `@agentlint/ui`, the presentational component library. `src/components/ui/**` are vendored COSS UI primitives (excluded from lint); agentlint-specific presentational components live in `src/components/*` and must stay free of data fetching and domain logic. Containers belong in the apps.
-
-## AgentlintNode API
-
-```ts
-node.type;
-node.text;
-node.startPosition; // { row, column }, zero-indexed
-node.endPosition;
-node.children;
-node.parent;
-node.childCount;
-
-node.childByFieldName("name");
-node.childrenByType("comment");
-node.descendantsOfType("string");
-```
-
-Any tree-sitter node type string is a valid visitor key. Common examples include `comment`, `function_declaration`, `call_expression`, `import_statement`, `if_statement`, `try_statement`, `jsx_element`, and `type_alias_declaration`.
-
-## Testing
-
-Use real tree-sitter parsing for pipeline behavior and focused service doubles for command handlers. Cover:
-
-- hash stability for same-file line shifts
-- override enable/disable behavior
-- ledger read/write validation
-- local versus CI disposition gating
-- JSONL output shape when changing reporter fields
+Run `pnpm agentlint rules test` and a calibration scan before enabling a new binding.
 
 ## Changesets
 
-Add a changeset for user-visible CLI, API, config, output, ledger, dependency, or packaged-skill changes:
-
-```bash
-pnpm changeset
-```
-
-Use conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`.
+Add a changeset for public API, CLI, persisted data, dependency, or packaged-skill changes. Use conventional commit prefixes.

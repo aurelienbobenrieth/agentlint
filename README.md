@@ -4,31 +4,26 @@
 [![npm version](https://img.shields.io/npm/v/@aurelienbbn/agentlint.svg)](https://www.npmjs.com/package/@aurelienbbn/agentlint)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Deterministic triggers for contextual agent guidance and accountable resolution.
+Deterministic findings and explicit judgment gates for coding agents.
 
-Classic linters handle mechanical violations with one correct fix. Skills and prompts activate probabilistically. agentlint covers the gap between them: **deterministic activation, judgment-based resolution, accountable ledger**.
+Linters reject code that is mechanically wrong. Prompts ask agents to remember concerns. agentlint covers the space between them: it deterministically finds places that require judgment, gives the reviewer the applicable standard, and keeps the gate closed until the evidence changes or someone records an acceptance with enough authority.
 
-Full documentation lives in the **[package README](packages/agentlint/README.md)**. See the
-**[0.2 migration guide](MIGRATION.md)** when upgrading and the
-**[GitHub Actions guide](docs/github-actions.md)** for merge enforcement.
+agentlint does not call a model, ship product rules, or prescribe an agent harness.
 
 ```bash
-npm install --save-dev @aurelienbbn/agentlint
-npx agentlint init
-npx agentlint check --all
+pnpm add -D @aurelienbbn/agentlint
+pnpm agentlint init
+pnpm agentlint rules test
+pnpm agentlint check --all
 ```
 
-Prefer pnpm, yarn, or bun? `agentlint init` detects the consumer's package manager and prints matching commands.
+Read the [package guide](packages/agentlint/README.md), try the [product demo](DEMO.md), or start with the [0.2 decisions](docs/decisions/README.md).
 
 ## Workspace
 
-| Path                                     | Role                                                                                                              |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [packages/agentlint](packages/agentlint) | The product: CLI, engine, MCP server, harness hooks, packaged skills. Publishable.                                |
-| [apps/review](apps/review)               | Local review SPA served by `agentlint review` (Vite, TanStack Router/Query). Builds into the product's `dist/ui`. |
-| [packages/ui](packages/ui)               | `@agentlint/ui`: presentational component library (COSS UI primitives + agentlint composition components).        |
-
-See [AGENTS.md](AGENTS.md) for package roles and boundaries, and [CONTRIBUTING.md](CONTRIBUTING.md) for local development and rule authoring.
+- `packages/agentlint` — publishable CLI, engine, rule API, and packaged review application.
+- `apps/review` — FoldKit single-page review application compiled into the package.
+- `examples/demo` — state and change rules exercised as a consumer would use them.
 
 ## License
 
