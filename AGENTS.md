@@ -26,14 +26,13 @@ This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.
 - `packages/agentlint` — the only published package. `src/domain` holds the rule, config, finding, fingerprint, and acceptance contracts. `src/features/<name>/{request,handler}.ts` holds one application command each. `src/shared/pipeline` parses and matches. `src/shared/infrastructure` wraps Git, the filesystem, tree-sitter, and the stores. `src/bin.ts` composes the layers and parses the CLI. `skills/` ships the agent skills.
 - `apps/review` — the FoldKit SPA, built into `packages/agentlint/dist/ui`. It owns presentation and browser-local detached decisions. Domain semantics stay in the package.
 - `examples/demo` — the walkthrough repository. `examples/minimal` — the smallest consumer.
-- `.agentlint/config.ts` — this repository's own rules. `pnpm check` ends by running them.
 
 ## Boundaries
 
 - The review wire contract is `packages/agentlint/src/features/review/contract.ts`: Effect Schemas over plain JSON, published as the `@aurelienbbn/agentlint/contract` subpath. `apps/review` imports it from there (the `source` export condition resolves to the TypeScript file in the workspace) and decodes every server response with it. The contract imports nothing but `effect`; keep it browser-safe.
-- Only `packages/agentlint/src/config/env.ts` touches `process.*`. Everything else depends on the `Env` service. A repository rule enforces this.
+- Only `packages/agentlint/src/config/env.ts` touches `process.*`. Everything else depends on the `Env` service. oxlint enforces this (`agentlint/no-direct-process-access`).
 - Use public package exports between workspaces. No cross-package relative imports.
-- Tagged errors carry structured fields and derive `message`. No `message: Schema.String` fields. A repository rule enforces this.
+- Tagged errors carry structured fields and derive `message`. No `message: Schema.String` fields. oxlint enforces this (`agentlint/no-stringly-error-message`).
 - Public runtime contracts and persisted records use Effect Schema. Persisted schemas and fingerprint schemes are versioned. Never change their meaning without bumping the version.
 
 ## Dependencies
@@ -44,7 +43,7 @@ This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.
 
 ## Before you say it is done
 
-- `pnpm check` is green: typecheck, oxlint, oxfmt, skill validation, tests, then this repository's own gate.
+- `pnpm check` is green: typecheck, oxlint, oxfmt, skill validation, tests, and the packed tarball smoke test when you touched dependencies, the build, or the CLI entry.
 - A user-visible change has a changeset in `.changeset/`. Public API, CLI, persisted data, dependency, and packaged-skill changes count.
 - A change to the review contract updated both sides. A change to a skill kept it short and validated.
 - You did not widen scope. Fight for the smallest model that makes the correct behavior unsurprising.

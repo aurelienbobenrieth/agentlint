@@ -29,9 +29,6 @@ importers:
 
   .:
     devDependencies:
-      '@aurelienbbn/agentlint':
-        specifier: workspace:*
-        version: link:packages/agentlint
       '@changesets/changelog-github':
         specifier: 1.0.0
         version: 1.0.0

@@ -11,9 +11,23 @@
   },
   "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**", "examples/**"],
   "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
-  "jsPlugins": ["./scripts/oxlint-plugin-effect.js"],
+  "jsPlugins": ["./scripts/oxlint-plugin-agentlint.js"],
+  "overrides": [
+    {
+      "files": [
+        "packages/agentlint/src/config/env.ts",
+        "**/*.test.ts",
+        "scripts/**",
+        "**/*.config.ts",
+        "apps/review/**"
+      ],
+      "rules": { "agentlint/no-direct-process-access": "off" }
+    }
+  ],
   "rules": {
-    "effect/no-raw-json-parse": "error",
+    "agentlint/no-raw-json-parse": "error",
+    "agentlint/no-stringly-error-message": "error",
+    "agentlint/no-direct-process-access": "error",
     "eslint/no-underscore-dangle": ["error", { "allow": ["_tag", "_tree", "__dirname", "__AGENTLINT_VERSION__"] }],
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",

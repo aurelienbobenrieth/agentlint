@@ -80,8 +80,6 @@ Read the [package guide](packages/agentlint/README.md) for the full model, walk 
 | `examples/minimal`   | The smallest consumer: one dependency, one rule, one source file.         |
 | `docs/decisions`     | Product and architecture decision records.                                |
 
-This repository runs its own gate: see [`.agentlint/config.ts`](.agentlint/config.ts).
-
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Agents working on this repository read [`AGENTS.md`](AGENTS.md) first.

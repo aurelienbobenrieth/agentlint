@@ -88,7 +88,7 @@ The release removed the MCP server, the Claude Code hook, the harness installer,
 
 A future integration must remain a thin adapter over the CLI or the shared handlers. The project must not add a public integration protocol before an external consumer needs it.
 
-The public package exports `defineRule`, `defineConfig`, the evidence schemas, and fixture test helpers. It does not export application handlers, product rules, or presets.
+The package root exports `defineRule`, `defineConfig`, the evidence schemas, and tagged errors. Fixture test helpers live on the `@aurelienbbn/agentlint/testing` subpath so a config file does not load the parser. The review wire contract lives on the `@aurelienbbn/agentlint/contract` subpath. The package does not export application handlers, product rules, or presets.
 
 ## Rejected alternatives
 
@@ -135,4 +135,4 @@ Future harness work starts from demonstrated needs.
 
 - 2026-08-10: The team proposed one application path and thin adapters.
 - 2026-08-10: The team selected the CLI and the local SPA as the only 0.2 application surfaces.
-- 2026-08-28: Condensed and aligned with the 0.2 implementation.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation. Recorded the `testing` and `contract` subpaths.

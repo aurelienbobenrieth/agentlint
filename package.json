@@ -20,11 +20,9 @@
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
     "refs:sync": "node scripts/sync-ref-repos.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test && pnpm check:agentlint",
-    "check:agentlint": "node packages/agentlint/dist/bin.mjs rules test && node packages/agentlint/dist/bin.mjs check --all"
+    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test"
   },
   "devDependencies": {
-    "@aurelienbbn/agentlint": "workspace:*",
     "@changesets/changelog-github": "1.0.0",
     "@changesets/cli": "3.0.1",
     "@tanstack/intent": "catalog:",

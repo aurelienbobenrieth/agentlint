@@ -72,7 +72,7 @@ The application decodes all external data with Effect Schema. Invalid input show
 
 The loader reads an embedded global first and falls back to `/api/state`.
 
-The server contract in `packages/agentlint` does not import FoldKit types.
+The contract is a set of Effect Schemas in `packages/agentlint`, published as the `@aurelienbbn/agentlint/contract` subpath. The SPA imports it from there and does not keep a copy. The contract imports only `effect` and no FoldKit or Node type.
 
 ## Testing
 
@@ -107,4 +107,4 @@ The team accepts pre-1.0 dependency risk through exact pins and tests. Upgrades 
 ## Revision history
 
 - 2026-08-10: The project selected FoldKit for the complete review SPA rewrite.
-- 2026-08-28: Condensed and aligned with the 0.2 implementation.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation. The SPA now imports the shared contract subpath.
