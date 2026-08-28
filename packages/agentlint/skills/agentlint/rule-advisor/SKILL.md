@@ -10,7 +10,7 @@ metadata:
   library_version: "0.1.5"
 sources:
   - "aurelienbobenrieth/agentlint:packages/agentlint/README.md"
-  - "aurelienbobenrieth/agentlint:CONTRIBUTING.md"
+  - "aurelienbobenrieth/agentlint:packages/agentlint/src/domain/rule.ts"
 ---
 
 # agentlint rule advisor

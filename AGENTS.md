@@ -1,43 +1,54 @@
-# AGENTS.md
+# agentlint
 
-Stable engineering boundaries for agentlint. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and rule-authoring details.
+agentlint finds the places in a repository that need judgment, hands the reviewer the applicable standard, and keeps a gate closed until the evidence changes or someone with enough authority records an acceptance. It calls no model, ships no rules, and prescribes no harness. Read [`packages/agentlint/README.md`](packages/agentlint/README.md) for the product and [`docs/decisions/`](docs/decisions/README.md) for why it is shaped this way.
 
-## Completion
+This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.md) has the setup and the commands.
 
-- Run `pnpm check` for merge-ready work: typecheck, oxlint, oxfmt, skill validation, tests, and the dogfood gate.
-- Run `pnpm fmt` before committing.
-- `pnpm build` creates the CLI, declarations, review UI under `dist/ui`, and grammar WASM under `dist/wasm`.
-- Verify the tarball from `pnpm pack` installs and runs in an empty consumer before publishing.
+## What we never compromise on
 
-## Product boundaries
+1. **Deterministic.** The same repository state produces the same findings. No model, no network, no clock in the engine. If a detector needs judgment, that judgment is the human's or the agent's, recorded as an acceptance, never guessed by the tool.
+2. **Repository-owned.** Every standard, detector, and binding lives in the consumer's `.agentlint/config.ts` or in a package they chose. The core exports the rule API and the engine, nothing else. Do not add a preset, a "recommended" rule, or a default detector.
+3. **Binary gate.** A current finding is accepted or unresolved. There is no warning level, no severity, no snooze, no CI-only mode. `check` has the same semantics on a laptop and in CI.
+4. **Exact acceptance.** An acceptance opens a gate only when standard revision, detector version, binding digest, versioned fingerprint, and authority all match. Lineage can show a previous reason but never opens a gate. Treat fingerprint, acceptance, and cleanup code as gate-critical: change it with tests and a changeset.
 
-- `packages/agentlint` is the only publishable package. It owns the CLI, engine, state/change pipelines, acceptances, and packaged skills.
-- `apps/review` is a FoldKit SPA. It owns presentation and browser-local detached decisions. Domain semantics stay in the package.
-- The review wire contract lives in `packages/agentlint/src/features/review/contract.ts`; `apps/review/src/types.ts` mirrors it. Change both together.
-- Use public package exports. Do not introduce cross-package relative imports.
-- Only `packages/agentlint/src/config/env.ts` may touch `process.*`.
+## Glossary
 
-## Domain invariants
+- **standard**: the durable review question, with an `id` and a `revision`.
+- **detector**: the executable trigger, with an `id` and a `version`. `state` detectors read parsed source. `change` detectors read a normalized Git change set.
+- **binding**: the repository's use of a standard and a detector: scope, options, and `agent` or `human` authority.
+- **finding**: one place where a binding fired, identified by a versioned fingerprint.
+- **acceptance**: the recorded decision that a finding satisfies its standard. Stored in `.agentlint/acceptances.jsonl`, current state only.
+- **proposal**: agent work attached to a finding it cannot accept. Stored in `.agentlint/proposals.jsonl`, context only.
+- **attached / detached review**: the review SPA writing to the repository through the local server, or working from a portable artifact and exporting decisions.
 
-- One `defineRule` discriminated union represents `state` and `change` rules.
-- A rule composes a versioned standard, a versioned detector, and a repository-owned binding.
-- Core ships no rules or presets.
-- Gate state is binary: a current finding is accepted or unresolved.
-- `.agentlint/acceptances.jsonl` stores only current acceptances. Partial scans never remove unexamined records; complete scans may remove stale ones.
-- Acceptance requires exact compatible source identity and fingerprint. Lineage is context and never opens a gate.
-- Fingerprint schemes and persisted record schemas are versioned. Never change their meaning silently.
-- A change rule always evaluates the merge base of an explicit or detected Git base against the complete working tree, including staged, unstaged, and untracked files.
+## Layout
 
-## Effect conventions
+- `packages/agentlint` — the only published package. `src/domain` holds the rule, config, finding, fingerprint, and acceptance contracts. `src/features/<name>/{request,handler}.ts` holds one application command each. `src/shared/pipeline` parses and matches. `src/shared/infrastructure` wraps Git, the filesystem, tree-sitter, and the stores. `src/bin.ts` composes the layers and parses the CLI. `skills/` ships the agent skills.
+- `apps/review` — the FoldKit SPA, built into `packages/agentlint/dist/ui`. It owns presentation and browser-local detached decisions. Domain semantics stay in the package.
+- `examples/demo` — the walkthrough repository. `examples/minimal` — the smallest consumer.
+- `.agentlint/config.ts` — this repository's own rules. `pnpm check` ends by running them.
 
-- Effect 4 beta is intentionally pinned. Services use `Context.Service`; layers compose in `bin.ts`.
-- Pin every Effect package the CLI resolves (`effect`, `@effect/platform-node`, `@effect/platform-node-shared`) to the same exact version. A caret range on a transitive package can pull a newer prerelease and load two Effect runtimes, which crashes consumers at startup; `scripts/smoke-package.mjs` catches this.
+## Boundaries
+
+- The review wire contract is `packages/agentlint/src/features/review/contract.ts`. `apps/review/src/types.ts` mirrors it. Change both together.
+- Only `packages/agentlint/src/config/env.ts` touches `process.*`. Everything else depends on the `Env` service. A repository rule enforces this.
+- Use public package exports between workspaces. No cross-package relative imports.
+- Tagged errors carry structured fields and derive `message`. No `message: Schema.String` fields. A repository rule enforces this.
+- Public runtime contracts and persisted records use Effect Schema. Persisted schemas and fingerprint schemes are versioned. Never change their meaning without bumping the version.
+
+## Dependencies
+
+- Effect 4 is pinned on a prerelease. Every Effect package the CLI resolves (`effect`, `@effect/platform-node`, `@effect/platform-node-shared`, `@effect/platform-browser`) is pinned to the same exact version through the `catalog` in `pnpm-workspace.yaml`. A caret range on a transitive package can pull a newer prerelease and load two Effect runtimes, which crashes consumers at startup. `scripts/smoke-package.mjs` catches this. Bump all of them together.
 - `web-tree-sitter` stays at 0.25.10 until the packaged grammar WASM set supports the 0.26 ABI.
-- `foldkit` stays below 0.149 until `apps/review` migrates from the removed `m` export to `defineMessageUnion`.
-- Shared versions (Effect, TypeScript, Vitest, intent) are pinned once in the `catalog` of `pnpm-workspace.yaml`.
-- Public runtime contracts use Effect Schema where practical.
-- Tagged errors expose structured fields and derive `message`; do not add stringly `message: Schema.String` fields.
+- `effect` is a normal dependency, not a peer and not bundled. Consumers write rules against `@aurelienbbn/agentlint` only and never import `effect` themselves.
+
+## Before you say it is done
+
+- `pnpm check` is green: typecheck, oxlint, oxfmt, skill validation, tests, then this repository's own gate.
+- A user-visible change has a changeset in `.changeset/`. Public API, CLI, persisted data, dependency, and packaged-skill changes count.
+- A change to the review contract updated both sides. A change to a skill kept it short and validated.
+- You did not widen scope. Fight for the smallest model that makes the correct behavior unsurprising.
 
 ## References
 
-`.agents/ref-repos/` holds gitignored reference clones. Run `pnpm refs:sync` to create or refresh them. Sources: `effect` (Effect-TS/effect `main`, Effect V4; `effect-smol` is archived), `eslint`, `oxc`, `foldkit`, `t3code`, and `executor`.
+`.agents/ref-repos/` holds gitignored reference clones. Run `pnpm refs:sync` to create or refresh them. Sources: `effect` (Effect-TS/effect `main`, Effect V4), `eslint`, `oxc`, `foldkit`, `t3code`, and `executor`.
