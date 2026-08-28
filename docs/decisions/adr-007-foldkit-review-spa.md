@@ -7,146 +7,104 @@
 
 ## Decision
 
-The review application uses FoldKit as a client-side SPA framework.
+The review application in `apps/review` is a FoldKit client-side SPA.
 
-The rewrite removes React, React Query, React Router, Base UI, and the separate UI package.
+The rewrite removed React, its data and routing libraries, and the separate UI package.
 
-The application uses FoldKit, `@foldkit/ui`, Vite, Tailwind, and Effect Schema.
+The application uses FoldKit, Vite, Effect Schema, plain CSS, highlight.js, and the Geist fonts.
 
-FoldKit and Effect use exact dependency versions.
+FoldKit, its Vite plugin, and Vite use exact dependency versions.
 
 ## Context
 
-The current review application uses React and two TanStack libraries.
+The earlier review application used React and a vendored component package.
 
-The workspace also contains a separate package with many vendored React components.
+The review workflow has explicit states, messages, effects, and transitions. The backend already uses Effect.
 
-The review workflow has explicit states, messages, effects, and transitions.
-
-The backend already uses Effect.
-
-The project permits a complete breaking rewrite before 0.2.
+The project permitted a complete breaking rewrite before 0.2.
 
 ## Application model
 
-One immutable Schema model contains all application state.
+One immutable Schema model holds all application state.
 
-The model includes these areas:
+The `screen` is `Loading`, `LoadFailed`, `Reviewing`, or `Finished`.
 
-- Review mode and transport.
-- Loaded review payload.
-- Finding filters and selection.
-- Draft reasons and notes.
-- Calibration labels.
-- Pending commands.
-- Errors and completion output.
+The model also holds the `queue` or `decisions` view, facets, grouping, the code view, the selected finding, per-finding drafts, toasts, the preferred editor, and the save state.
 
-All user and server events use discriminated messages.
+All user and server events are discriminated messages. One update function handles every transition. Side effects are named FoldKit commands.
 
-One update function handles every state transition.
+A reason draft, a calibration label, and a note belong to one finding. A detached decision is a draft disposition until the review finishes.
 
-Side effects use named FoldKit commands.
+## Modes and transport
 
-## Review modes
+The SPA reads `mode` and `transport` from the payload.
 
-The SPA supports `calibration` and `review` modes.
+Calibration mode collects labels and notes. It cannot create acceptances.
 
-Calibration collects temporary labels and notes. It cannot create acceptances.
+Review mode accepts, requests changes, and withdraws decisions through `/api/action`.
 
-Review mode permits actions that satisfy the finding authority.
-
-The transport is `attached` or `detached`.
-
-Attached review can write acceptances through the local server.
-
-Detached review produces portable output. It cannot claim remote persistence.
+Attached transport trusts the server and refetches `/api/state` after each action. Detached transport keeps decisions in the browser and builds the summary, the agent instructions, and the acceptance JSONL at finish.
 
 ## UI functions
 
-The application supports these functions:
+- Split findings into a Queue and a Decisions view.
+- Filter by status, authority, lifecycle, rule, and text query.
+- Group by file or by rule.
+- Show the focused range or the full file with syntax highlighting.
+- Show guidance, examples, and references.
+- Show the agent proposal and prior lineage.
+- Open the finding in a detected editor or the file explorer.
+- Copy finding context or agent instructions.
+- Download acceptance JSONL in detached review.
+- Drive everything from the keyboard, with `?` for the list.
 
-- Group and filter findings.
-- Show code or change context.
-- Show compact guidance and references.
-- Record acceptance reasons.
-- Request changes with comments.
-- Label calibration matches.
-- Show prior lineage as stale context.
-- Copy agent instructions.
-- Download detached feedback.
-- Download detached acceptance output.
-- Finish a review with a clear summary.
+## Persistence
+
+The SPA saves drafts, filters, and layout to `localStorage` under a key derived from the payload.
+
+A checkpoint action saves on demand. The page warns before unload while unsaved drafts exist. The loader ignores a saved state with another schema version.
 
 ## Wire contract
 
-The HTTP and detached artifact payload use one versioned review state contract.
+The HTTP payload and the detached artifact use one versioned review state contract.
 
-The application decodes all external data with Effect Schema.
+The application decodes all external data with Effect Schema. Invalid input shows a failure screen and never creates an acceptance.
 
-The server contract remains independent from FoldKit types.
+The loader reads an embedded global first and falls back to `/api/state`.
 
-The detached artifact can provide the same state through an embedded global value.
-
-Invalid input shows a clear failure state. It never creates an acceptance.
+The server contract in `packages/agentlint` does not import FoldKit types.
 
 ## Testing
 
-Story tests verify model transitions and command production.
+Vitest unit tests cover the update function and the syntax highlighter.
 
-Scene tests verify accessible user workflows.
-
-Server contract tests verify decoding and action results.
-
-End-to-end browser tests verify attached and detached review.
-
-## Dependency policy
-
-FoldKit is pre-1.0 and can change APIs in minor releases.
-
-The project pins FoldKit, its Vite plugin, its UI package, and Effect exactly.
-
-Dependency upgrades are explicit changes with full application tests.
-
-The application avoids FoldKit experimental APIs.
-
-The domain and HTTP contracts do not depend on FoldKit.
+Server-side tests cover the payload builder, the action handler, the editor launchers, and request authorization.
 
 ## Rejected alternatives
 
-### Keep the React application
+**Keep the React application.** This option reduces the immediate rewrite. It keeps several state and UI libraries during a full product redesign.
 
-This option reduces the immediate rewrite.
+**Embed FoldKit inside React.** FoldKit supports embedding. The project does not need an incremental migration.
 
-It keeps multiple state and UI libraries during a full product redesign.
+**Keep the separate UI package.** The product has one application and no external UI consumer.
 
-### Embed FoldKit inside React
+**Tailwind or a component kit.** One stylesheet is enough for a dark-only tool with a small surface. It keeps the build to one plugin.
 
-FoldKit supports embedding, but the project does not need incremental migration.
+**Server rendering.** The review tool is a local interactive application. It does not need search indexing or server-rendered pages.
 
-Embedding would keep both frontend architectures.
+## Reconsideration conditions
 
-### Keep the separate UI package
-
-The product has one application and no external UI consumer.
-
-A private component package adds package boundaries without reuse.
-
-### Server rendering
-
-The review tool is a local interactive application.
-
-It does not need search indexing or server-rendered pages.
+Reconsider this record when FoldKit reaches 1.0, when a second application needs shared components, or when browser tests become necessary for the review workflow.
 
 ## Consequences
 
 The UI follows the same Effect concepts as the engine.
 
-The repository removes a large vendored component surface.
+The repository removed a large vendored component surface.
 
-The team accepts dependency maturity risk through exact pins and tests.
-
-The application becomes a focused SPA instead of a reusable UI system.
+The team accepts pre-1.0 dependency risk through exact pins and tests. Upgrades are explicit changes. The application is a focused SPA and not a reusable UI system.
 
 ## Revision history
 
 - 2026-08-10: The project selected FoldKit for the complete review SPA rewrite.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation.

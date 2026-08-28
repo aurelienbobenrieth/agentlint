@@ -3,350 +3,116 @@
 - Status: Accepted
 - Date: 2026-08-10
 - Depends on: [PDR-001](./pdr-001-product-core.md)
-- Related to: [ADR-004](./adr-004-rule-composition.md)
+- Related to: [ADR-004](./adr-004-rule-composition.md), [ADR-005](./adr-005-fingerprints-and-lineage.md)
 
 ## Decision
 
 Each detector has one lifecycle. The lifecycle is `state` or `change`.
 
-A standard can use multiple detectors. Different detectors for one standard can have different lifecycles.
+One standard can use multiple detectors. Detectors for one standard can have different lifecycles.
 
 A repository binding enables each detector independently.
 
-AST, text, paths, diffs, and repository inspection are detection capabilities. They are not rule lifecycles.
+AST matching, path selection, diffs, and repository inspection are detection capabilities. They are not lifecycles.
 
 ## Context
 
-The first agentlint engine finds AST nodes in current source files.
+The first agentlint engine found AST nodes in current source files.
 
-Some recurring review concerns depend on a before-and-after relationship.
-
-The project needs a model that supports both concerns without one general event system.
+Some recurring review concerns depend on a before-and-after relationship. The project needs a model that supports both concerns without one general event system.
 
 The model must also define the lifetime of a finding and its acceptance.
 
-## Standard as a decision contract
-
-One standard represents one review question.
-
-The effective rule contains these parts:
-
-- A stable standard identifier.
-- One selected detector.
-- One detector lifecycle.
-- Guidance.
-- One authority policy.
-- Fixtures.
-- A durable source reference when one is available.
-
-All detectors for one standard must ask the same review question.
-
-All detectors use the same standard guidance.
-
-The repository binding owns the authority policy.
-
-The stable standard identifier must not depend on the standard title or guidance text.
-
-The durable source explains why the rule exists. The detector defines when the rule reports a finding.
-
 ## State lifecycle
 
-A state rule asks this question:
+A state rule asks: Does this judgment condition exist in the current repository?
 
-> Does this judgment condition exist in the current repository state?
+Examples: an unbounded query exists, a dangerous API call exists, an authentication route lacks required handling.
 
-Examples include:
+A state detector declares `match` patterns or a `createOnce` visitor. It receives the current source file. The finding stays applicable while the normalized evidence stays in the repository.
 
-- An unbounded query exists.
-- A dangerous API call exists.
-- An authentication route does not have required handling.
-- Two repository declarations are not consistent.
-
-The state finding stays applicable while the evidence stays in the repository.
-
-An acceptance stays valid while the normalized evidence stays unchanged.
-
-A full repository check can find a state finding without a Git base reference.
+`agentlint check` runs state rules on changed files. `agentlint check --all` runs them on the complete repository.
 
 ## Change lifecycle
 
-A change rule asks this question:
+A change rule asks: Did this change make a judgment condition?
 
-> Did this change make a judgment condition?
+Examples: a public export was removed, a dependency was added, a migration added a destructive operation.
 
-Examples include:
+A change detector implements `detect(context, options)`. The context contains a normalized `ChangeSet`. The set has the selected Git baseline, one entry for each changed file with its status, previous path, before and after snapshots, and hunks.
 
-- A public export was removed.
-- A dependency was added.
-- Authentication requirements became less restrictive.
-- A schema changed without a migration in the same change.
-- A migration added a destructive operation.
-- A package boundary changed without related consumer changes.
+The engine compares the merge base of the selected ref with the complete working tree. `--base <ref>` or the config `base` selects the ref. Otherwise the engine detects an upstream or conventional main branch. The engine stops with an error when it cannot resolve a base.
 
-A change finding depends on a defined base and head state.
-
-The finding is applicable to that change. The final repository state might not contain sufficient evidence to make the finding again.
-
-Git keeps the historical acceptance after the change enters the base branch.
+`agentlint check` runs every enabled change rule on each run. The final repository state might not contain sufficient evidence to make the finding again. Git keeps the acceptance after the change merges.
 
 ## Detection capabilities
 
-A detector can use one or more capabilities.
+A binding selects files with `include` and `exclude` globs. A config can add repository-wide `ignores`.
 
-### Path detection
+A state detector matches syntax with a pattern or a tree-sitter query. `createOnce` is the imperative escape hatch. The engine calls `createOnce` one time for each rule before it visits files. The visitor examines every selected file. `before(filename)` runs for each file and can return `false` to skip it. `after()` runs one time at the end. The engine drains reported findings after `after()`.
 
-Path detection selects files or repository areas.
+A change detector inspects the change set directly. It can parse changed content with its own logic. Do not use `createOnce` for change rules.
 
-Examples include migration directories, package entry points, and authentication configuration.
-
-### Text detection
-
-Text detection finds an exact text condition when parsing is not necessary.
-
-Text detection must not replace AST detection when syntax gives better precision.
-
-### AST detection
-
-AST detection finds a syntax condition in source code.
-
-Both state rules and change rules can use AST detection.
-
-### Diff detection
-
-Diff detection examines added, removed, or changed evidence.
-
-Diff detection applies only to change rules.
-
-### Repository inspection
-
-Repository inspection compares files, packages, declarations, or generated artifacts.
-
-Both state rules and change rules can use repository inspection.
-
-## AST and change detection together
-
-A change rule can parse changed code.
-
-For example, Git can identify added migration code. The parser can then find a `DROP COLUMN` syntax node.
-
-This rule is AST-powered, but its lifecycle is `change`.
-
-The rule fingerprint must include normalized change evidence. It must not use only the final AST node.
+Text search is not a separate capability. Use syntax matching when syntax gives better precision.
 
 ## One standard or two standards
 
-Use one standard when multiple detectors ask the same review question.
+Use one standard when multiple detectors ask the same review question. For example, one destructive migration standard can detect a dropped table, a dropped column, and irreversible raw SQL.
 
-For example, one destructive migration rule can detect these operations:
+One standard can have a state detector for adoption scans and a change detector for precise change evidence.
 
-- Drop a table.
-- Drop a column.
-- Rename data without a safe sequence.
-- Run irreversible raw SQL.
+Use two standards when the review questions or guidance differ. Do not give one detector two lifecycles.
 
-One standard can have state and change detectors when both ask the same review question.
+## Public API
 
-For example, one standard can have these detectors:
-
-- A state detector supports adoption scans and current repository checks.
-- A change detector finds new uses with precise change evidence.
-
-Use two standards when the review questions or guidance differ.
-
-Do not give one detector two lifecycles.
-
-## Evaluation times
-
-Evaluation time is separate from rule lifecycle.
-
-The engine can run rules at these times:
-
-- During an explicit check.
-- After an edit.
-- Before agent completion.
-- Before a commit.
-- In CI.
-
-A state rule can run at all these times when the engine has the necessary files.
-
-A change rule needs a defined comparison. The integration or CLI must give the base and head context.
-
-## Finding contract
-
-All rules produce one common finding contract.
-
-The contract needs these conceptual fields:
-
-```ts
-interface Finding {
-  readonly standardId: string;
-  readonly detectorId: string;
-  readonly lifecycle: "state" | "change";
-  readonly fingerprint: Fingerprint;
-  readonly message: string;
-  readonly evidence: FindingEvidence;
-}
-```
-
-This example does not define the final public API.
-
-The evidence must give sufficient context for explanation, acceptance, and review.
-
-The evidence must not require an AST node for all findings.
-
-## Fingerprint requirements
-
-A fingerprint identifies one applicable finding.
-
-A state fingerprint must change when the evidence for the current condition changes materially.
-
-A change fingerprint must identify the material before-and-after evidence.
-
-Line numbers must not be the main fingerprint input.
-
-Formatting-only changes must not invalidate an acceptance when they do not change the judgment evidence.
-
-Two equal conditions in one file must have different fingerprints.
-
-The team must define collision handling before it adds non-source findings.
-
-## Declarative and imperative detection
-
-Declarative matching is the preferred source rule API.
-
-The `createOnce` API is the advanced source rule API.
-
-Keep `createOnce` because some rules need state across nodes or files.
-
-Document these lifecycle guarantees for `createOnce`:
-
-- When the engine creates the visitor.
-- Whether one visitor examines multiple files.
-- The order of file and node visits.
-- The behavior of `before` and `after` functions.
-- The scope of mutable visitor state.
-
-Do not use `createOnce` as the general API for change rules.
-
-Change rules and state rules can share lower-level parsing services without sharing one visitor interface.
-
-## Public API shape
-
-The public API uses one `defineRule` function.
-
-The `lifecycle` field discriminates the state and change contracts.
+One `defineRule` function accepts both lifecycles. The `lifecycle` field discriminates the detector and fixture contracts. TypeScript overloads and a runtime validation reject invalid combinations.
 
 ```ts
 defineRule({
   lifecycle: "change",
-  standard: publicApiStandard,
-  detector: {
-    id: "public-export-change",
-    version: 1,
-    detect(context) {},
-  },
-  binding: {
-    id: "architecture/public-export-change",
-    authority: "agent",
-  },
+  standard: { id: "api/public-exports", revision: 1, title: "...", guidance: { standard: "..." } },
+  detector: { id: "ts/public-export-removed", version: 1, detect(context) {} },
+  binding: { id: "api/public-exports", authority: "agent" },
 });
 ```
 
-The state variant exposes AST matching and state fixtures.
+Every finding uses one `FindingRecord`. It contains the rule id, lifecycle, authority, source identity, fingerprint, optional lineage key, file, position, message, and source snippet. A change finding does not need an AST node.
 
-The change variant exposes before-and-after detection and change fixtures.
+## Fixtures and fingerprints
 
-TypeScript must prevent invalid lifecycle and detector combinations.
+A detector can declare `mustReport` and `mustStaySilent` fixtures. A state fixture is a source string, a labeled source, or a small in-memory repository. A change fixture is a before and after repository pair or an exact change set. `agentlint rules test` runs them.
 
-## Fixtures
+Fixtures are regression evidence. They do not prove that a detector finds all cases. A newly found missed case adds a fixture. The engine never sends fixture code to the agent as guidance.
 
-Each detector must have at least one report fixture.
+A state fingerprint uses the `source-structure` scheme. It digests the normalized path, the node structure, the captures, and a detector-owned occurrence counter. Two equal conditions in one file get different fingerprints. Line numbers are not an input.
 
-A report fixture proves that one specified trigger path reports a finding.
-
-Each detector must have a silent fixture for an important trigger boundary.
-
-A silent fixture proves that one important similar case does not report a finding.
-
-Fixtures are regression evidence. They do not prove that a detector finds all possible cases.
-
-A state fixture contains one repository state or source state.
-
-A change fixture contains a before state and an after state.
-
-A repository fixture can contain multiple named files.
-
-Use `mustReport` and `mustStaySilent` as the candidate API terms.
-
-The rule test runner must show which detector made an unexpected finding.
-
-A newly found missed case must add or change a regression fixture.
-
-## Guidance and test evidence
-
-Detector fixtures are test-only evidence. Normal agent feedback must not contain these fixtures.
-
-Agent-facing guidance must show permitted solutions. It must not show known incorrect code as a teaching example.
-
-The finding already shows the applicable repository evidence to the agent.
-
-The rule author can use the review incident as the first report fixture.
-
-The author does not need to predict all possible incorrect cases.
+A change fingerprint uses the `git-change` scheme. It digests the detector `evidence`, the before and after paths, the file operation, and the detector `key`. [ADR-005](./adr-005-fingerprints-and-lineage.md) defines the schemes.
 
 ## Rejected alternatives
 
-### AST as the rule type
+AST as the rule type: This model makes an implementation capability the product boundary. It cannot represent concerns that exist only in a change.
 
-This model makes an implementation capability the product boundary.
+Source, file, change, project, session, and command scopes: This model mixes evidence location, lifecycle, and evaluation time. It creates overlapping terms and unclear acceptance lifetimes.
 
-It cannot represent review concerns that exist only in a change.
+One general event rule: This model gives maximum flexibility but removes useful constraints. It makes fixtures, fingerprints, and integrations more difficult to define.
 
-### Source, file, change, project, session, and command scopes
+Lifecycle on the standard: This model prevents one review question from using state and change detectors. It couples durable policy to one detection strategy.
 
-This model mixes evidence location, lifecycle, and evaluation time.
+## Reconsideration conditions
 
-It creates overlapping terms and unclear acceptance lifetimes.
+The project reconsiders this model when a real concern needs a third acceptance lifetime.
 
-### One general event rule
-
-This model gives maximum flexibility, but it removes useful constraints.
-
-It also makes fixtures, fingerprints, and integrations more difficult to define.
-
-### Lifecycle on the standard
-
-This model prevents one review question from using state and change detectors.
-
-It couples durable policy to one detection and adoption strategy.
-
-## 0.2 implementation
-
-One discriminated `defineRule` API selects the state or change context.
-
-A state detector can use syntax patterns or a tree visitor. It receives the current source file.
-
-A change detector receives a normalized Git change set. The set contains the selected merge base, file status, before and after snapshots, and hunks.
-
-The engine stops with an error when it cannot resolve the Git base.
-
-The fixture API supports current source examples and before-and-after repository examples.
-
-The fingerprint API has separate state and change schemes.
-
-The project will reconsider this model if a real concern needs a third acceptance lifetime.
+The project reconsiders the change baseline when an integration needs a comparison that is not a Git merge base.
 
 ## Consequences
 
-The finding domain can no longer require an AST node.
+The finding domain does not require an AST node.
 
-The engine must separate rule lifecycle from evaluation time.
+The engine separates rule lifecycle from evaluation time. An integration can run `check` at any time.
 
-The test API must support repository and before-and-after fixtures.
+The test API supports source, repository, and before-and-after fixtures.
 
-The acceptance fingerprint design must support state and change evidence.
-
-The integration layer must supply change context when it runs change rules.
+The fingerprint design supports state and change evidence with separate schemes.
 
 ## Revision history
 
@@ -356,3 +122,4 @@ The integration layer must supply change context when it runs change rules.
 - 2026-08-10: The team moved lifecycle from the standard to each detector.
 - 2026-08-10: The team accepted one discriminated `defineRule` API.
 - 2026-08-10: The team completed the state and change pipelines for 0.2.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation.

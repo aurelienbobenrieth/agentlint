@@ -3,173 +3,101 @@
 - Status: Accepted
 - Date: 2026-08-10
 - Depends on: [ADR-002](./adr-002-acceptance-model.md)
-- Related to: [ADR-003](./adr-003-application-and-integrations.md)
+- Related to: [ADR-003](./adr-003-application-and-integrations.md), [ADR-005](./adr-005-fingerprints-and-lineage.md), [ADR-007](./adr-007-foldkit-review-spa.md)
 
 ## Decision
 
-agentlint has two review workflows:
+agentlint has two review workflows.
 
-1. Calibration reviews a detector before repository enforcement.
+1. Calibration tests a detector before the repository enforces it.
 2. Acceptance review resolves findings after enforcement.
 
-Both workflows can use text or the optional local UI.
+Both workflows use the CLI or the optional local UI.
 
-Local acceptance is a first-class 0.2 workflow.
+Local acceptance is a first-class 0.2 workflow. Provider-verified acceptance is a later adapter.
 
-Provider-verified acceptance is a later adapter. It is not necessary for local or individual use.
+One local SPA serves attached review and detached CI artifacts.
 
-The same SPA supports attached local review and detached CI artifacts.
+An agent can propose a resolution. Only a human decision opens the gate for a human-authority finding.
 
-## Interaction timing
+## Context
+
+An enabled finding needs a decision before the gate opens.
+
+A small queue works well in the terminal. A large queue needs code context, guidance, filters, and grouping.
+
+CI cannot wait for a browser on another computer.
+
+Agents produce fixes faster than humans can read them. The human needs the agent's reasoning next to the code.
+
+## Gate timing
 
 Gate state and interruption timing are separate concerns.
 
 Every unresolved enabled finding closes the final gate.
 
-An early check can report a finding and let the agent continue safe work.
+An integration can report a finding early and let the agent continue safe work. The final check must report every unresolved finding.
 
-The completion check must report all unresolved findings.
+Do not call an early finding a non-blocking rule. The rule is enforced. The integration defers the review to a checkpoint.
 
-The supported workflow must not complete while an unresolved finding stays hidden.
+Only `check --all` without file or rule filters is a complete view. A partial check cannot remove acceptances from unexamined files.
 
-Do not call an early finding a non-blocking rule.
+## Calibration
 
-The rule is enforced. The integration defers the review interaction to a checkpoint.
+`agentlint rules scan --review` opens the UI in calibration mode.
 
-## Calibration workflow
+Calibration runs the detector fixtures and scans the repository. It does not enable the detector and does not create acceptances. The server rejects an accept action in calibration mode.
 
-Calibration tests a draft detector against an existing repository.
+The reviewer labels each match as `applies`, `does_not_apply`, or `unsure` and adds a note.
 
-Calibration does not enable the detector and does not create acceptances.
+These labels are authoring feedback. They are not gate states. They stay in the browser session. The reviewer copies them as agent instructions when the review finishes.
 
-A calibration run performs these steps:
-
-1. Run detector fixtures.
-2. Scan the selected repository scope.
-3. Show all matches.
-4. Collect review notes for important matches.
-5. Send structured feedback to the authoring agent.
-6. Change detector code, configuration, guidance, or fixtures.
-7. Repeat the scan.
-8. Enable the final binding through a normal code change.
-
-Calibration review can mark a match with these temporary labels:
-
-- Applies.
-- Does not apply.
-- Needs different scope.
-- Needs different guidance.
-- Needs investigation.
-
-These labels are authoring feedback. They are not gate states.
-
-The product must not create a candidate rule database from these labels.
-
-A reviewed non-applicable match can motivate a `mustStaySilent` fixture.
-
-The tool must not create that fixture automatically without author confirmation.
-
-## Calibration UI
-
-The UI can make calibration useful when a detector finds many cases.
-
-The UI can show these items:
-
-- Repository code context.
-- The standard and current guidance.
-- The detector and binding identity.
-- Filters and grouping.
-- Temporary review labels.
-- Reviewer notes.
-- A structured feedback summary.
-
-The UI does not edit detector code directly in 0.2.
-
-The authoring agent applies the feedback to code, configuration, guidance, and fixtures.
-
-The final repository change remains reviewable in Git.
+The product does not create a candidate rule database from these labels. The final detector, binding, fixtures, and Git history preserve the result.
 
 ## Acceptance review
 
 Acceptance review starts after an enabled detector reports a finding.
 
-The reviewer can take one of these actions:
+The reviewer can take one of these actions.
 
 - Change the code until the finding disappears.
 - Accept the exact finding with a reason.
-- Give feedback that sends the agent back to work.
+- Request changes and send the agent back to work.
+- Withdraw an earlier decision.
 
-An approval request does not open the gate.
+`agentlint accept` records an agent-authority acceptance. `agentlint approve` records a human-authority acceptance. Both write to `.agentlint/acceptances.jsonl` through the same handler.
 
-An acceptance must satisfy the binding authority.
+`agentlint review` opens the UI. The **Queue** lists every finding that still needs a decision. The **Decisions** view lists accepted findings with the actor, the reason, and the time. A human can audit an agent acceptance there and withdraw it.
 
-## Local agent acceptance
+An acceptance needs a reason. When an agent proposal exists, the UI records the proposal summary as the reason if the reviewer gives none.
 
-An agent-authority binding permits local agent acceptance.
+A request for changes needs no text. The finding message and the standard carry the instruction.
 
-The agent must include a reason based on applicable evidence.
+A changed finding needs a new review under [ADR-005](./adr-005-fingerprints-and-lineage.md). The server refuses an action when the finding changed or disappeared.
 
-The acceptance enters the repository acceptance file.
+## Agent proposals
 
-CI validates the finding, fingerprint, and authority with the same semantics.
+`agentlint propose <selector> --summary "..."` records what an agent did for one exact finding. An optional diff travels with the summary.
 
-Local acceptance does not defeat the gate. It is the intended fast decision path for agent-authority findings.
+Proposals live in `.agentlint/proposals.jsonl`. They use the same source and fingerprint identity as acceptances.
 
-## Local human acceptance
+The UI shows the proposal next to the code. A proposal is context for the decision. It never opens the gate.
 
-A human-authority binding permits a person to accept through an interactive local surface.
+## Attached and detached transport
 
-The surface can be terminal text or the local UI.
+The attached transport runs a loopback server with a session token. The server writes acceptances to the repository and records change requests in memory. The UI refetches server state after each action.
 
-The human gives a reason. The surface writes the acceptance through a shared application handler.
+The detached transport starts from an artifact. `agentlint check --all --review-output <path>` writes the artifact in CI. `agentlint review --from <path>` opens it locally.
 
-The acceptance file records a local human authority path.
+Detached decisions stay in the browser. The UI downloads accepted decisions as exact `AcceptanceRecord` JSONL. `agentlint acceptances import` rescans the repository and rejects a record whose finding changed, disappeared, or has different authority.
 
-This path is a workflow boundary. It does not prove human identity against a hostile local agent.
+Detached review cannot claim that it changed repository state. The user imports, commits, and runs CI again.
 
-## Provider acceptance
-
-A provider adapter can give stronger identity and permission evidence.
-
-For example, a GitHub or GitLab bot can perform these steps:
-
-1. Publish structured findings and agent reasoning.
-2. Receive an explicit reviewer command or action.
-3. Verify repository permissions or ownership rules.
-4. Create a signed or provider-backed acceptance receipt.
-5. Run the common acceptance validation path.
-
-Provider verification must not change finding or fingerprint semantics.
-
-Provider proof metadata must be additive to the core acceptance record.
-
-The 0.2 core must not require a provider account or hosted service.
-
-## Detached CI review
-
-CI can produce a portable review artifact for unresolved findings.
-
-A human can open the artifact in the local review SPA.
-
-The SPA can produce acceptance output and structured feedback.
-
-The SPA also provides copyable agent instructions.
-
-The human can paste feedback into any coding agent.
-
-Detached review cannot claim that it changed repository state remotely.
-
-The user applies or commits acceptance output and runs CI again.
-
-CI must not wait indefinitely for a browser on another computer.
+Both transports end with a summary, agent instructions to copy, and acceptance output when it exists. The CLI prints the summary and the feedback after the browser finishes.
 
 ## Authority and verification
 
-Authority answers who can accept a finding.
-
-Verification answers how the workflow supports that claim.
-
-The concepts are separate:
+Authority answers who can accept a finding. Verification answers how the workflow supports that claim.
 
 | Authority | Verification | Intended use                                            |
 | --------- | ------------ | ------------------------------------------------------- |
@@ -177,205 +105,40 @@ The concepts are separate:
 | Human     | Local        | Individual use and trusted local workflows              |
 | Human     | Provider     | Team security through provider identity and permissions |
 
-The 0.2 rule policy contains only `agent | human` authority.
+The 0.2 rule policy contains only `agent | human` authority. Local human acceptance is a workflow boundary. It does not prove human identity against a hostile local agent.
 
-The core acceptance schema can reserve optional proof metadata.
-
-Do not add a required verification policy until a provider adapter exists.
-
-## Text and UI selection
-
-Text is the default review surface for a small finding queue.
-
-The integration can suggest the UI for a large or complex queue.
-
-The human can request the UI at any time.
-
-The integration must not open a browser without a user action or a documented local preference.
-
-A future preference can use `never`, `ask`, or `auto` UI modes.
-
-The project must not add this setting before it tests the default workflow.
-
-## Shared review outcome
-
-All review surfaces return one semantic outcome.
-
-```ts
-interface ReviewOutcome {
-  readonly accepted: ReadonlyArray<AcceptanceInput>;
-  readonly feedback: ReadonlyArray<ReviewFeedback>;
-  readonly unresolved: ReadonlyArray<FindingId>;
-}
-```
-
-This shape is conceptual.
-
-The shared application handler validates and writes acceptances.
-
-The UI, terminal, and future provider adapters must not implement different gate rules.
-
-Copyable agent instructions cannot create a human acceptance by themselves.
-
-## Active agent handoff
-
-An adapter translates the review outcome to its agent harness.
-
-When the harness supports continuation, feedback returns to the same active agent loop.
-
-When the harness has a completion hook, unresolved findings deny completion with concise feedback.
-
-When the harness supports neither function, the CLI exits with failure and the user reruns the agent.
-
-The review server can wait for a local UI outcome and resume the waiting application handler.
-
-The UI must not own session continuation logic.
-
-## Checkpoint behavior
-
-Use these default checkpoints:
-
-### After an edit or explicit partial check
-
-- Report applicable findings.
-- Let the agent continue reversible coding work.
-- Do not remove acceptances from unexamined files.
-- Do not claim that the final gate passed.
-
-### Before agent completion
-
-- Run the complete applicable work check.
-- Report every unresolved finding.
-- Return agent-resolvable feedback to the active loop.
-- Request human review for unresolved human findings.
-- Deny silent completion.
-
-### In CI
-
-- Run the complete repository and change checks.
-- Validate all active acceptances.
-- Fail after any engine or configuration error.
-- Fail for each unresolved finding.
-
-## Human review queue
-
-The completion check can group human findings into one review request.
-
-Grouping reduces interruptions. It does not merge findings or fingerprints.
-
-The human can accept some findings and return feedback for others.
-
-The agent receives the feedback and continues work when the harness supports continuation.
-
-A changed finding needs a new review under [ADR-005](./adr-005-fingerprints-and-lineage.md).
-
-## Emergency operation
-
-The core does not add a special break-glass finding state.
-
-An authorized human can accept an urgent finding with a clear reason.
-
-Repository administrators control emergency CI or branch bypasses outside agentlint.
-
-A future provider adapter can require additional evidence for emergency use.
-
-## Golden product demonstrations
-
-### Existing repository adoption
-
-1. Install a detector package or create a detector.
-2. Bind the detector to the applicable paths.
-3. Run a non-gating calibration scan.
-4. Review matches in text or the UI.
-5. Improve scope, guidance, and fixtures.
-6. Enable the binding.
-7. Fix or accept current findings.
-8. Confirm the same result in CI.
-
-### Destructive migration with human authority
-
-1. An agent adds a destructive migration.
-2. A change detector reports the operation.
-3. The agent gathers evidence and continues related safe work.
-4. The completion checkpoint requests human review.
-5. The human requests a safer rollout sequence.
-6. The agent changes the migration.
-7. The old finding and acceptance cannot open the new gate.
-8. The final check passes after the finding disappears or receives acceptance.
-
-### Recurring review feedback
-
-1. A reviewer identifies repeated judgment feedback.
-2. The rule advisor separates the standard, detector, and binding.
-3. The agent creates fixtures and scans the repository.
-4. The repository reviews and enables the binding.
-5. A later agent change triggers the standard at the applicable checkpoint.
+A future provider adapter can add proof metadata to the acceptance record. Provider metadata must not change finding or fingerprint semantics. Do not add a required verification policy before a provider adapter exists.
 
 ## Rejected alternatives
 
-### Provider-only human acceptance
+**Provider-only human acceptance.** This model gives stronger identity. It slows local work and excludes individual developers.
 
-This model gives stronger identity.
+**Local acceptance as identity proof.** An unrestricted local agent can change repository files. The product must not claim a security guarantee that it cannot enforce.
 
-It slows local work and excludes individual developers.
+**UI-only review.** This model makes browser interaction necessary for routine use. Small queues work better in the terminal.
 
-### Local acceptance as identity proof
+**Permanent non-blocking rules.** This model lets enabled findings pass without a decision. Deferred interaction gives speed without a weaker final gate.
 
-An unrestricted local agent can change repository files.
+**Durable calibration database.** This model creates candidate lifecycle state and cleanup work. Git history already preserves the useful result.
 
-The product must not claim a security guarantee that it cannot enforce.
+**Automatic UI launch on a finding-count threshold.** The CLI must not open a browser without a user action. A person or an agent opens the UI when the terminal is not sufficient.
 
-### UI-only review
+## Reconsideration conditions
 
-This model makes browser interaction necessary for routine use.
-
-Small finding queues work better in the active text loop.
-
-### Permanent non-blocking rules
-
-This model lets enabled findings pass without a result.
-
-Deferred interaction provides workflow speed without weakening the final gate.
-
-### Durable calibration database
-
-This model creates candidate lifecycle state and cleanup work.
-
-The final detector, binding, fixtures, and Git history preserve useful calibration results.
-
-## 0.2 implementation
-
-The CLI does not use an automatic finding-count threshold. A person or coding agent can open the UI when the text loop is not sufficient.
-
-The `approve` command records one human acceptance. The `review` command opens the local workspace.
-
-Version 0.2 does not resume a harness through a provider protocol. The final screen gives copyable agent instructions.
-
-Calibration feedback stays in the browser session. A reviewer can copy or download it.
-
-The detached artifact uses the version 1 review state contract. Detached acceptance output uses the exact acceptance-record JSONL contract.
-
-The FoldKit local UI ships in the package.
-
-Only `check --all` without file or rule filters is a complete view. A monorepo partial job cannot remove unexamined acceptances.
-
-The demo verifies a state detector, a change detector, local human acceptance, detached review, and equal local and CI gate semantics.
-
-Provider proof metadata remains a later adapter concern.
+Reconsider this record when a provider adapter ships, when an agent harness supports session continuation from the review server, or when detached review needs a second artifact version.
 
 ## Consequences
 
-The UI has a defined optional role in both authoring and acceptance.
+The UI has a defined optional role in calibration and acceptance.
 
-Local acceptance remains fast and useful for individual developers.
+Local acceptance stays fast for individual developers. Agent proposals give the human the reasoning without a chat transcript.
 
-Provider verification can strengthen team workflows without changing the core engine.
+Provider verification can strengthen team workflows without a change to the core engine.
 
-The integration layer must distinguish early feedback from final gate completion.
-
-The 0.2 baseline needs both state and change detector workflows.
+Version 0.2 does not resume an agent harness after review. The human pastes the copied instructions into the agent.
 
 ## Revision history
 
 - 2026-08-10: The team proposed calibration, checkpoint review, and local acceptance as 0.2 workflows.
 - 2026-08-10: The team accepted attached and detached review through one local SPA.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation.

@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-10
 - Depends on: [PDR-001](./pdr-001-product-core.md)
-- Related to: [ADR-001](./adr-001-rule-lifecycles.md)
+- Related to: [ADR-001](./adr-001-rule-lifecycles.md), [ADR-005](./adr-005-fingerprints-and-lineage.md)
 
 ## Decision
 
@@ -11,147 +11,61 @@ An effective rule is the composition of three objects:
 
 1. A standard defines the durable review question.
 2. A detector finds applicable evidence.
-3. A repository binding selects the detector and effective policy.
+3. A repository binding selects the scope, the options, and the authority.
 
-The product can use `rule` as a user-facing name for this composition.
+The product uses `rule` as the user-facing name for this composition.
 
-The public API uses one discriminated `defineRule` function.
-
-The rule keeps standard, detector, and binding data in separate fields.
+The public API has one discriminated `defineRule` function. The rule keeps standard, detector, and binding data in separate fields.
 
 ## Context
 
-Some engineering standards apply across technologies.
+Some engineering standards apply across technologies. A bounded-query standard can apply to Prisma, Drizzle, SQL, and an internal data library. Each technology needs different detection logic.
 
-For example, a bounded-query standard can apply to Prisma, Drizzle, SQL, and an internal data library.
+Repository architecture changes the required paths, exclusions, and safe wrappers. A package author cannot know the correct repository policy or acceptance authority.
 
-Each technology needs different detection logic.
-
-Repository architecture also changes the required paths, exclusions, and safe wrappers.
-
-A package author cannot know the correct repository policy or acceptance authority.
-
-The model must support useful packages without making their defaults universal policy.
+The model must support reusable packages without making their defaults universal policy.
 
 ## Standard
 
-A standard defines one stable review question.
+A standard has an `id`, a `revision`, a `title`, an optional `summary`, `guidance`, and an optional `source` reference.
 
-A standard contains these conceptual fields:
+The standard identifier is the durable policy identity. Do not put a technology name in it unless the policy is specific to that technology.
 
-```ts
-interface Standard {
-  readonly id: string;
-  readonly revision: number;
-  readonly title: string;
-  readonly summary: string;
-  readonly guidance: Guidance;
-  readonly source?: SourceReference;
-}
-```
+The revision identifies the semantic decision contract. Increase it when the decision criteria or the permitted outcomes change. Do not increase it for editorial changes.
 
-The standard identifier is the durable policy identity.
+Guidance explains the decision checks and the permitted paths. Guidance must not teach known incorrect code as an example.
 
-The standard revision identifies the semantic decision contract.
-
-Increase the revision when decision criteria or permitted outcomes change.
-
-Do not increase the revision for editorial changes that preserve the decision contract.
-
-The identifier must not contain a technology name unless the policy is specific to that technology.
-
-Guidance must explain the decision checks and permitted paths.
-
-Guidance must not teach known incorrect code as an example.
-
-A standard does not contain repository authority, file scope, or an enabled state.
-
-A standard does not have a finding lifecycle.
+A standard does not contain authority, file scope, or an enabled state.
 
 ## Detector
 
-A detector identifies evidence for one standard.
+A detector has an `id`, a `version`, optional `fixtures`, and detection logic.
 
-A detector contains these conceptual fields:
-
-```ts
-interface Detector {
-  readonly id: string;
-  readonly standardId: string;
-  readonly lifecycle: "state" | "change";
-  readonly detect: DetectionFunction;
-  readonly fixtures: DetectorFixtures;
-  readonly version: number;
-}
-```
-
-The detector identifier is unique within its package.
-
-The detector identifier identifies one detection contract.
+The rule `lifecycle` selects the detector contract. A `state` detector declares a `match` list, a `createOnce` visitor factory, or both. A `change` detector declares a `detect` function.
 
 The detector version changes when normalized evidence semantics change.
 
-Each detector has one lifecycle.
+A detector receives the binding options. The options must not change the standard question. Use a separate detector when configuration would change evidence semantics substantially.
 
-One standard can have many detectors. Those detectors can use different technologies and lifecycles.
-
-A detector can accept configuration for repository architecture.
-
-The configuration must not change the standard question.
-
-Use a separate detector when configuration would change evidence semantics substantially.
+One standard can have many detectors with different technologies and lifecycles. The engine does not check that detector identifiers are unique. A detector package owns its identifier namespace.
 
 ## Repository binding
 
-A repository binding creates the effective rule.
+A binding has a required `id`, an `authority`, optional `include` and `exclude` globs, and optional detector `options`.
 
-A binding selects these values:
+The repository owns each binding. A package can recommend configuration and authority. The repository selects the effective values.
 
-- The standard.
-- One detector instance.
-- Detector configuration.
-- Included and excluded repository scope.
-- Acceptance authority.
-- An optional local name.
+Binding identifiers must be unique in the normalized configuration. The engine rejects a duplicate identifier. The repository can bind one detector more than once with different identifiers and disjoint scopes.
 
-A conceptual binding has this shape:
+The engine calculates a binding digest from `include`, `exclude`, and `options`. It sorts the `include` and `exclude` lists and all object keys. It keeps the order of arrays inside `options`.
 
-```ts
-interface RuleBinding {
-  readonly id?: string;
-  readonly standard: Standard;
-  readonly detector: Detector;
-  readonly authority: "agent" | "human";
-  readonly include?: ReadonlyArray<string>;
-  readonly exclude?: ReadonlyArray<string>;
-}
-```
+Equal scope lists in a different order give the same digest. Different glob syntax with equal effect gives a different digest.
 
-The repository owns each binding.
-
-A package can recommend configuration and authority. The repository must select the effective values.
-
-The repository can bind multiple detectors to one standard.
-
-The repository can bind one detector more than once with disjoint scopes.
-
-Each binding must have a stable identity when repeated detector use can cause ambiguity.
-
-The engine must calculate a canonical digest from material binding configuration.
-
-Material configuration includes detector options, included scope, and excluded scope.
-
-The digest must ignore ordering or syntax differences that preserve effective configuration.
-
-An authority change uses the authority compatibility check. Authority does not need to change the binding digest.
+Authority does not enter the digest. The authority compatibility rule checks it separately.
 
 ## Public authoring API
 
-Rule authors use one `defineRule` function.
-
-The lifecycle field selects the state or change detector contract.
-
-A candidate state rule is:
+Rule authors use one `defineRule` function. The `lifecycle` field selects the state or change contract and the option types.
 
 ```ts
 defineRule({
@@ -160,13 +74,12 @@ defineRule({
     id: "data/bounded-query",
     revision: 1,
     title: "Bound database queries",
-    guidance: {},
+    guidance: "A production read has an explicit bound.",
   },
   detector: {
-    id: "prisma/unbounded-query-state",
+    id: "prisma/find-many-without-take",
     version: 1,
-    match: [],
-    fixtures: {},
+    match: { pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB has no bound." },
   },
   binding: {
     id: "data/prisma-bounded-query",
@@ -176,195 +89,62 @@ defineRule({
 });
 ```
 
-This structure gives one authoring object and preserves the three product identities.
+`defineRule` validates the standard, the binding, and the detector shape. A state detector needs a `match` or a `createOnce`. A change detector needs a `detect` function. The API has no separate standard, detector, or binding constructors.
 
-A package can export a rule factory for one technology-specific detector.
+A package can export a rule factory that accepts repository options and returns a complete rule. The core package does not ship product standards, detectors, or presets. A package must document its detection assumptions and limits.
 
-The factory accepts repository options and returns a complete rule definition.
+## Finding identity and duplicates
 
-The public API does not need separate standard, detector, or binding constructors.
+Each finding carries a `FindingSource` with the standard identifier and revision, the detector identifier and version, and the binding identifier and digest. [ADR-005](./adr-005-fingerprints-and-lineage.md) adds the evidence fingerprint. The acceptance key uses the complete source identity, never the standard identifier alone.
 
-## Package contract
+Two detectors can find evidence for the same standard. The engine does not merge findings with equal standard identifiers. Detector evidence can have a different meaning or lifetime.
 
-A rule package can export these objects:
+Presentation can group related findings. Grouping does not change gate state.
 
-- Standards.
-- Rule factories for technology-specific detectors.
-- Detector fixtures.
-- Recommended configuration.
-- Durable source references.
-
-A rule package must not make a rule active by installation alone.
-
-A package must document its detection assumptions.
-
-These assumptions include framework versions, call shapes, wrappers, and expected repository scope.
-
-A package must document known detection limits.
-
-The core agentlint package does not ship product standards, detectors, or presets.
-
-## Finding identity
-
-A finding must identify the standard, detector, and binding that produced it.
-
-The conceptual identity is:
-
-```ts
-interface FindingSource {
-  readonly standardId: string;
-  readonly standardRevision: number;
-  readonly detectorId: string;
-  readonly detectorVersion: number;
-  readonly bindingId: string;
-  readonly bindingDigest: string;
-}
-```
-
-The standard identifier selects guidance and durable intent.
-
-The standard revision selects the semantic decision contract.
-
-The detector identifier selects detection semantics.
-
-The binding identifier selects repository policy and scope.
-
-The binding digest identifies its material effective configuration.
-
-The acceptance key must not use only the standard identifier.
-
-## Multiple detectors and duplicate findings
-
-Two detectors can find evidence for the same standard.
-
-The engine must not merge findings only because their standard identifiers are equal.
-
-Detector evidence can have different meaning or lifetime.
-
-The repository should avoid overlapping bindings when practical.
-
-A later deduplication feature needs an explicit evidence-equivalence contract.
-
-Presentation code can group related findings under one standard. Grouping must not change gate state.
-
-## Detector upgrades
-
-A detector upgrade can change detection coverage without changing the standard.
-
-The detector version must change when the upgrade changes normalized evidence semantics.
-
-An upgrade must not silently keep an acceptance when evidence equivalence is unknown.
-
-The engine can show a prior acceptance reason as lineage context.
-
-A material standard revision or binding configuration change has the same conservative behavior.
-
-[ADR-005](./adr-005-fingerprints-and-lineage.md) defines this behavior.
-
-## Pressure tests
-
-### Bounded database query
-
-The standard asks whether a database operation has a justified bound.
-
-Prisma, Drizzle, raw SQL, and internal libraries need different detectors.
-
-A monorepo binding can limit a detector to one service and exclude a reviewed data-access layer.
-
-The standard remains portable. Detector assumptions and repository policy remain explicit.
-
-### Destructive migration
-
-The standard asks whether a destructive schema change has a safe rollout plan.
-
-A change detector can inspect added migration operations.
-
-A state detector can inspect existing unexecuted migration files during adoption.
-
-Both detectors use the same guidance. They keep different finding lifetimes.
-
-### Public export change
-
-The standard asks whether a public API change preserves intended compatibility.
-
-One detector can compare package exports. Another can inspect generated API reports.
-
-Repository bindings select public packages and ignored internal entry points.
-
-### Local architectural convention
-
-A local rule can compose all three objects through one convenience function.
-
-The author does not need to create a package or reusable standard module.
-
-The internal result still preserves separate identities.
+A detector version change, a standard revision change, or a binding digest change invalidates existing acceptances. The engine can show a prior acceptance reason as lineage context.
 
 ## Rejected alternatives
 
 ### One rule object owns all data
 
-This model is simple for local rules.
-
-It couples durable intent, technology detection, repository scope, and authority.
-
-It makes reusable packages either rigid or highly configurable.
+This model is simple for local rules. It couples durable intent, technology detection, repository scope, and authority. Reusable packages become rigid or highly configurable.
 
 ### Package owns authority
 
-The package author does not own the target repository workflow.
-
-A recommended authority can help adoption. It cannot become active policy without repository selection.
+The package author does not own the target repository workflow. A recommended authority helps adoption but cannot become active policy without repository selection.
 
 ### Standard owns lifecycle
 
-A standard can need state and change detectors.
-
-Lifecycle describes evidence lifetime, not durable intent.
+A standard can need state and change detectors. Lifecycle describes evidence lifetime, not durable intent.
 
 ### Automatic detector selection
 
-Package inspection can suggest applicable detectors.
-
-Automatic activation can apply the wrong assumptions or scope.
-
-The repository must confirm each active binding.
+Package inspection can suggest applicable detectors. Automatic activation can apply the wrong assumptions or scope. The repository must confirm each active binding.
 
 ### Technology-specific standards only
 
-This model duplicates guidance and policy history across stacks.
+This model duplicates guidance and policy history across stacks. Use a technology-specific standard only when the review question is technology-specific.
 
-Use a technology-specific standard only when the review question is technology-specific.
+## Reconsideration conditions
 
-## 0.2 implementation
+Reconsider this model when one condition occurs:
 
-One `defineRule` call contains the standard, detector, and binding. The API does not use `bindRule`.
-
-Each binding has an explicit identifier. A detector package owns its detector identifier namespace.
-
-The state and change branches infer their detector function and option types from the lifecycle discriminator.
-
-The binding digest contains include paths, exclude paths, and detector options.
-
-The config does not inspect installed package metadata. The core does not suggest or install detectors.
-
-Calibration produces temporary review feedback. It does not edit the binding or config.
+- Detector option changes routinely need a new detector identifier.
+- Two detectors for one standard need an explicit evidence-equivalence contract.
 
 ## Consequences
 
-The engine must resolve bindings before it evaluates detectors.
+The engine resolves bindings before it evaluates detectors.
 
-Finding output can group results by standard while it preserves detector identity.
+`rules test` runs detector fixtures. Repository checks test effective bindings.
+
+Calibration produces temporary review feedback. It does not edit the binding or the configuration.
 
 Package documentation must distinguish standards, detectors, and recommended bindings.
-
-The rule advisor must ask about stack and repository architecture before it selects a detector.
-
-The test runner tests detectors. Repository checks test effective bindings.
-
-The public API can remain short for local authors without hiding the internal model.
 
 ## Revision history
 
 - 2026-08-10: The project accepted the standard, detector, and repository binding model.
 - 2026-08-10: The project added semantic standard revisions and material binding digests.
 - 2026-08-10: The project selected one discriminated `defineRule` authoring function.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation.

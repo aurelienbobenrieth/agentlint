@@ -3,361 +3,141 @@
 - Status: Accepted
 - Date: 2026-08-10
 - Depends on: [PDR-001](./pdr-001-product-core.md)
-- Related to: [ADR-004](./adr-004-rule-composition.md)
+- Related to: [ADR-004](./adr-004-rule-composition.md), [ADR-005](./adr-005-fingerprints-and-lineage.md), [ADR-006](./adr-006-review-workflows.md)
 
 ## Decision
 
-A finding is unresolved or accepted.
+A finding is `unresolved` or `accepted`. The engine derives this state. It does not store it.
 
-The project stores current acceptances. It does not store an append-only event ledger.
+The project stores current acceptances in `.agentlint/acceptances.jsonl`. It does not store an append-only event ledger.
 
 Each repository binding has an `agent` or `human` authority policy.
 
-The project uses `acceptance` as the primary domain term for a stored result.
+The project uses `acceptance` as the domain term for a stored result.
 
 ## Context
 
-The first 0.2 design has these disposition values:
+The first 0.2 design had five disposition values and two persistence values. Most values did not change gate behavior.
 
-- `accepted`
-- `deferred`
-- `no_fix`
-- `approval_requested`
-- `approved`
-
-The design also has `ephemeral` and `durable` persistence values.
-
-Most values do not make different gate behavior clear.
-
-The append-only ledger grows with all result events. Each check reads the full file.
+The append-only ledger grew with all result events. Each check read the full file.
 
 Git already keeps old versions of committed project files.
 
-## Finding state
+## Finding state and acceptance meaning
 
-The engine derives finding state with these rules:
+When the condition no longer exists, the engine reports nothing. No stored record is necessary.
 
-```text
-The finding does not exist.
-Result: The code or change removed the condition.
-Stored acceptance: None is necessary.
+When the finding exists without a compatible acceptance, the finding is unresolved. The gate is closed. `check` exits with code `1`.
 
-The finding exists and has no valid acceptance.
-Result: Unresolved.
-Gate: Closed.
+When the finding exists with a compatible acceptance, the finding is accepted. The gate is open for this finding.
 
-The finding exists and has a valid acceptance.
-Result: Accepted.
-Gate: Open for this finding.
-```
+An acceptance states that the matched evidence is permitted for a documented reason. It does not always mean that the code violates the standard. Some rules identify a decision point, and the acceptance can state that the evidence satisfies the standard.
 
-The engine must not add a stored state unless that state changes gate behavior.
-
-## Acceptance meaning
-
-An acceptance states that the matched evidence is permitted for a documented reason.
-
-An acceptance does not always mean that the code violates a standard.
-
-Some rules identify a decision point. The acceptance can state that the evidence satisfies the standard.
-
-An acceptance contains the authority that made the result.
+The engine does not add a stored state unless that state changes gate behavior.
 
 ## Authority policy
 
-Each repository binding has one authority policy:
+Each binding declares `authority: "agent" | "human"`.
 
-```ts
-type Authority = "agent" | "human";
-```
+A human acceptance satisfies both policies. An agent acceptance satisfies only an `agent` policy.
 
-For `agent` authority:
+`agentlint accept` creates an agent acceptance. When the binding requires human authority, `accept` refuses with exit code `2` and points to `agentlint approve` or `agentlint review`.
 
-- An agent can create an acceptance.
-- A human can create an acceptance.
-- A reason is necessary.
+`agentlint approve` and the review SPA create a human acceptance. Both paths need a reason. The word `authority` states who can accept. It does not describe the current finding state.
 
-For `human` authority:
-
-- Agent-facing interfaces cannot create an acceptance.
-- The agent can ask a human for approval.
-- The finding stays unresolved until a human workflow creates an acceptance.
-- A reason is necessary.
-
-Use `authority`, not `resolution`, in rule policy.
-
-The word `authority` states who can accept. The word does not describe the current finding state.
-
-## Human workflow guarantee
-
-The engine guarantees this behavior in the normal workflow:
-
-> The gate stays closed until a valid acceptance has the authority that the rule requires.
-
-The supported agent workflow must not complete silently while a human finding stays unresolved.
-
-The agent must fix the evidence or ask a human for judgment.
-
-The product must keep human acceptance out of agent-specific interfaces.
-
-For example, MCP tools and automatic hooks must not create a human acceptance.
-
-A human workflow can use an interactive CLI, a local UI, or a provider review.
-
-The 0.2 release decision will select the required human workflow.
+An agent can record a proposal with `agentlint propose`. The engine stores one proposal for each exact finding identity in `.agentlint/proposals.jsonl`. A proposal gives a human the agent summary and diff. It never opens the gate.
 
 ## Security boundary
 
 A local human gate is a workflow boundary. It is not an adversarial security boundary.
 
-An agent with unrestricted file access can change the acceptance file, the config, or the package code.
+A process with repository write access can run `approve`, edit the acceptance file, or edit the config. The Git change makes these edits visible.
 
-The acceptance file gives visible evidence in the Git change. It does not prove a human identity.
+The `actor` field is audit information. The CLI fills it from `AGENTLINT_ACTOR`, from a detected agent environment, or from the local username. The engine never uses it as identity proof.
 
-These external controls can give a stronger security boundary:
+Protected branches, required reviews, CODEOWNERS, and provider identities give a stronger boundary. A provider adapter can add verified authority later without a change to the gate rule.
 
-- Protected branches.
-- Required reviews.
-- CODEOWNERS.
-- Provider identities.
-- Signed checks.
-- Protected environments.
+## Stored record
 
-The documentation must not describe an actor string as identity proof.
-
-## Stored state
-
-Use this path for current acceptances:
-
-```text
-.agentlint/acceptances.jsonl
-```
-
-The file contains one current record for each finding source and fingerprint.
-
-The writer must sort the records in a deterministic order.
-
-The writer replaces the record when the acceptance data changes.
-
-The writer must not append a second lifetime event for the same active finding.
-
-Git keeps previous file versions.
-
-## Conceptual record
-
-The minimum record has this shape:
+The file contains one sorted JSONL record for each exact finding identity. The store rejects a duplicate identity and an invalid record.
 
 ```ts
 interface AcceptanceRecord {
-  readonly version: 1;
-  readonly standardId: string;
-  readonly standardRevision: number;
-  readonly detectorId: string;
-  readonly detectorVersion: number;
-  readonly bindingId: string;
-  readonly bindingDigest: string;
-  readonly fingerprint: string;
-  readonly reason: string;
-  readonly authority: "agent" | "human";
-  readonly actor?: string;
-  readonly acceptedAt: string;
+  schemaVersion: 1;
+  source: { standardId; standardRevision; detectorId; detectorVersion; bindingId; bindingDigest };
+  fingerprint: { scheme; version; digest };
+  lineageKey?: string;
+  reason: string;
+  authority: "agent" | "human";
+  actor?: string;
+  acceptedAt: string;
 }
 ```
 
-This shape is conceptual. [ADR-005](./adr-005-fingerprints-and-lineage.md) proposes the versioned implementation shape.
+An acceptance opens the gate only when every source field, the full fingerprint, and the authority are compatible with a current finding. The engine also rejects a fingerprint scheme or version that it does not support. [ADR-005](./adr-005-fingerprints-and-lineage.md) defines fingerprints and lineage.
 
-The `authority` field records the authority path. It does not prove identity.
+A new acceptance must identify a finding in the current check view. The writer replaces an older record with the same identity or the same lineage. Git keeps previous file versions.
 
-The `actor` field is audit information. The engine must not use free actor text as security proof.
+## Invalidation and stale records
 
-## Approval request
+A material code or change update produces a new fingerprint. The old acceptance no longer matches. A line move or a formatting-only edit keeps the same state fingerprint. A change to the standard revision, detector version, or material binding config also invalidates the acceptance.
 
-An approval request does not open the gate.
+When an unresolved finding shares a lineage key with an old record, `check` shows the prior reason. Lineage never opens the gate.
 
-The request gives the finding, the agent reason, and applicable evidence to a human.
+An acceptance is stale when no current finding has the same identity. A complete check (`check --all` without file or rule filters) removes stale records and reports the count. A partial check never removes records. `agentlint acceptances clean` runs the complete comparison on demand.
 
-The core acceptance file contains only accepted findings.
-
-The 0.2 implementation must select one request transport:
-
-- Current terminal or agent session output.
-- A local review session.
-- A provider review comment.
-- A small current request file.
-
-Do not add a request file until an asynchronous workflow requires durable request state.
-
-If a later acceptance retains request data, put the request data in an optional nested field.
-
-Do not make request history append-only.
-
-## Stale acceptances
-
-An acceptance is stale when no current finding has the same source identity and fingerprint.
-
-Normal checks must ignore stale acceptances.
-
-The writer can remove stale acceptances automatically when it has a complete applicable repository view.
-
-The writer must not remove an acceptance after a partial file check.
-
-CI can report stale acceptances as maintenance information.
-
-Stale acceptance cleanup must not block the main agent loop unless the team makes a later decision.
-
-## Acceptance invalidation
-
-The engine invalidates an acceptance when material evidence changes.
-
-The fingerprint must not depend mainly on line or column numbers.
-
-A line move must not invalidate an acceptance when the evidence is equal.
-
-A material code or change update must invalidate the acceptance.
-
-The standard, detector, and binding identities remain part of the acceptance key.
-
-The rule fingerprint contract needs a separate implementation decision before non-source findings ship.
-
-## CLI language
-
-Use direct acceptance language.
-
-The preferred agent-authority command is:
+## CLI and CI
 
 ```text
-agentlint accept <selector> --reason "..."
+agentlint accept <selector> --reason "..." [--base ref]
+agentlint approve <selector> --reason "..." [--base ref]
+agentlint propose <selector> --summary "..." [--diff-file path]
+agentlint acceptances list | clean | import <decisions.jsonl>
 ```
 
-The human-authority command can remain different when that difference makes the workflow clear:
+CI runs the same binary gate as local development. It exits with `1` when one or more findings have no compatible acceptance. There is no CI-only severity.
 
-```text
-agentlint approve <selector> --reason "..."
-```
-
-Both commands create an acceptance. `approve` identifies the human workflow entry point.
-
-Use this command group for stored records:
-
-```text
-agentlint acceptances list
-agentlint acceptances review --base <ref>
-agentlint acceptances clean
-```
-
-The exact command names need CLI review before implementation.
-
-## CI behavior
-
-CI runs the applicable rules with a complete change or repository view.
-
-CI closes the gate when one or more findings have no valid acceptance.
-
-CI validates that each acceptance authority satisfies the rule policy.
-
-CI does not treat an approval request as an acceptance.
-
-CI does not treat a text actor value as verified identity.
-
-A provider integration can add verified identity in a later version.
-
-## Removed values
-
-### `no_fix`
-
-This value has the same gate result as acceptance.
-
-The reason can state that a fix is not applicable.
-
-### `deferred`
-
-A deferred finding is not accepted.
-
-It stays unresolved and keeps the gate closed.
-
-The developer can keep future work in an issue or another planning system.
-
-### `approved`
-
-This value duplicates acceptance state.
-
-The acceptance authority records whether a human approved the finding.
-
-### `approval_requested`
-
-This value is a workflow request, not a gate result.
-
-It must not appear as an accepted state.
-
-### `ephemeral` and `durable`
-
-These values do not have defined retention behavior.
-
-Remove both values.
-
-Add a new policy only when it changes engine behavior.
-
-## No migration
-
-The project will not migrate the unreleased 0.2 ledger model.
-
-The implementation will remove the development ledger files and use the new acceptance model.
-
-The released 0.1 migration requirements need a separate check before the 0.2 release.
+`check --review-output` writes a detached review artifact. A human reviews it locally and exports acceptance JSONL. `acceptances import` re-runs the detectors and rejects the complete import when any decision no longer matches a current finding with compatible authority.
 
 ## Rejected alternatives
 
-### Append-only ledger
+Append-only ledger: This model stores duplicate lifetime events in the repository file. Read cost and file size depend on project history.
 
-This model stores duplicate lifetime events in the current repository file.
+`no_fix` value: This value has the same gate result as acceptance. The reason can state that a fix is not applicable.
 
-It makes read cost and file size depend on project history.
+`deferred` value: A deferred finding is not accepted. It stays unresolved. Future work belongs in an issue tracker.
 
-### Decision file
+`approved` value: This value duplicates acceptance state. The `authority` field records that a human accepted the finding.
 
-This term is correct but broad. The current file stores only accepted findings.
+`approval_requested` value: This value is a workflow request, not a gate result. The proposal store now holds this context outside the acceptance file.
 
-### Resolution file
+`ephemeral` and `durable` persistence: These values had no defined retention behavior.
 
-This term includes code fixes, but code fixes do not need stored records.
+Decision file: This term is correct but broad. The file stores only accepted findings.
 
-### Exception or waiver file
+Resolution file: This term includes code fixes. Code fixes do not need stored records.
 
-These terms imply a violation. Some accepted findings satisfy the rule standard.
+Exception or waiver file: These terms imply a violation. Some accepted findings satisfy the standard.
 
-### Authenticated local actor
+Authenticated local actor: This model cannot give a reliable guarantee when the agent has unrestricted repository access.
 
-This model cannot give a reliable security guarantee when the agent has unrestricted repository access.
+## Reconsideration conditions
 
-## 0.2 implementation
+The project reconsiders a new stored state when a real workflow needs different gate behavior.
 
-Version 0.2 ships the `approve` command and the local review SPA for human acceptance.
+The project reconsiders stale cleanup in `check` when automatic removal surprises users in CI.
 
-The product does not store approval requests. Requested changes are review-session feedback for the coding agent.
-
-An acceptance record contains the schema version, source identity, fingerprint, optional lineage key, reason, authority, actor, and acceptance time.
-
-The source identity contains the standard revision and detector version.
-
-The engine recomputes findings on the current branch. An acceptance opens the gate only when its identity is equal to a current finding.
-
-A complete check removes stale records. The `acceptances clean` command runs this complete comparison.
-
-Version 0.2 uses sorted current-state JSONL. Git supplies record history.
-
-A future provider can add verified human authority through an adapter. The adapter must preserve the same authority rule.
+The project reconsiders provider-verified authority when a team needs identity proof that local review cannot give.
 
 ## Consequences
 
-The engine and UI can remove multiple disposition branches.
+The engine and the UI have one accepted result with its authority. There are no disposition branches.
 
-The config can remove persistence policy.
-
-The review model can show one accepted result with its authority.
+The config has no persistence policy.
 
 The Git diff stays proportional to active acceptances.
 
-The review artifact and SPA show current acceptance comparison.
+The review artifact and the SPA show current findings against current acceptances.
 
 ## Revision history
 
@@ -365,3 +145,4 @@ The review artifact and SPA show current acceptance comparison.
 - 2026-08-10: The project clarified the human interruption guarantee.
 - 2026-08-10: The project aligned acceptance identity with standard, detector, and binding composition.
 - 2026-08-10: The project added semantic standard and material binding identity to acceptance compatibility.
+- 2026-08-28: Condensed and aligned with the 0.2 implementation.
