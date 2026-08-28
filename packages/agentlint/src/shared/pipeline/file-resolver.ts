@@ -19,7 +19,7 @@ import picomatch from "picomatch";
  * @since 0.1.0
  * @category errors
  */
-export class FileResolverError extends Schema.TaggedErrorClass<FileResolverError>()("agentlint/FileResolverError", {
+export class FileResolverError extends Schema.TaggedError<FileResolverError>()("agentlint/FileResolverError", {
   detail: Schema.String,
 }) {
   override get message(): string {
@@ -49,7 +49,15 @@ export const ResolveOptions = Schema.Struct({
 /** @since 0.1.0 */
 export type ResolveOptions = Schema.Schema.Type<typeof ResolveOptions>;
 
-const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make("node_modules", ".git", "dist", ".cache");
+const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make(
+  "node_modules",
+  ".git",
+  "dist",
+  "coverage",
+  ".cache",
+  ".agents",
+  ".audit",
+);
 
 function hasGlobSyntax(value: string): boolean {
   return /[*?[\]{}()!+@]/.test(value);

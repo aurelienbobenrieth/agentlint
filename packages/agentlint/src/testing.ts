@@ -21,15 +21,20 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, Layer } from "effect";
 import { Env } from "./config/env.js";
 import type { FindingRecord } from "./domain/finding.js";
-import type { AgentlintRule } from "./domain/rule.js";
+import type { AgentlintRule, ChangeRule, ChangeSet, StateRule } from "./domain/rule.js";
 import { Parser } from "./shared/infrastructure/parser.js";
-import { runRuleFixtures, runRuleOnSource, type FixtureReport } from "./shared/pipeline/rule-tester.js";
+import {
+  runRuleFixtures,
+  runRuleOnChange,
+  runRuleOnSource,
+  type FixtureReport,
+  type ReportedChangeFinding,
+} from "./shared/pipeline/rule-tester.js";
 
 const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 
 /**
- * Run a rule's inline fixtures with real parsing. `invalid` snippets must
- * produce at least one finding, `valid` snippets none.
+ * Run a detector's activation and silence fixtures with real parsing.
  *
  * @since 0.2.0
  * @category constructors
@@ -46,9 +51,14 @@ export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
  * @category constructors
  */
 export function testRuleOnSource(
-  rule: AgentlintRule,
+  rule: StateRule,
   source: string,
   file = "fixture.tsx",
 ): Promise<ReadonlyArray<FindingRecord>> {
   return Effect.runPromise(runRuleOnSource(rule, source, file).pipe(Effect.provide(TestingLayer)));
+}
+
+/** Run a change rule against normalized, caller-provided change evidence. */
+export function testRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<ReportedChangeFinding> {
+  return runRuleOnChange(rule, change);
 }

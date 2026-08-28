@@ -21,7 +21,7 @@ import type { AgentlintConfig } from "../../domain/config.js";
  * @since 0.1.0
  * @category errors
  */
-export class ConfigError extends Schema.TaggedErrorClass<ConfigError>()("agentlint/ConfigError", {
+export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
   reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
   path: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),

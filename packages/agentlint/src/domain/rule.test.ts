@@ -1,77 +1,165 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { defineConfig, normalizeConfig } from "./config.js";
-import { compactStandard, normalizeGuidance } from "./guidance.js";
-import { defineRule } from "./rule.js";
+import type { ChangeRule, StateRule } from "./rule.js";
+import { defineRule, ruleId, ruleMatches } from "./rule.js";
 
-const rule = defineRule({
-  id: "comments/no-noise",
-  description: "Flags comments that need noise review.",
+const standard = {
+  id: "data/bounded-query",
+  revision: 1,
+  title: "Bound database queries",
   guidance: {
-    standard: "Comments should add durable context beyond the code.",
-    checks: ["Comments should not restate identifiers."],
+    standard: "Database operations must have an explicit bound or a reviewed justification.",
+    checks: ["Confirm that the result size has a safe upper limit."],
   },
-  createOnce() {
-    return {
-      comment() {},
-    };
+} as const;
+
+const stateRule = defineRule({
+  lifecycle: "state",
+  standard,
+  detector: {
+    id: "prisma/unbounded-query",
+    version: 1,
+    match: { pattern: "$DB.findMany($$$ARGS)", message: "Review this query bound." },
+    fixtures: {
+      mustReport: ["db.user.findMany({})"],
+      mustStaySilent: ["db.user.findUnique({ where: { id } })"],
+    },
+  },
+  binding: {
+    id: "api/bounded-prisma-query",
+    authority: "agent",
+    include: ["apps/api/src/**/*.ts"],
+    options: { clients: ["db"] as const },
+  },
+});
+
+const changeRule = defineRule({
+  lifecycle: "change",
+  standard: {
+    id: "database/safe-migration",
+    revision: 2,
+    title: "Roll out destructive migrations safely",
+    guidance: "Destructive migrations need a reviewed rollout plan.",
+  },
+  detector: {
+    id: "sql/drop-column",
+    version: 3,
+    detect(context, options) {
+      for (const file of context.change.files) {
+        const content = file.after?.content ?? "";
+        if (options.operations.some((operation) => content.includes(operation))) {
+          context.report({
+            key: `${file.path}:drop-column`,
+            file: file.path,
+            message: "Review destructive migration.",
+            evidence: { operation: "drop-column", statement: content },
+          });
+        }
+      }
+    },
+    fixtures: {
+      mustReport: [{ before: {}, after: { "migrations/1.sql": "ALTER TABLE users DROP COLUMN name;" } }],
+      mustStaySilent: [{ before: {}, after: { "migrations/1.sql": "ALTER TABLE users ADD COLUMN name text;" } }],
+    },
+  },
+  binding: {
+    id: "database/destructive-migration",
+    authority: "human",
+    include: ["migrations/**/*.sql"],
+    options: { operations: ["DROP COLUMN"] },
   },
 });
 
 describe("defineRule", () => {
-  it("uses id, description, guidance, and createOnce", () => {
-    expect(rule.id).toBe("comments/no-noise");
-    expect(rule.description).toContain("comments");
-    expect(normalizeGuidance(rule.guidance).checks).toEqual(["Comments should not restate identifiers."]);
+  it("preserves state inference and structured identities", () => {
+    expect(stateRule.lifecycle).toBe("state");
+    expect(ruleId(stateRule)).toBe("api/bounded-prisma-query");
+    expect(ruleMatches(stateRule)).toHaveLength(1);
+    expectTypeOf(stateRule).toMatchTypeOf<StateRule<{ readonly clients: readonly ["db"] }>>();
+    expectTypeOf(stateRule.detector.match).not.toEqualTypeOf<undefined>();
   });
 
-  it("supports string guidance", () => {
-    const standard = compactStandard("One standard.\nMore detail.");
-    expect(standard).toBe("One standard.");
+  it("preserves change detector option inference", () => {
+    expect(changeRule.lifecycle).toBe("change");
+    expect(changeRule.detector.version).toBe(3);
+    expectTypeOf(changeRule).toMatchTypeOf<ChangeRule<{ readonly operations: readonly ["DROP COLUMN"] }>>();
+  });
+
+  it("supports an imperative state detector", () => {
+    const rule = defineRule({
+      lifecycle: "state",
+      standard,
+      detector: {
+        id: "comments/no-noise",
+        version: 1,
+        createOnce(context, options: { readonly message: string }) {
+          return { comment: (node) => context.report({ node, message: options.message }) };
+        },
+      },
+      binding: { id: "comments/no-noise", authority: "agent", options: { message: "Review comment." } },
+    });
+    expect(rule.detector.createOnce).toBeTypeOf("function");
+  });
+
+  it("rejects invalid trigger combinations", () => {
+    expect(() =>
+      defineRule({
+        lifecycle: "state",
+        standard,
+        detector: {
+          id: "invalid/both",
+          version: 1,
+          match: { pattern: "eval($$$ARGS)", query: "(call_expression)", message: "Review." },
+        },
+        binding: { id: "invalid/both", authority: "agent" },
+      }),
+    ).toThrow('exactly one of "pattern" or "query"');
+  });
+
+  it("rejects a state detector without an implementation", () => {
+    expect(() =>
+      defineRule({
+        lifecycle: "state",
+        standard,
+        detector: { id: "invalid/empty", version: 1 },
+        binding: { id: "invalid/empty", authority: "agent" },
+      }),
+    ).toThrow('must define "match" or "createOnce"');
+  });
+
+  it("rejects empty identities and invalid versions", () => {
+    expect(() =>
+      defineRule({
+        lifecycle: "change",
+        standard,
+        detector: { id: "detector", version: 0, detect() {} },
+        binding: { id: "binding", authority: "human" },
+      }),
+    ).toThrow("positive integer");
   });
 });
 
 describe("defineConfig", () => {
-  it("normalizes files, ignores, policy, and overrides", () => {
+  it("normalizes reusable layers without hiding bindings", () => {
+    const shared = defineConfig({ rules: [stateRule], ignores: ["**/generated/**"], base: "main" });
     const config = normalizeConfig(
-      defineConfig({
-        rules: { "comments/no-noise": rule },
-        policy: { "comments/no-noise": { persistence: "durable" } },
-        files: ["src/**/*.ts"],
-        ignores: ["**/*.test.ts"],
-        overrides: [{ files: ["docs/**/*.ts"], rules: { "comments/no-noise": "off" } }],
-      }),
+      defineConfig({ extends: [shared], rules: [changeRule], ignores: ["**/generated/**", "**/vendor/**"] }),
     );
-
-    expect(config.policy["comments/no-noise"]?.persistence).toBe("durable");
-    expect(config.files).toEqual(["src/**/*.ts"]);
-    expect(config.ignores).toEqual(["**/*.test.ts"]);
-    expect(config.overrides).toHaveLength(1);
+    expect(config.rules.map(ruleId)).toEqual(["api/bounded-prisma-query", "database/destructive-migration"]);
+    expect(config.rulesById.get("database/destructive-migration")).toBe(changeRule);
+    expect(config.ignores).toEqual(["**/generated/**", "**/vendor/**"]);
+    expect(config.base).toBe("main");
   });
 
-  it("composes presets before local config", () => {
-    const preset = defineConfig({
-      rules: { "comments/no-noise": rule },
-      files: ["packages/**/*.{ts,tsx}"],
-    });
-    const config = normalizeConfig(
-      defineConfig({
-        extends: [preset],
-        files: ["src/**/*.{ts,tsx}"],
-      }),
+  it("rejects duplicate binding identities", () => {
+    expect(() => normalizeConfig(defineConfig({ rules: [stateRule, stateRule] }))).toThrow(
+      "Duplicate rule binding id: api/bounded-prisma-query",
     );
-
-    expect(Object.keys(config.rules)).toEqual(["comments/no-noise"]);
-    expect(config.files).toEqual(["src/**/*.{ts,tsx}"]);
   });
 
-  it("throws on unknown policy ids", () => {
-    expect(() =>
-      normalizeConfig(
-        defineConfig({
-          rules: { "comments/no-noise": rule },
-          policy: { "missing/rule": { persistence: "ephemeral" } },
-        }),
-      ),
-    ).toThrow("Unknown rule id in policy");
+  it("rejects config cycles", () => {
+    const config: { extends?: Array<typeof config> } = {};
+    config.extends = [config];
+    expect(() => normalizeConfig(config)).toThrow("contains a cycle");
   });
 });

@@ -1,38 +1,32 @@
-/**
- * @module
- * @since 0.1.0
- */
+/** Check application contracts. @module @since 0.2.0 */
 
 import { Schema } from "effect";
 import { FindingRecord } from "../../domain/finding.js";
-import { MatchedNote } from "../../shared/infrastructure/notes-store.js";
 
-/**
- * @since 0.1.0
- * @category models
- */
 export class CheckCommand extends Schema.TaggedClass<CheckCommand>()("CheckCommand", {
   all: Schema.Boolean,
   rules: Schema.Array(Schema.String),
   base: Schema.UndefinedOr(Schema.String),
   files: Schema.Array(Schema.String),
   format: Schema.Literals(["text", "jsonl"]),
-  ci: Schema.Boolean,
 }) {}
 
-/**
- * @since 0.1.0
- * @category models
- */
+export const CheckLineage = Schema.Struct({
+  findingKey: Schema.String,
+  reason: Schema.String,
+  authority: Schema.Literals(["agent", "human"]),
+  acceptedAt: Schema.String,
+});
+export type CheckLineage = Schema.Schema.Type<typeof CheckLineage>;
+
 export class CheckResult extends Schema.TaggedClass<CheckResult>()("CheckResult", {
   findings: Schema.Array(FindingRecord),
-  displayedFindings: Schema.Array(FindingRecord),
-  notes: Schema.Array(MatchedNote),
-  unresolvedCount: Schema.Number,
-  resolvedCount: Schema.Number,
-  deferredCount: Schema.Number,
-  pendingApprovalCount: Schema.Number,
+  unresolved: Schema.Array(FindingRecord),
+  accepted: Schema.Array(FindingRecord),
+  lineage: Schema.Array(CheckLineage),
   staleCount: Schema.Number,
+  scope: Schema.Literals(["partial", "complete"]),
+  base: Schema.UndefinedOr(Schema.String),
   exitCode: Schema.Number,
   noMatchingRules: Schema.Boolean,
   availableRules: Schema.Array(Schema.String),

@@ -1,13 +1,13 @@
 {
   "name": "@aurelienbbn/agentlint",
   "version": "0.2.0",
-  "description": "Deterministic triggers for contextual agent guidance and accountable resolution",
+  "description": "Deterministic findings and explicit judgment gates for coding agents",
   "keywords": [
     "agent",
     "ai",
-    "ast",
     "code-review",
-    "linter",
+    "guardrails",
+    "judgment",
     "tanstack-intent",
     "tree-sitter"
   ],
@@ -45,26 +45,23 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.85",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@shopify/liquid-html-parser": "^2.9.2",
-    "effect": "4.0.0-beta.85",
-    "jiti": "^2.7.0",
-    "picomatch": "^4.0.4",
-    "web-tree-sitter": "^0.25.10",
-    "zod": "^4.4.3"
+    "@effect/platform-node": "4.0.0-beta.106",
+    "effect": "4.0.0-beta.106",
+    "jiti": "2.7.0",
+    "picomatch": "4.0.5",
+    "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
-    "@effect/language-service": "^0.86.2",
-    "@tanstack/intent": "latest",
-    "@types/node": "^22.20.0",
-    "@types/picomatch": "^4.0.3",
-    "tree-sitter-wasms": "^0.1.13",
-    "tsdown": "latest",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "@effect/language-service": "0.87.2",
+    "@tanstack/intent": "0.3.6",
+    "@types/node": "26.2.0",
+    "@types/picomatch": "4.0.3",
+    "tree-sitter-wasms": "0.1.13",
+    "tsdown": "0.22.14",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   }
 }

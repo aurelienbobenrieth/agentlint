@@ -30,7 +30,7 @@ export class Env extends Context.Service<
     readonly cwd: string;
     /** CLI arguments excluding node and script path. */
     readonly argv: ReadonlyArray<string>;
-    /** Actor inferred for ledger records. */
+    /** Actor inferred for acceptance records. */
     readonly actor: string;
     /** Node `process.platform` value (e.g. `win32`, `darwin`, `linux`). */
     readonly platform: string;
@@ -40,8 +40,6 @@ export class Env extends Context.Service<
     readonly isTTY: boolean;
     /** Set the process exit code (non-zero signals failure to the shell). */
     setExitCode(code: number): void;
-    /** Read stdin to end. Used by harness hook adapters that receive JSON payloads. */
-    readStdin(): Promise<string>;
   }
 >()("agentlint/Env") {
   /**
@@ -73,13 +71,6 @@ export class Env extends Context.Service<
       setExitCode: (code) => {
         process.exitCode = code;
       },
-      readStdin: () =>
-        new Promise<string>((resolve, reject) => {
-          const chunks: Buffer[] = [];
-          process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
-          process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-          process.stdin.on("error", reject);
-        }),
     });
     /* eslint-enable n/no-process-env */
   });

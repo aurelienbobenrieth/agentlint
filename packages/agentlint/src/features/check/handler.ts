@@ -1,98 +1,81 @@
-/**
- * @module
- * @since 0.1.0
- */
+/** Check application handler. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { withSelector } from "../../domain/finding.js";
-import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { ledgerKey, LedgerStore } from "../../shared/infrastructure/ledger-store.js";
+import { acceptanceKey, findLineage, findingState } from "../../domain/acceptance.js";
+import { findingKey, withSelector } from "../../domain/finding.js";
+import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { CheckCommand, CheckResult } from "./request.js";
 
-/** @since 0.1.0 */
 export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckCommand) {
-  const configLoader = yield* ConfigLoader;
-  const ledgerStore = yield* LedgerStore;
-  const selectorCache = yield* SelectorCache;
+  const store = yield* AcceptanceStore;
+  const selectors = yield* SelectorCache;
+  const collected = yield* collectFindings(command);
 
-  const config = yield* configLoader.load();
-  const availableRules = Object.keys(config.rules ?? {}).toSorted();
-  const result = yield* collectFindings({
-    all: command.all,
-    rules: command.rules,
-    base: command.base,
-    files: command.files,
-  });
-
-  if (result.noMatchingRules) {
+  if (collected.noMatchingRules) {
     return new CheckResult({
       findings: [],
-      displayedFindings: [],
-      notes: [],
-      unresolvedCount: 0,
-      resolvedCount: 0,
-      deferredCount: 0,
-      pendingApprovalCount: 0,
+      unresolved: [],
+      accepted: [],
+      lineage: [],
       staleCount: 0,
+      scope: collected.scope,
+      base: collected.base,
       exitCode: 2,
       noMatchingRules: true,
-      availableRules,
+      availableRules: [...collected.availableRules],
     });
   }
 
-  const snapshot = yield* ledgerStore.read();
-  const currentKeys = new Set(result.findings.map((finding) => ledgerKey(finding.ruleId, finding.hash)));
-  const staleCount = [...snapshot.latestByKey.keys()].filter((key) => !currentKeys.has(key)).length;
+  const snapshot = yield* store.read();
+  const unresolved = collected.findings.filter((finding) => findingState(finding, snapshot.records) === "unresolved");
+  const accepted = collected.findings.filter((finding) => findingState(finding, snapshot.records) === "accepted");
+  const currentKeys = new Set(collected.findings.map(findingKey));
+  const staleCount =
+    collected.scope === "complete"
+      ? snapshot.records.filter((record) => !currentKeys.has(acceptanceKey(record))).length
+      : 0;
+  const selected = unresolved.map((finding, index) => withSelector(finding, String(index + 1)));
+  const lineage = unresolved.flatMap((finding) => {
+    const prior = findLineage(snapshot.records, finding);
+    return prior
+      ? [
+          {
+            findingKey: findingKey(finding),
+            reason: prior.reason,
+            authority: prior.authority,
+            acceptedAt: prior.acceptedAt,
+          },
+        ]
+      : [];
+  });
 
-  const unresolved = [];
-  const resolved = [];
-  const deferred = [];
-  const pendingApproval = [];
+  yield* selectors.write(
+    selected.map((finding) => ({
+      selector: finding.selector ?? "",
+      hash: findingKey(finding),
+      ruleId: finding.ruleId,
+      file: finding.file,
+      line: finding.line,
+      column: finding.column,
+    })),
+  );
 
-  for (const finding of result.findings) {
-    const disposition = snapshot.latestByKey.get(ledgerKey(finding.ruleId, finding.hash));
-    if (!disposition) {
-      unresolved.push(finding);
-    } else {
-      resolved.push(finding);
-      if (disposition.status === "deferred") {
-        deferred.push(finding);
-      } else if (disposition.status === "approval_requested") {
-        pendingApproval.push(finding);
-      }
-    }
-  }
-
-  // Pending approvals let the agent finish its turn locally, but nothing
-  // merges until a human records `approved` — mirrors deferred semantics.
-  const blocking = command.ci ? [...unresolved, ...deferred, ...pendingApproval] : unresolved;
-  const displayedFindings = blocking.map((finding, index) => withSelector(finding, String(index + 1)));
-  if (command.format === "text" || command.format === "jsonl") {
-    yield* selectorCache.write(
-      displayedFindings.map((finding) => ({
-        selector: finding.selector ?? "",
-        hash: finding.hash,
-        ruleId: finding.ruleId,
-        file: finding.file,
-        line: finding.line,
-        column: finding.column,
-      })),
-    );
+  if (collected.scope === "complete" && staleCount > 0) {
+    yield* store.reconcile({ scope: "complete", current: collected.findings });
   }
 
   return new CheckResult({
-    findings: result.findings,
-    displayedFindings,
-    notes: result.notes,
-    unresolvedCount: unresolved.length,
-    resolvedCount: resolved.length,
-    deferredCount: deferred.length,
-    pendingApprovalCount: pendingApproval.length,
+    findings: [...collected.findings],
+    unresolved: selected,
+    accepted: [...accepted],
+    lineage,
     staleCount,
-    exitCode: blocking.length > 0 ? 1 : 0,
+    scope: collected.scope,
+    base: collected.base,
+    exitCode: selected.length > 0 ? 1 : 0,
     noMatchingRules: false,
-    availableRules,
+    availableRules: [...collected.availableRules],
   });
 });

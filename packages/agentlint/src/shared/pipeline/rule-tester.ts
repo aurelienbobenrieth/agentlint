@@ -1,116 +1,169 @@
-/**
- * Rule fixture runner.
- *
- * Executes a rule against in-memory source snippets. Used by
- * `agentlint rules test` and exported for plugin authors who want to
- * assert rule precision inside their own test suites.
- *
- * @module
- * @since 0.2.0
- */
+/** Detector fixture runners. @module @since 0.2.0 */
 
 import { Effect } from "effect";
 import type { FindingRecord } from "../../domain/finding.js";
-import { ruleMatches, type AgentlintRule } from "../../domain/rule.js";
+import {
+  ruleMatches,
+  type AgentlintRule,
+  type ChangeFindingOptions,
+  type ChangeFixture,
+  type ChangeRule,
+  type ChangeSet,
+  type ChangedFile,
+  type StateFixture,
+  type StateRule,
+} from "../../domain/rule.js";
 import { RuleContextImpl } from "../../domain/rule-context.js";
+import { fnv1a7 } from "../../domain/hash.js";
 import { Parser } from "../infrastructure/parser.js";
 import { grammarForExtension } from "./language-map.js";
 import { compileMatches, PatternError, resolveWhereClauses, runMatches } from "./pattern-match.js";
 import { walkFile } from "./tree-walker.js";
 
-/**
- * Run a single rule against one in-memory source snippet.
- *
- * `file` is a pseudo-filename whose extension selects the grammar
- * (e.g. `fixture.tsx`).
- *
- * @since 0.2.0
- * @category constructors
- */
-export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
-  rule: AgentlintRule,
-  source: string,
-  file: string,
+/** Run one state detector against an in-memory repository. */
+export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
+  rule: StateRule,
+  sources: ReadonlyArray<readonly [file: string, source: string]>,
 ) {
   const parser = yield* Parser;
-  const extension = file.includes(".") ? (file.split(".").pop() ?? "") : "";
-  const grammar = grammarForExtension(extension);
-  if (!grammar) {
-    return yield* new PatternError({ ruleId: rule.id, reason: "unknown_fixture_grammar", detail: file });
+  const context = new RuleContextImpl(rule);
+  const visitors = rule.detector.createOnce?.(context, rule.binding.options) ?? {};
+  const findings: FindingRecord[] = [];
+
+  for (const [file, source] of sources) {
+    const extension = file.includes(".") ? (file.split(".").pop() ?? "") : "";
+    const grammar = grammarForExtension(extension);
+    if (!grammar) {
+      return yield* new PatternError({ ruleId: rule.binding.id, reason: "unknown_fixture_grammar", detail: file });
+    }
+    context.setFile(file, file, source);
+    if (visitors.before?.(file) === false) continue;
+    const tree = yield* parser.parse(source, grammar);
+    const matches = ruleMatches(rule);
+    if (matches.length > 0) {
+      const compiled = yield* compileMatches({ ruleId: rule.binding.id, matches, grammar });
+      const runnable = yield* resolveWhereClauses(rule.binding.id, compiled, grammar);
+      runMatches(tree, runnable, context);
+    }
+    findings.push(...walkFile(tree, [{ ruleId: rule.binding.id, context, visitors }]));
+    findings.push(...context.drainFindings());
   }
-
-  const context = new RuleContextImpl(rule.id);
-  context.setFile(file, file, source);
-  const visitors = rule.createOnce?.(context) ?? {};
-  if (visitors.before?.(file) === false) return [] as ReadonlyArray<FindingRecord>;
-
-  const tree = yield* parser.parse(source, grammar);
-
-  const matches = ruleMatches(rule);
-  if (matches.length > 0) {
-    const compiled = yield* compileMatches({ ruleId: rule.id, matches, grammar });
-    const runnable = yield* resolveWhereClauses(rule.id, compiled, grammar);
-    runMatches(tree, runnable, context);
-  }
-
-  const findings = [...walkFile(tree, [{ ruleId: rule.id, context, visitors }])];
   visitors.after?.();
   findings.push(...context.drainFindings());
   return findings as ReadonlyArray<FindingRecord>;
 });
 
-/**
- * One fixture expectation that did not hold.
- *
- * @since 0.2.0
- * @category models
- */
+/** Run one state detector against one source file. */
+export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
+  rule: StateRule,
+  source: string,
+  file = "fixture.tsx",
+) {
+  return yield* runRuleOnSources(rule, [[file, source]]);
+});
+
+export interface ReportedChangeFinding extends ChangeFindingOptions {}
+
+/** Run one change detector against an already normalized change. */
+export function runRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<ReportedChangeFinding> {
+  const findings: ReportedChangeFinding[] = [];
+  rule.detector.detect({ change, report: (finding) => findings.push(finding) }, rule.binding.options);
+  return findings;
+}
+
+function snapshot(content: string): { readonly content: string; readonly digest: string } {
+  return { content, digest: fnv1a7(content.replace(/\r\n/g, "\n")) };
+}
+
+/** Normalize a compact before-and-after fixture to the public change contract. */
+export function normalizeChangeFixture(fixture: ChangeFixture): ChangeSet {
+  if ("change" in fixture) return fixture.change;
+  const before = fixture.before ?? {};
+  const after = fixture.after ?? {};
+  const paths = [...new Set([...Object.keys(before), ...Object.keys(after)])].toSorted();
+  const files: ChangedFile[] = [];
+  for (const path of paths) {
+    const oldContent = before[path];
+    const newContent = after[path];
+    if (oldContent === newContent) continue;
+    const status = oldContent === undefined ? "added" : newContent === undefined ? "deleted" : "modified";
+    const oldLines = oldContent?.split("\n") ?? [];
+    const newLines = newContent?.split("\n") ?? [];
+    files.push({
+      status,
+      path: path.replace(/\\/g, "/"),
+      before: oldContent === undefined ? null : snapshot(oldContent),
+      after: newContent === undefined ? null : snapshot(newContent),
+      hunks: [
+        {
+          oldStart: oldLines.length === 0 ? 0 : 1,
+          oldLines: oldLines.length,
+          newStart: newLines.length === 0 ? 0 : 1,
+          newLines: newLines.length,
+          lines: [
+            ...oldLines.map((content) => ({ kind: "deletion" as const, content })),
+            ...newLines.map((content) => ({ kind: "addition" as const, content })),
+          ],
+        },
+      ],
+    });
+  }
+  return { baseline: { kind: "git", ref: "fixture" }, files };
+}
+
 export interface FixtureFailure {
-  readonly kind: "invalid" | "valid";
+  readonly expectation: "mustReport" | "mustStaySilent";
   readonly index: number;
-  readonly code: string;
+  readonly label?: string | undefined;
   readonly findingCount: number;
 }
 
-/**
- * @since 0.2.0
- * @category models
- */
 export interface FixtureReport {
   readonly ruleId: string;
   readonly total: number;
   readonly failures: ReadonlyArray<FixtureFailure>;
 }
 
-/**
- * Run all fixtures of a rule: `invalid` snippets must produce at least one
- * finding, `valid` snippets none.
- *
- * @since 0.2.0
- * @category constructors
- */
+function stateFiles(fixture: StateFixture): ReadonlyArray<readonly [string, string]> {
+  if (typeof fixture === "string") return [["fixture.tsx", fixture]];
+  if ("source" in fixture) return [[fixture.file ?? "fixture.tsx", fixture.source]];
+  return Object.entries(fixture.files).toSorted(([left], [right]) => left.localeCompare(right));
+}
+
+function fixtureLabel(fixture: StateFixture | ChangeFixture): string | undefined {
+  return typeof fixture === "string" ? undefined : fixture.label;
+}
+
+const runStateFixture = Effect.fn("runStateFixture")(function* (rule: StateRule, fixture: StateFixture) {
+  return (yield* runRuleOnSources(rule, stateFiles(fixture))).length;
+});
+
+/** Run activation and silence fixtures for either lifecycle. */
 export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: AgentlintRule) {
-  const file = rule.fixtures?.file ?? "fixture.tsx";
-  const invalid = rule.fixtures?.invalid ?? [];
-  const valid = rule.fixtures?.valid ?? [];
+  const fixtures = rule.detector.fixtures;
+  const mustReport = fixtures?.mustReport ?? [];
+  const mustStaySilent = fixtures?.mustStaySilent ?? [];
   const failures: FixtureFailure[] = [];
 
-  for (const [index, code] of invalid.entries()) {
-    const findings = yield* runRuleOnSource(rule, code, file);
-    if (findings.length === 0) {
-      failures.push({ kind: "invalid", index, code, findingCount: 0 });
-    }
+  for (const [index, fixture] of mustReport.entries()) {
+    const count =
+      rule.lifecycle === "state"
+        ? yield* runStateFixture(rule, fixture as StateFixture)
+        : runRuleOnChange(rule, normalizeChangeFixture(fixture as ChangeFixture)).length;
+    if (count === 0) failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
   }
-  for (const [index, code] of valid.entries()) {
-    const findings = yield* runRuleOnSource(rule, code, file);
-    if (findings.length > 0) {
-      failures.push({ kind: "valid", index, code, findingCount: findings.length });
-    }
+  for (const [index, fixture] of mustStaySilent.entries()) {
+    const count =
+      rule.lifecycle === "state"
+        ? yield* runStateFixture(rule, fixture as StateFixture)
+        : runRuleOnChange(rule, normalizeChangeFixture(fixture as ChangeFixture)).length;
+    if (count > 0)
+      failures.push({ expectation: "mustStaySilent", index, label: fixtureLabel(fixture), findingCount: count });
   }
 
   return {
-    ruleId: rule.id,
-    total: invalid.length + valid.length,
+    ruleId: rule.binding.id,
+    total: mustReport.length + mustStaySilent.length,
     failures,
   } satisfies FixtureReport;
 });

@@ -26,8 +26,8 @@ export type GuidanceRef = Schema.Schema.Type<typeof GuidanceRef>;
 
 export const GuidanceExample = Schema.Struct({
   label: Schema.optional(Schema.String),
-  bad: Schema.optional(Schema.String),
-  good: Schema.optional(Schema.String),
+  code: Schema.String,
+  description: Schema.optional(Schema.String),
 });
 
 export type GuidanceExample = Schema.Schema.Type<typeof GuidanceExample>;

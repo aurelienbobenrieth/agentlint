@@ -2,7 +2,7 @@
   "name": "agentlint-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Workspace for agentlint: deterministic triggers for contextual agent guidance and accountable resolution.",
+  "description": "Workspace for agentlint: deterministic findings and explicit judgment gates for coding agents.",
   "license": "MIT",
   "author": "Aurelien Bobenrieth",
   "repository": {
@@ -13,25 +13,25 @@
   "scripts": {
     "build": "pnpm --filter @aurelienbbn/agentlint build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @aurelienbbn/agentlint test",
+    "test": "pnpm -r test",
     "test:watch": "pnpm --filter @aurelienbbn/agentlint test:watch",
     "lint": "oxlint",
     "fmt": "oxfmt --write",
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test && pnpm check:agentlint",
-    "check:agentlint": "node packages/agentlint/dist/bin.mjs rules test && node packages/agentlint/dist/bin.mjs check --all --ci"
+    "check:agentlint": "node packages/agentlint/dist/bin.mjs rules test && node packages/agentlint/dist/bin.mjs check --all"
   },
   "devDependencies": {
     "@aurelienbbn/agentlint": "workspace:*",
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.0",
-    "@tanstack/intent": "latest",
-    "oxfmt": "latest",
-    "oxlint": "^1.71.0"
+    "@changesets/changelog-github": "0.7.0",
+    "@changesets/cli": "2.31.1",
+    "@tanstack/intent": "0.3.6",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   },
   "packageManager": "pnpm@10.28.0"
 }

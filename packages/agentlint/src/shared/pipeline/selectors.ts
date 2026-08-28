@@ -10,7 +10,7 @@
  * @since 0.2.0
  */
 
-import type { FindingRecord } from "../../domain/finding.js";
+import { findingKey, type FindingRecord } from "../../domain/finding.js";
 import type { SelectorCachePayload } from "../infrastructure/selector-cache.js";
 
 export type SelectorResolution =
@@ -35,7 +35,7 @@ export function resolveFindingSelector(
   const cachedHash = resolveHashFromCache(normalized, cache);
   const hash = cachedHash ?? normalized;
 
-  const hashMatch = findings.find((finding) => finding.hash === hash);
+  const hashMatch = findings.find((finding) => findingKey(finding) === hash || finding.fingerprint.digest === hash);
   if (hashMatch) {
     return { ok: true, finding: hashMatch };
   }

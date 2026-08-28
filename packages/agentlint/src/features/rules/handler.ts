@@ -1,79 +1,103 @@
+/** Rule listing, fixture testing, and calibration handlers. @module @since 0.2.0 */
+
 import { Effect } from "effect";
-import { compactStandard } from "../../domain/guidance.js";
-import { normalizeConfig, policyForRule } from "../../domain/config.js";
+import { normalizeConfig } from "../../domain/config.js";
+import type { AgentlintRule } from "../../domain/rule.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
+import { collectFindings, ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
 import { runRuleFixtures } from "../../shared/pipeline/rule-tester.js";
-import { RulesListCommand, RulesListResult, RulesTestCommand, RulesTestResult } from "./request.js";
+import {
+  RulesListCommand,
+  RulesListResult,
+  RulesScanCommand,
+  RulesScanResult,
+  RulesTestCommand,
+  RulesTestResult,
+} from "./request.js";
+
+function selectRules(
+  rules: ReadonlyArray<AgentlintRule>,
+  requested: ReadonlyArray<string>,
+): ReadonlyArray<AgentlintRule> {
+  return requested.length ? rules.filter((rule) => requested.includes(rule.binding.id)) : rules;
+}
 
 export const rulesListHandler = Effect.fn("rulesListHandler")(function* (command: RulesListCommand) {
-  const configLoader = yield* ConfigLoader;
-  const config = normalizeConfig(yield* configLoader.load());
+  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
   const file = command.file?.replace(/\\/g, "/");
-
   return new RulesListResult({
-    rules: Object.values(config.rules)
+    rules: config.rules
       .map((rule) => ({
-        id: rule.id,
-        description: rule.description,
-        persistence: policyForRule(config, rule.id).persistence ?? "ephemeral",
-        standard: compactStandard(rule.guidance),
-        enabled: file ? ruleEnabledForFile(config, file, rule.id) : true,
+        id: rule.binding.id,
+        title: rule.standard.title,
+        standardId: rule.standard.id,
+        lifecycle: rule.lifecycle,
+        authority: rule.binding.authority,
+        detector: `${rule.detector.id}@${rule.detector.version}`,
+        enabled: file ? ruleEnabledForFile(rule, file) : true,
       }))
-      .toSorted((a, b) => a.id.localeCompare(b.id)),
+      .toSorted((left, right) => left.id.localeCompare(right.id)),
   });
 });
 
 export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command: RulesTestCommand) {
-  const configLoader = yield* ConfigLoader;
-  const config = normalizeConfig(yield* configLoader.load());
-
-  let rules = Object.values(config.rules).toSorted((a, b) => a.id.localeCompare(b.id));
-  if (command.rules.length > 0) {
-    rules = rules.filter((rule) => command.rules.includes(rule.id));
-    if (rules.length === 0) {
-      return new RulesTestResult({
-        message: `No matching rules. Available: ${Object.keys(config.rules).toSorted().join(", ")}`,
-        exitCode: 2,
-      });
-    }
+  const config = normalizeConfig(yield* (yield* ConfigLoader).load());
+  const rules = selectRules(config.rules, command.rules).toSorted((left, right) =>
+    left.binding.id.localeCompare(right.binding.id),
+  );
+  if (rules.length === 0) {
+    return new RulesTestResult({
+      message: `No matching rules. Available: ${config.rules
+        .map((rule) => rule.binding.id)
+        .toSorted()
+        .join(", ")}`,
+      exitCode: 2,
+    });
   }
 
   const lines: string[] = [];
-  let failedRules = 0;
-  let skipped = 0;
-
+  let failed = 0;
+  let withoutFixtures = 0;
   for (const rule of rules) {
-    const invalid = rule.fixtures?.invalid ?? [];
-    const valid = rule.fixtures?.valid ?? [];
-    if (invalid.length === 0 && valid.length === 0) {
-      skipped++;
-      lines.push(`skip ${rule.id} (no fixtures)`);
+    const report = yield* runRuleFixtures(rule);
+    if (report.total === 0) {
+      withoutFixtures++;
+      lines.push(`skip ${report.ruleId} (no fixtures)`);
       continue;
     }
-
-    const report = yield* runRuleFixtures(rule);
     if (report.failures.length === 0) {
-      lines.push(`pass ${rule.id} (${report.total} fixture${report.total === 1 ? "" : "s"})`);
-    } else {
-      failedRules++;
-      lines.push(`FAIL ${rule.id} (${report.failures.length}/${report.total} fixtures failed)`);
-      for (const failure of report.failures) {
-        const expectation =
-          failure.kind === "invalid"
-            ? "expected at least one finding, got none"
-            : `expected no findings, got ${failure.findingCount}`;
-        lines.push(`  ${failure.kind}[${failure.index}]: ${expectation}`);
-        const snippet = failure.code.trim().split("\n")[0] ?? "";
-        lines.push(`    ${snippet.length > 80 ? snippet.slice(0, 77) + "..." : snippet}`);
-      }
+      lines.push(`pass ${report.ruleId} (${report.total} fixture${report.total === 1 ? "" : "s"})`);
+      continue;
+    }
+    failed++;
+    lines.push(`FAIL ${report.ruleId} (${report.failures.length}/${report.total} fixtures failed)`);
+    for (const failure of report.failures) {
+      const expectation =
+        failure.expectation === "mustReport"
+          ? "expected at least one finding, got none"
+          : `expected no findings, got ${failure.findingCount}`;
+      lines.push(
+        `  ${failure.expectation}[${failure.index}]${failure.label ? ` ${failure.label}` : ""}: ${expectation}`,
+      );
     }
   }
+  const parts = [`${rules.length - failed - withoutFixtures} passed`];
+  if (failed) parts.push(`${failed} failed`);
+  if (withoutFixtures) parts.push(`${withoutFixtures} without fixtures`);
+  lines.push("", parts.join(", "));
+  return new RulesTestResult({ message: lines.join("\n"), exitCode: failed ? 1 : 0 });
+});
 
-  const summaryParts = [`${rules.length - failedRules - skipped} passed`];
-  if (failedRules > 0) summaryParts.push(`${failedRules} failed`);
-  if (skipped > 0) summaryParts.push(`${skipped} without fixtures`);
-  lines.push("", summaryParts.join(", "));
-
-  return new RulesTestResult({ message: lines.join("\n"), exitCode: failedRules > 0 ? 1 : 0 });
+export const rulesScanHandler = Effect.fn("rulesScanHandler")(function* (command: RulesScanCommand) {
+  const fixtures = yield* rulesTestHandler(new RulesTestCommand({ rules: [...command.rules] }));
+  if (fixtures.exitCode !== 0) {
+    return new RulesScanResult({ findings: [], fixtureMessage: fixtures.message, exitCode: fixtures.exitCode });
+  }
+  const collected = yield* collectFindings({
+    all: true,
+    rules: [...command.rules],
+    base: command.base,
+    files: [...command.files],
+  });
+  return new RulesScanResult({ findings: [...collected.findings], fixtureMessage: fixtures.message, exitCode: 0 });
 });

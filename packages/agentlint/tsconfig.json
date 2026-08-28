@@ -10,7 +10,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "esModuleInterop": false,
     "plugins": [{ "name": "@effect/language-service" }],
     "types": ["node"]
   },

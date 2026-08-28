@@ -1,23 +1,26 @@
 import { defineConfig, defineRule } from "../../../src/index.js";
 
 const noNoiseComments = defineRule({
-  id: "comments/no-noise",
-  description: "Flags comments for guidance.",
-  guidance: "Comments should add durable context beyond the code.",
-  createOnce(context) {
-    return {
-      comment(node) {
-        const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text.length === 0) return;
-        context.report({ node, message: `Comment: "${text.slice(0, 60)}"` });
-      },
-    };
+  lifecycle: "state",
+  standard: {
+    id: "comments/durable-context",
+    revision: 1,
+    title: "Comments add durable context",
+    guidance: "Comments explain intent the code cannot express on its own.",
   },
+  detector: {
+    id: "typescript/non-empty-comments",
+    version: 1,
+    createOnce(context) {
+      return {
+        comment(node) {
+          const text = node.text.replace(/^\/\/\s*/, "").trim();
+          if (text) context.report({ node, message: `Review comment: ${text.slice(0, 60)}` });
+        },
+      };
+    },
+  },
+  binding: { id: "comments/no-noise", authority: "agent", include: ["src/**/*.{ts,tsx}"] },
 });
 
-export default defineConfig({
-  rules: {
-    "comments/no-noise": noNoiseComments,
-  },
-  files: ["src/**/*.{ts,tsx}"],
-});
+export default defineConfig({ rules: [noNoiseComments] });

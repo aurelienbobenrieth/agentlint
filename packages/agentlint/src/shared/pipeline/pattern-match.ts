@@ -33,7 +33,7 @@ import { Parser } from "../infrastructure/parser.js";
  * @since 0.2.0
  * @category errors
  */
-export class PatternError extends Schema.TaggedErrorClass<PatternError>()("agentlint/PatternError", {
+export class PatternError extends Schema.TaggedError<PatternError>()("agentlint/PatternError", {
   ruleId: Schema.String,
   reason: Schema.Literals(["pattern_parse", "query_invalid", "unsupported_frontend", "unknown_fixture_grammar"]),
   grammar: Schema.optional(Schema.String),

@@ -11,7 +11,6 @@
 import { Context, Effect, FileSystem, HashMap, Layer, Option, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
 import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
-import { parseLiquidTree } from "./liquid-tree.js";
 
 /**
  * Raised when parsing fails — e.g. missing grammar, corrupt WASM, or
@@ -20,7 +19,7 @@ import { parseLiquidTree } from "./liquid-tree.js";
  * @since 0.1.0
  * @category errors
  */
-export class ParserError extends Schema.TaggedErrorClass<ParserError>()("agentlint/ParserError", {
+export class ParserError extends Schema.TaggedError<ParserError>()("agentlint/ParserError", {
   reason: Schema.Literals(["wasm_missing", "unknown_grammar", "init_failed", "load_failed", "parse_failed"]),
   grammar: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
@@ -78,12 +77,8 @@ export class Parser extends Context.Service<
   Parser,
   {
     parse(source: string, grammar: string): Effect.Effect<Tree, ParserError>;
-    /**
-     * The loaded tree-sitter `Language` for a grammar, or `undefined` for
-     * frontends that are not tree-sitter backed (e.g. liquid). Needed to
-     * construct tree-sitter queries.
-     */
-    language(grammar: string): Effect.Effect<Language | undefined, ParserError>;
+    /** The loaded tree-sitter language used to construct queries. */
+    language(grammar: string): Effect.Effect<Language, ParserError>;
   }
 >()("agentlint/Parser") {
   /** Default layer — lazily initializes WASM and caches grammars. */
@@ -100,16 +95,20 @@ export class Parser extends Context.Service<
           const distPath = resolvePackagedWasmPath(path, thisDir, filename);
           if (yield* fs.exists(distPath).pipe(Effect.orElseSucceed(() => false))) return distPath;
 
-          const nmBase = path.resolve(env.cwd, "node_modules");
-          if (filename === "tree-sitter.wasm") {
-            const p = path.resolve(nmBase, "web-tree-sitter", filename);
-            if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
-
-            const renamed = path.resolve(nmBase, "web-tree-sitter", "web-tree-sitter.wasm");
-            if (yield* fs.exists(renamed).pipe(Effect.orElseSucceed(() => false))) return renamed;
-          } else {
-            const p = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
-            if (yield* fs.exists(p).pipe(Effect.orElseSucceed(() => false))) return p;
+          const dependencyRoots = [
+            path.resolve(env.cwd, "node_modules"),
+            path.resolve(thisDir, "..", "..", "..", "node_modules"),
+          ];
+          for (const nmBase of dependencyRoots) {
+            if (filename === "tree-sitter.wasm") {
+              const current = path.resolve(nmBase, "web-tree-sitter", filename);
+              if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
+              const legacy = path.resolve(nmBase, "web-tree-sitter", "web-tree-sitter.wasm");
+              if (yield* fs.exists(legacy).pipe(Effect.orElseSucceed(() => false))) return legacy;
+            } else {
+              const grammar = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
+              if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;
+            }
           }
 
           return yield* new ParserError({ reason: "wasm_missing", detail: filename });
@@ -159,18 +158,6 @@ export class Parser extends Context.Service<
       return Parser.of({
         parse: (source, grammar) =>
           Effect.gen(function* () {
-            if (grammar === "liquid") {
-              return yield* Effect.try({
-                try: () => parseLiquidTree(source),
-                catch: (error) =>
-                  new ParserError({
-                    reason: "parse_failed",
-                    grammar,
-                    detail: error instanceof Error ? error.message : String(error),
-                  }),
-              });
-            }
-
             const parser = yield* ensureInit;
             const lang = yield* loadLanguage(grammar);
             parser.setLanguage(lang);
@@ -179,12 +166,7 @@ export class Parser extends Context.Service<
             return tree;
           }),
 
-        language: (grammar) =>
-          Effect.gen(function* () {
-            if (grammar === "liquid") return undefined;
-            yield* ensureInit;
-            return yield* loadLanguage(grammar);
-          }),
+        language: (grammar) => ensureInit.pipe(Effect.andThen(loadLanguage(grammar))),
       });
     }),
   );

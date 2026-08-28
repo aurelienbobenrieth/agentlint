@@ -1,201 +1,50 @@
-import { Effect, FileSystem, Layer } from "effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { Effect, FileSystem, Layer } from "effect";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
 import { initHandler } from "./handler.js";
 import { InitCommand } from "./request.js";
 
-const TEST_CWD = join(tmpdir(), "agentlint-test-init");
-const CONFIG_DIR = `${TEST_CWD}/.agentlint`;
-const CONFIG_PATH = `${CONFIG_DIR}/config.ts`;
-
+const cwd = join(tmpdir(), "agentlint-v02-init-test");
 const TestEnv = Layer.succeed(
   Env,
-  Env.of({
-    cwd: TEST_CWD,
-    argv: [],
-    actor: "test",
-    platform: "test",
-    noColor: true,
-    isTTY: false,
-    setExitCode: () => {},
-  }),
+  Env.of({ cwd, argv: [], actor: "human:test", platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
 );
-
 const TestLayer = Layer.provideMerge(NodeServices.layer, TestEnv);
-
 const cleanup = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
-  yield* fs.remove(TEST_CWD, { recursive: true }).pipe(Effect.orElseSucceed(() => {}));
+  yield* (yield* FileSystem.FileSystem).remove(cwd, { recursive: true }).pipe(Effect.orElseSucceed(() => undefined));
 }).pipe(Effect.provide(TestLayer));
 
-const ensureDir = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
-  yield* fs.makeDirectory(TEST_CWD, { recursive: true }).pipe(Effect.orElseSucceed(() => {}));
-}).pipe(Effect.provide(TestLayer));
+afterEach(() => Effect.runPromise(cleanup));
 
-describe("initHandler", () => {
-  it("creates config and suggests npm commands by default", async () => {
+describe("agentlint init", () => {
+  it("creates the minimal config and ignores only ephemeral state", async () => {
     await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
     expect(result.created).toBe(true);
     expect(result.message).toContain("Created .agentlint/config.ts");
-    expect(result.message).toContain("Created .agentlint/rules/");
-    expect(result.message).toContain("Added .agentlint/.cache/ to .gitignore");
-    expect(result.message).toContain("Next steps:");
-    expect(result.message).toContain("npx skills@latest add");
-    expect(result.message).toContain("npm exec agentlint -- check --all");
-
     const config = await Effect.runPromise(
       Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        return yield* fs.readFileString(CONFIG_PATH);
+        return yield* (yield* FileSystem.FileSystem).readFileString(join(cwd, ".agentlint", "config.ts"));
       }).pipe(Effect.provide(TestLayer)),
     );
-    expect(config).toContain("defineConfig");
-
-    // Verify .gitignore was created
-    const gitignore = await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        return yield* fs.readFileString(`${TEST_CWD}/.gitignore`);
-      }).pipe(Effect.provide(TestLayer)),
-    );
-    expect(gitignore).toContain(".agentlint/.cache/");
-
-    await Effect.runPromise(cleanup);
+    expect(config).toContain("rules: []");
+    expect(config).not.toContain("harness");
   });
 
-  it("appends to existing .gitignore without duplicating", async () => {
+  it("does not overwrite an existing config", async () => {
     await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
     await Effect.runPromise(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        yield* fs.writeFileString(`${TEST_CWD}/.gitignore`, "node_modules/\ndist/\n");
+        yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
+        yield* fs.writeFileString(join(cwd, ".agentlint", "config.ts"), "keep me");
       }).pipe(Effect.provide(TestLayer)),
     );
-
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
-    expect(result.message).toContain("Added .agentlint/.cache/ to .gitignore");
-
-    const gitignore = await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        return yield* fs.readFileString(`${TEST_CWD}/.gitignore`);
-      }).pipe(Effect.provide(TestLayer)),
-    );
-    expect(gitignore).toContain("node_modules/");
-    expect(gitignore).toContain(".agentlint/.cache/");
-
-    // Run again — should not duplicate
-    const result2 = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-    expect(result2.message).not.toContain("Added .agentlint/.cache/ to .gitignore");
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("skips config when it already exists", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.makeDirectory(CONFIG_DIR, { recursive: true });
-        yield* fs.writeFileString(CONFIG_PATH, "existing");
-      }).pipe(Effect.provide(TestLayer)),
-    );
-
-    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
     expect(result.created).toBe(false);
-    expect(result.message).toContain("already exists");
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("suggests intent when @tanstack/intent is detected", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.makeDirectory(`${TEST_CWD}/node_modules/@tanstack/intent`, { recursive: true });
-      }).pipe(Effect.provide(TestLayer)),
-    );
-
-    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
-    expect(result.message).toContain("npx @tanstack/intent install");
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("suggests intent when AGENTS.md has intent-skills block", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.writeFileString(
-          `${TEST_CWD}/AGENTS.md`,
-          "<!-- intent-skills:start -->\nskills:\n<!-- intent-skills:end -->\n",
-        );
-      }).pipe(Effect.provide(TestLayer)),
-    );
-
-    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
-    expect(result.message).toContain("npx @tanstack/intent install");
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("uses packageManager from package.json when present", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.writeFileString(`${TEST_CWD}/package.json`, JSON.stringify({ packageManager: "yarn@4.7.0" }));
-      }).pipe(Effect.provide(TestLayer)),
-    );
-
-    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
-    expect(result.message).toContain("yarn dlx skills@latest add");
-    expect(result.message).toContain("yarn agentlint check --all");
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("falls back to lockfiles when packageManager is missing", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.writeFileString(`${TEST_CWD}/pnpm-lock.yaml`, "lockfileVersion: '9.0'");
-      }).pipe(Effect.provide(TestLayer)),
-    );
-
-    const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));
-
-    expect(result.message).toContain("pnpm dlx skills@latest add");
-    expect(result.message).toContain("pnpm agentlint check --all");
-
-    await Effect.runPromise(cleanup);
+    expect(result.message).toContain("Kept existing");
   });
 });

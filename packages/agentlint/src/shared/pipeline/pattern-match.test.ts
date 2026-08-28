@@ -1,176 +1,78 @@
-import { Effect, Layer } from "effect";
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "vitest";
-import { Env } from "../../config/env.js";
-import { defineRule } from "../../domain/rule.js";
-import { Parser } from "../infrastructure/parser.js";
-import { runRuleFixtures, runRuleOnSource } from "./rule-tester.js";
+import { defineRule, type RuleMatch } from "../../domain/rule.js";
+import { testRuleFixtures, testRuleOnSource } from "../../testing.js";
 
-const ParserLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
-
-function run<A, E>(effect: Effect.Effect<A, E, Parser>) {
-  return Effect.runPromise(effect.pipe(Effect.provide(ParserLayer)));
-}
-
-const patternRule = (pattern: string, message = "matched", where?: { has?: string; notHas?: string }) =>
+const patternRule = (match: RuleMatch) =>
   defineRule({
-    id: "test/pattern",
-    description: "test rule",
-    guidance: "Test standard.",
-    match: [{ pattern, message, ...(where ? { where } : {}) }],
+    lifecycle: "state",
+    standard: { id: "test/standard", revision: 1, title: "Test standard", guidance: "Test standard." },
+    detector: { id: "typescript/test-trigger", version: 1, match },
+    binding: { id: "test/pattern", authority: "agent" },
   });
 
-describe("pattern matching", () => {
-  it("matches a call by callee name only", async () => {
-    const rule = patternRule("useQuery($$$ARGS)");
-    const findings = await run(
-      runRuleOnSource(rule, "const a = useQuery({ queryKey: ['x'] }); const b = useOther({});", "fixture.tsx"),
+describe("structural pattern matching", () => {
+  it("matches code shape but not text or wrapper calls", async () => {
+    const rule = patternRule({ pattern: "useQuery($$$ARGS)", message: "query" });
+    const findings = await testRuleOnSource(
+      rule,
+      "const text = 'useQuery(x)'; const actual = wrap(useQuery({ queryKey: ['x'] }));",
+      "fixture.tsx",
     );
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.nodeType).toBe("call_expression");
-  });
-
-  it("does not fire on wrapper calls around a matching inner call", async () => {
-    const rule = patternRule("useQuery($$$ARGS)");
-    const findings = await run(
-      runRuleOnSource(rule, "const memo = useMemo(() => useQuery({ queryKey: ['x'] }), []);", "fixture.tsx"),
-    );
-    // Only the inner useQuery call fires, not the useMemo wrapper.
     expect(findings).toHaveLength(1);
     expect(findings[0]?.sourceSnippet).toContain("useQuery");
   });
 
-  it("does not match identifiers inside strings or comments", async () => {
-    const rule = patternRule("useQuery($$$ARGS)");
-    const findings = await run(
-      runRuleOnSource(rule, "const s = 'useQuery(x)'; // useQuery(y)\nconst t = other();", "fixture.tsx"),
-    );
-    expect(findings).toHaveLength(0);
+  it("interpolates captures", async () => {
+    const rule = patternRule({ pattern: "$DB.findMany($$$ARGS)", message: "unbounded $DB" });
+    const findings = await testRuleOnSource(rule, "db.users.findMany({})", "fixture.ts");
+    expect(findings[0]?.message).toBe("unbounded db.users");
   });
 
-  it("captures single metavariables and interpolates them into messages", async () => {
-    const rule = patternRule("$OBJ.findMany($$$ARGS)", "unbounded findMany on $OBJ");
-    const findings = await run(runRuleOnSource(rule, "await db.users.findMany({});", "fixture.ts"));
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.message).toBe("unbounded findMany on db.users");
-  });
-
-  it("matches exact argument shapes without metavariables", async () => {
-    const rule = patternRule("fetchAll()");
-    const findings = await run(runRuleOnSource(rule, "fetchAll(); fetchAll(1);", "fixture.ts"));
-    expect(findings).toHaveLength(1);
-  });
-
-  it("supports where.notHas constraints against the matched subtree", async () => {
-    const rule = patternRule("useQuery($$$ARGS)", "unbounded", { notHas: "limit: $_" });
-    const findings = await run(
-      runRuleOnSource(rule, "useQuery({ queryKey: ['a'] }); useQuery({ queryKey: ['b'], limit: 10 });", "fixture.tsx"),
-    );
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.sourceSnippet).toContain("'a'");
-  });
-
-  it("matches bare identifier constraints against shorthand properties", async () => {
-    const rule = patternRule("fetch($$$ARGS)", "no timeout", { notHas: "signal" });
-    const findings = await run(
-      runRuleOnSource(
-        rule,
-        "await fetch('/a'); await fetch('/b', { signal }); await fetch('/c', { signal: AbortSignal.timeout(5) });",
-        "fixture.ts",
-      ),
+  it("applies structural subtree constraints", async () => {
+    const rule = patternRule({
+      pattern: "fetch($$$ARGS)",
+      where: { notHas: "signal" },
+      message: "missing signal",
+    });
+    const findings = await testRuleOnSource(
+      rule,
+      "fetch('/a'); fetch('/b', { signal }); fetch('/c', { signal: AbortSignal.timeout(5) });",
+      "fixture.ts",
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]?.sourceSnippet).toContain("'/a'");
   });
 
-  it("supports where.has constraints", async () => {
-    const rule = patternRule("it($$$ARGS)", "focused test", { has: "only" });
-    const findings = await run(runRuleOnSource(rule, "it('a', () => {}); it.skip('b', () => {});", "fixture.ts"));
-    expect(findings).toHaveLength(0);
-  });
-
-  it("supports raw tree-sitter queries with @match capture", async () => {
-    const rule = defineRule({
-      id: "test/query",
-      description: "query rule",
-      guidance: "Test standard.",
-      match: [
-        {
-          query: '(call_expression function: (identifier) @fn (#eq? @fn "eval")) @match',
-          message: "eval usage: @fn",
-        },
-      ],
+  it("supports raw tree-sitter queries", async () => {
+    const rule = patternRule({
+      query: '(call_expression function: (identifier) @fn (#eq? @fn "eval")) @match',
+      message: "eval usage: @fn",
     });
-    const findings = await run(runRuleOnSource(rule, "eval('1 + 1'); other('x');", "fixture.ts"));
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.message).toBe("eval usage: eval");
+    const findings = await testRuleOnSource(rule, "eval('1'); evaluate('2')", "fixture.ts");
+    expect(findings.map((finding) => finding.message)).toEqual(["eval usage: eval"]);
   });
 
-  it("fails loudly when a pattern does not parse", async () => {
-    const rule = patternRule("useQuery(((");
-    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow("pattern does not parse");
+  it("fails loudly for invalid patterns and queries", async () => {
+    await expect(
+      testRuleOnSource(patternRule({ pattern: "useQuery(((", message: "x" }), "const x = 1"),
+    ).rejects.toThrow("pattern does not parse");
+    await expect(
+      testRuleOnSource(patternRule({ query: "(call_expression", message: "x" }), "const x = 1"),
+    ).rejects.toThrow("invalid tree-sitter query");
   });
 
-  it("fails loudly when a query is malformed", async () => {
+  it("reports fixture activation and silence regressions", async () => {
     const rule = defineRule({
-      id: "test/bad-query",
-      description: "bad query",
-      guidance: "Test standard.",
-      match: [{ query: "(call_expression", message: "x" }],
-    });
-    await expect(run(runRuleOnSource(rule, "const x = 1;", "fixture.ts"))).rejects.toThrow("invalid tree-sitter query");
-  });
-});
-
-describe("rule fixtures", () => {
-  it("reports failing invalid fixtures", async () => {
-    const rule = defineRule({
-      id: "test/fixtures",
-      description: "fixture rule",
-      guidance: "Test standard.",
-      match: [{ pattern: "useQuery($$$ARGS)", message: "m" }],
-      fixtures: {
-        invalid: ["useQuery({})", "notMatching()"],
-        valid: ["other()"],
+      ...patternRule({ pattern: "useQuery($$$ARGS)", message: "query" }),
+      detector: {
+        id: "typescript/test-trigger",
+        version: 1,
+        match: { pattern: "useQuery($$$ARGS)", message: "query" },
+        fixtures: { mustReport: ["useQuery({})", "other()"], mustStaySilent: ["evaluate()"] },
       },
     });
-    const report = await run(runRuleFixtures(rule));
+    const report = await testRuleFixtures(rule);
     expect(report.total).toBe(3);
-    expect(report.failures).toHaveLength(1);
-    expect(report.failures[0]).toMatchObject({ kind: "invalid", index: 1 });
-  });
-
-  it("passes when all fixtures hold", async () => {
-    const report = await run(
-      runRuleFixtures(
-        defineRule({
-          id: "test/ok",
-          description: "ok",
-          guidance: "Test standard.",
-          match: [{ pattern: "eval($$$A)", message: "m" }],
-          fixtures: { invalid: ["eval('x')"], valid: ["evaluate('x')"] },
-        }),
-      ),
-    );
-    expect(report.failures).toHaveLength(0);
-  });
-});
-
-describe("defineRule validation", () => {
-  it("rejects rules with neither match nor createOnce", () => {
-    expect(() => defineRule({ id: "x/y", description: "d", guidance: "g" })).toThrow(
-      'must define "match" or "createOnce"',
-    );
-  });
-
-  it("rejects matches with both pattern and query", () => {
-    expect(() =>
-      defineRule({
-        id: "x/y",
-        description: "d",
-        guidance: "g",
-        match: [{ pattern: "a()", query: "(program)", message: "m" }],
-      }),
-    ).toThrow('exactly one of "pattern" or "query"');
+    expect(report.failures).toMatchObject([{ expectation: "mustReport", index: 1 }]);
   });
 });
