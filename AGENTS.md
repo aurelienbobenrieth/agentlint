@@ -38,7 +38,7 @@ This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.
 
 ## Dependencies
 
-- Effect 4 is pinned on a prerelease. Every Effect package the CLI resolves (`effect`, `@effect/platform-node`, `@effect/platform-node-shared`, `@effect/platform-browser`) is pinned to the same exact version through the `catalog` in `pnpm-workspace.yaml`. A caret range on a transitive package can pull a newer prerelease and load two Effect runtimes, which crashes consumers at startup. `scripts/smoke-package.mjs` catches this. Bump all of them together.
+- Effect 4 is pinned on a prerelease. Every Effect package the CLI resolves (`effect`, `@effect/platform-node`, `@effect/platform-node-shared`) is pinned to the same exact version through the `catalog` in `pnpm-workspace.yaml`. A caret range on a transitive package can pull a newer prerelease and load two Effect runtimes, which crashes consumers at startup. `scripts/smoke-package.mjs` catches this. Bump all of them together.
 - `web-tree-sitter` stays at 0.25.10 until the packaged grammar WASM set supports the 0.26 ABI.
 - `effect` is a normal dependency, not a peer and not bundled. Consumers write rules against `@aurelienbbn/agentlint` only and never import `effect` themselves.
 
