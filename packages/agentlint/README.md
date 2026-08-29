@@ -234,6 +234,8 @@ pnpm agentlint check --all
 
 Import re-runs the repository detectors. Decisions whose finding changed, disappeared, or no longer has compatible authority are rejected.
 
+When the artifact comes from the agentlint GitHub action, `pnpm agentlint pr <number>` downloads it through the `gh` CLI and opens it in one step; `--artifact-only` prints the extracted path instead.
+
 ## CLI reference
 
 ```text
@@ -245,6 +247,7 @@ agentlint propose <selector> --summary "..." [--diff-file path] [--base ref]
 agentlint explain <rule-id|selector>
 agentlint review [--base ref] [--mode review|calibration] [--from artifact]
                  [--port number] [--no-open]
+agentlint pr <number> [--repo owner/name] [--artifact-only] [--port number] [--no-open]
 agentlint rules list|test|scan
 agentlint acceptances list|clean|import
 agentlint init

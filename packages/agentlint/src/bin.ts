@@ -18,6 +18,8 @@ import { explainHandler } from "./features/explain/handler.js";
 import { ExplainCommand } from "./features/explain/request.js";
 import { initHandler } from "./features/init/handler.js";
 import { InitCommand } from "./features/init/request.js";
+import { prHandler } from "./features/pr/handler.js";
+import { PrCommand } from "./features/pr/request.js";
 import { proposeHandler } from "./features/propose/handler.js";
 import { ProposeCommand } from "./features/propose/request.js";
 import { ReviewArtifact } from "./features/review/contract.js";
@@ -27,6 +29,7 @@ import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features
 import { RulesListCommand, RulesScanCommand, RulesTestCommand } from "./features/rules/request.js";
 import { AcceptanceStore, parseAcceptances } from "./shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "./shared/infrastructure/config-loader.js";
+import { Gh } from "./shared/infrastructure/gh.js";
 import { Git } from "./shared/infrastructure/git.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { ProposalStore } from "./shared/infrastructure/proposal-store.js";
@@ -65,6 +68,20 @@ const filesArgument = Argument.string("files").pipe(
 
 const selectorArgument = Argument.string("selector").pipe(
   Argument.withDescription("Finding number from the last check or a full finding key"),
+);
+
+const portFlag = Flag.integer("port").pipe(
+  Flag.withDescription("Local server port (0 picks a free port)"),
+  Flag.withDefault(0),
+  Flag.filter(
+    (port) => port >= 0 && port <= 65_535,
+    () => "--port must be 0..65535.",
+  ),
+);
+
+const openFlag = Flag.boolean("open").pipe(
+  Flag.withDescription("Open the browser; pass --no-open to only print the URL"),
+  Flag.withDefault(true),
 );
 
 // ---------------------------------------------------------------------------
@@ -109,6 +126,12 @@ const readAcceptanceRecords = Effect.fn("readAcceptanceRecords")(function* (file
 });
 
 const setExitCode = (code: number) => Effect.map(Env, (env) => env.setExitCode(code));
+
+const openReviewSession = Effect.fn("openReviewSession")(function* (options: Parameters<typeof runReviewSession>[0]) {
+  const result = yield* runReviewSession(options);
+  yield* Console.log(`Review finished: ${result.summary}`);
+  if (result.feedback) yield* Console.log(result.feedback);
+});
 
 const printAcceptances = Effect.fn("printAcceptances")(function* (result: AcceptancesResult) {
   if (!result.records.length) yield* Console.log("No active acceptances.");
@@ -226,22 +249,12 @@ const review = Command.make(
       Flag.withDefault("review"),
     ),
     from: optionalString("from", "artifact.json", "Open a detached review artifact instead of the repository"),
-    port: Flag.integer("port").pipe(
-      Flag.withDescription("Local server port (0 picks a free port)"),
-      Flag.withDefault(0),
-      Flag.filter(
-        (port) => port >= 0 && port <= 65_535,
-        () => "--port must be 0..65535.",
-      ),
-    ),
-    open: Flag.boolean("open").pipe(
-      Flag.withDescription("Open the browser; pass --no-open to only print the URL"),
-      Flag.withDefault(true),
-    ),
+    port: portFlag,
+    open: openFlag,
   },
   Effect.fn("review")(function* ({ base, mode, from, port, open }) {
     const artifact = from ? yield* readArtifact(from) : undefined;
-    const result = yield* runReviewSession({
+    yield* openReviewSession({
       base,
       port,
       open,
@@ -249,10 +262,33 @@ const review = Command.make(
       artifact: artifact?.state,
       artifactSource: artifact?.source,
     });
-    yield* Console.log(`Review finished: ${result.summary}`);
-    if (result.feedback) yield* Console.log(result.feedback);
   }),
 ).pipe(Command.withDescription("Open the local review UI for human decisions"));
+
+const pr = Command.make(
+  "pr",
+  {
+    number: Argument.integer("number").pipe(Argument.withDescription("Pull request number")),
+    repo: optionalString("repo", "owner/name", "GitHub repository; defaults to the one gh resolves here"),
+    artifactOnly: Flag.boolean("artifact-only").pipe(
+      Flag.withDescription("Download the review artifact and print its path instead of opening it"),
+      Flag.withDefault(false),
+    ),
+    port: portFlag,
+    open: openFlag,
+  },
+  Effect.fn("pr")(function* ({ number, repo, artifactOnly, port, open }) {
+    const result = yield* prHandler(new PrCommand({ number, repo }));
+    if (artifactOnly) return yield* Console.log(result.artifactPath);
+    yield* openReviewSession({
+      port,
+      open,
+      mode: result.artifact.state.mode,
+      artifact: result.artifact.state,
+      artifactSource: result.artifactPath,
+    });
+  }),
+).pipe(Command.withDescription("Open the review artifact the GitHub action uploaded for a pull request"));
 
 const rulesList = Command.make(
   "list",
@@ -360,7 +396,7 @@ const init = Command.make(
 
 const agentlint = Command.make("agentlint").pipe(
   Command.withDescription(`${TAGLINE}\n\n${EXIT_CODES}`),
-  Command.withSubcommands([check, accept, approve, propose, explain, review, rules, acceptances, init]),
+  Command.withSubcommands([check, accept, approve, propose, explain, review, pr, rules, acceptances, init]),
 );
 
 // ---------------------------------------------------------------------------
@@ -398,6 +434,7 @@ const AppLayer = Layer.mergeAll(
   ConfigLoader.layer,
   Parser.layer,
   Git.layer,
+  Gh.layer,
   AcceptanceStore.layer,
   ProposalStore.layer,
   SelectorCache.layer,

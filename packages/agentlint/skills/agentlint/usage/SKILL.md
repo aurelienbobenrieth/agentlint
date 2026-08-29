@@ -37,4 +37,6 @@ Useful commands:
 <agentlint-cmd> acceptances list
 ```
 
+- When the work is on a pull request that runs the agentlint GitHub action, `<agentlint-cmd> pr <number>` downloads the review artifact and opens it. Never post `/agentlint approve` yourself; it is a human command.
+
 The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.

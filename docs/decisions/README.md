@@ -26,6 +26,7 @@ An architecture decision record defines a technical model or an implementation c
 | [ADR-005](./adr-005-fingerprints-and-lineage.md)     | Accepted | Finding identity and acceptance lineage  |
 | [ADR-006](./adr-006-review-workflows.md)             | Accepted | Calibration and acceptance review        |
 | [ADR-007](./adr-007-foldkit-review-spa.md)           | Accepted | FoldKit review SPA                       |
+| [ADR-008](./adr-008-github-action.md)                | Accepted | GitHub action and pull request review    |
 
 ## Writing rules
 

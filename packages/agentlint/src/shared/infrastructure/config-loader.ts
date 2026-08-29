@@ -12,6 +12,7 @@
  */
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
+import { fileURLToPath } from "node:url";
 import { Env } from "../../config/env.js";
 import { normalizeConfig, type AgentlintConfig, type NormalizedConfig } from "../../domain/config.js";
 
@@ -45,6 +46,45 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agen
  * @category constants
  */
 const CONFIG_PATH = [".agentlint", "config.ts"] as const;
+
+/**
+ * Package name the consumer config imports the rule API from.
+ *
+ * @since 0.2.0
+ * @category constants
+ */
+const SELF_PACKAGE = "@aurelienbbn/agentlint";
+
+/**
+ * Public entries of this package, as `[subpath, built file, source file]`.
+ * The built files sit next to `bin.mjs`; the source files are relative to
+ * this module.
+ */
+const SELF_ENTRIES = [
+  [SELF_PACKAGE, "index.mjs", "../../index.ts"],
+  [`${SELF_PACKAGE}/testing`, "testing.mjs", "../../testing.ts"],
+  [`${SELF_PACKAGE}/contract`, "contract.mjs", "../../features/review/contract.ts"],
+] as const;
+
+/**
+ * Map `@aurelienbbn/agentlint` and its subpaths to the running copy of the
+ * package so `npx @aurelienbbn/agentlint check` works in a repository that
+ * never installed it. tsdown bundles this module into `dist/bin.mjs`, next
+ * to `index.mjs`; under vitest it runs from `src/shared/infrastructure/`.
+ * The consumer's rules are then evaluated by the same version that
+ * validates them.
+ *
+ * @since 0.2.0
+ * @category internals
+ */
+const selfAliases = (fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<Record<string, string>> =>
+  Effect.gen(function* () {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const bundled = yield* fs.exists(path.join(here, "index.mjs")).pipe(Effect.orElseSucceed(() => false));
+    return Object.fromEntries(
+      SELF_ENTRIES.map(([specifier, built, source]) => [specifier, path.resolve(here, bundled ? built : source)]),
+    );
+  });
 
 /**
  * Discover the config file path.
@@ -103,13 +143,12 @@ export class ConfigLoader extends Context.Service<
 
       const load = Effect.gen(function* () {
         const configPath = yield* discoverConfig(fs, path, env.cwd);
+        const alias = yield* selfAliases(fs, path);
 
         const config = yield* Effect.tryPromise({
           try: async () => {
             const { createJiti } = await import("jiti");
-            const jiti = createJiti(import.meta.url, {
-              interopDefault: true,
-            });
+            const jiti = createJiti(import.meta.url, { interopDefault: true, alias });
             const loaded = await jiti.import(configPath);
             return (loaded as { default?: AgentlintConfig }).default ?? (loaded as AgentlintConfig);
           },
