@@ -14,6 +14,14 @@
   "jsPlugins": ["./scripts/oxlint-plugin-agentlint.js"],
   "overrides": [
     {
+      "files": ["action/**"],
+      "rules": {
+        "agentlint/no-direct-process-access": "off",
+        "agentlint/no-raw-json-parse": "off",
+        "eslint/no-await-in-loop": "off"
+      }
+    },
+    {
       "files": [
         "packages/agentlint/src/config/env.ts",
         "**/*.test.ts",

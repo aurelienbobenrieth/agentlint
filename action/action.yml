@@ -1,0 +1,85 @@
+name: agentlint
+description: "Run the agentlint gate on a pull request, surface findings as a check run and PR comments, and record human approvals from /agentlint commands."
+author: Aurelien Bobenrieth
+
+branding:
+  icon: shield
+  color: gray-dark
+
+inputs:
+  version:
+    description: "@aurelienbbn/agentlint version to run, or file:<path> to a built checkout"
+    required: false
+    default: "0.1.5"
+  base:
+    description: "Base ref of the pull request. Change rules diff against origin/<base>."
+    required: false
+    default: ${{ github.base_ref }}
+  working-directory:
+    description: "Directory that holds .agentlint/config.ts, relative to the workspace."
+    required: false
+    default: "."
+  install:
+    description: "Run the repository's package-manager install before the gate (pnpm, npm, yarn, or bun, detected from the lockfile)."
+    required: false
+    default: "false"
+  github-token:
+    description: "Token used for the check run, the comments, and the approval push."
+    required: false
+    default: ${{ github.token }}
+  comment:
+    description: "Post the sticky summary comment and the inline review comments."
+    required: false
+    default: "true"
+  dry-run:
+    description: "Read everything, write nothing: print the planned GitHub and git write calls instead."
+    required: false
+    default: "false"
+
+outputs:
+  gate:
+    description: "open, closed, or error"
+    value: ${{ steps.main.outputs.gate }}
+  unresolved:
+    description: "Number of unresolved findings"
+    value: ${{ steps.main.outputs.unresolved }}
+  human:
+    description: "Number of unresolved findings that need human authority"
+    value: ${{ steps.main.outputs.human }}
+  artifact:
+    description: "Absolute path of the detached review artifact, or empty"
+    value: ${{ steps.main.outputs.artifact }}
+  dry-run-plan:
+    description: "JSON array of the write calls that a dry run would have made"
+    value: ${{ steps.main.outputs.dry-run-plan }}
+
+runs:
+  using: composite
+  steps:
+    - id: main
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs"
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_WORKING-DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_INSTALL: ${{ inputs.install }}
+        INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_DRY-RUN: ${{ inputs.dry-run }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_API_URL: ${{ github.api_url }}
+        GITHUB_GRAPHQL_URL: ${{ github.graphql_url }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      if: always() && steps.main.outputs.artifact != ''
+      with:
+        name: agentlint-review-${{ github.event.pull_request.number || github.event.issue.number }}
+        path: ${{ steps.main.outputs.artifact }}
+        retention-days: 30

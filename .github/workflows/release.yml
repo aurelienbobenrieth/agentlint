@@ -16,15 +16,16 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        # The release token stays in the checkout: changesets/action pushes the version PR with it.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 # zizmor: ignore[artipacked]
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: pnpm
@@ -33,7 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Create or update version PR
-        uses: changesets/action@v1
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1
         with:
           version: bash scripts/version.sh
           title: "chore: version packages"

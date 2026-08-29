@@ -1,0 +1,29 @@
+{
+  "action": "synchronize",
+  "number": 43,
+  "before": "1111111111111111111111111111111111111111",
+  "after": "fedcba0987654321fedcba0987654321fedcba09",
+  "pull_request": {
+    "number": 43,
+    "state": "open",
+    "title": "Contribution from a fork",
+    "user": { "login": "outside-contributor", "id": 2002, "type": "User" },
+    "draft": false,
+    "head": {
+      "ref": "fix/parser",
+      "sha": "fedcba0987654321fedcba0987654321fedcba09",
+      "repo": { "full_name": "outside-contributor/agentlint", "fork": true }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "repo": { "full_name": "aurelienbobenrieth/agentlint" }
+    }
+  },
+  "repository": {
+    "full_name": "aurelienbobenrieth/agentlint",
+    "name": "agentlint",
+    "owner": { "login": "aurelienbobenrieth" }
+  },
+  "sender": { "login": "outside-contributor", "id": 2002, "type": "User" }
+}
