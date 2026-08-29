@@ -16,7 +16,7 @@ describe("review editor adapters", () => {
   it("uses platform launchers without a shell", () => {
     expect(editorInvocation("zed", "darwin", "/work tree/demo.ts", 2, 9)).toEqual({
       command: "open",
-      args: ["zed://file/C:/work%20tree/demo.ts:2:9"],
+      args: ["zed://file/work%20tree/demo.ts:2:9"],
     });
     expect(editorInvocation("explorer", "linux", "/work tree/demo.ts", 2, 9)).toEqual({
       command: "xdg-open",
@@ -74,7 +74,7 @@ describe("review editor adapters", () => {
     await openInEditor("cursor", "linux", "/repo/a file.ts", 4, 5, runner);
     expect(runner).toHaveBeenCalledWith({
       command: "xdg-open",
-      args: ["cursor://file/C:/repo/a%20file.ts:4:5"],
+      args: ["cursor://file/repo/a%20file.ts:4:5"],
     });
   });
 });

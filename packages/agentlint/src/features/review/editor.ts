@@ -1,8 +1,7 @@
 /** Safe, allowlisted launch adapters for live review sessions. @module @since 0.2.0 */
 
 import { execFile } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { posix, win32 } from "node:path";
 import type { EditorApplication, EditorApplicationId } from "./contract.js";
 
 interface Invocation {
@@ -28,7 +27,7 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
     scheme: "cursor",
     macName: "Cursor",
     cli: "cursor",
-    windowsExecutable: (shim) => resolve(shim, "..", "..", "..", "Cursor.exe"),
+    windowsExecutable: (shim) => win32.resolve(shim, "..", "..", "..", "Cursor.exe"),
   },
   {
     id: "vscode",
@@ -36,7 +35,7 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
     scheme: "vscode",
     macName: "Visual Studio Code",
     cli: "code",
-    windowsExecutable: (shim) => resolve(shim, "..", "Code.exe"),
+    windowsExecutable: (shim) => win32.resolve(shim, "..", "Code.exe"),
   },
   {
     id: "vscode-insiders",
@@ -44,7 +43,7 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
     scheme: "vscode-insiders",
     macName: "Visual Studio Code - Insiders",
     cli: "code-insiders",
-    windowsExecutable: (shim) => resolve(shim, "..", "Code - Insiders.exe"),
+    windowsExecutable: (shim) => win32.resolve(shim, "..", "Code - Insiders.exe"),
   },
   {
     id: "zed",
@@ -52,7 +51,7 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
     scheme: "zed",
     macName: "Zed",
     cli: "zed",
-    windowsExecutable: (shim) => resolve(shim, "Zed.exe"),
+    windowsExecutable: (shim) => win32.resolve(shim, "Zed.exe"),
   },
   { id: "explorer", label: "File Explorer" },
 ];
@@ -73,9 +72,24 @@ const run: Runner = ({ command, args }) =>
 /** Command-line launchers confirmed by the last detection, keyed by application. */
 const launchers = new Map<EditorApplicationId, string>();
 
-function editorUri(application: Exclude<EditorApplicationId, "explorer">, file: string, line: number, column: number) {
-  const pathname = pathToFileURL(file).pathname;
-  return `${application}://file${pathname}:${line}:${column}`;
+/**
+ * `scheme://file/<path>:line:column`. The path separator and the drive letter
+ * follow the target platform, never the platform running the server, so the
+ * mapping stays deterministic in tests and in a detached review.
+ */
+function editorUri(
+  application: Exclude<EditorApplicationId, "explorer">,
+  platform: string,
+  file: string,
+  line: number,
+  column: number,
+) {
+  const absolute = platform === "win32" ? win32.resolve(file).replaceAll("\\", "/") : posix.resolve(file);
+  const pathname = absolute
+    .split("/")
+    .map((segment, index) => (index === 0 && platform === "win32" ? segment : encodeURIComponent(segment)))
+    .join("/");
+  return `${application}://file${platform === "win32" ? `/${pathname}` : pathname}:${line}:${column}`;
 }
 
 /** Pure adapter mapping, exported so argument boundaries can be regression-tested. */
@@ -92,7 +106,7 @@ export function editorInvocation(
       ? { command: "explorer.exe", args: [`/select,${file}`] }
       : platform === "darwin"
         ? { command: "open", args: ["-R", file] }
-        : { command: "xdg-open", args: [dirname(file)] };
+        : { command: "xdg-open", args: [posix.dirname(file)] };
   }
 
   // A real CLI takes the position as one argument and never loses it, unlike a
@@ -104,7 +118,7 @@ export function editorInvocation(
       : { command: launcher, args: ["--goto", target] };
   }
 
-  const uri = editorUri(application, file, line, column);
+  const uri = editorUri(application, platform, file, line, column);
   return platform === "win32"
     ? { command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", uri] }
     : platform === "darwin"
@@ -141,7 +155,7 @@ export function launcherFromLookup(
   const executable = candidates.find((candidate) => /\.exe$/iu.test(candidate));
   if (executable) return executable;
   const shim = candidates.find((candidate) => /\.cmd$/iu.test(candidate)) ?? candidates[0];
-  return shim && application.windowsExecutable ? application.windowsExecutable(dirname(shim)) : undefined;
+  return shim && application.windowsExecutable ? application.windowsExecutable(win32.dirname(shim)) : undefined;
 }
 
 export async function detectEditorApplications(
