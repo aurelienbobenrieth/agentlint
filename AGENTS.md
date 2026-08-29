@@ -26,6 +26,7 @@ This file is for the agent changing agentlint. [`CONTRIBUTING.md`](CONTRIBUTING.
 - `packages/agentlint` — the only published package. `src/domain` holds the rule, config, finding, fingerprint, and acceptance contracts. `src/features/<name>/{request,handler}.ts` holds one application command each. `src/shared/pipeline` parses and matches. `src/shared/infrastructure` wraps Git, the filesystem, tree-sitter, and the stores. `src/bin.ts` composes the layers and parses the CLI. `skills/` ships the agent skills.
 - `apps/review` — the FoldKit SPA, built into `packages/agentlint/dist/ui`. It owns presentation and browser-local detached decisions. Domain semantics stay in the package.
 - `examples/demo` — the walkthrough repository. `examples/minimal` — the smallest consumer.
+- `action/` — the reusable GitHub action: plain Node modules over `fetch` and `execFile`, no dependencies, tested with recorded event payloads. GitHub-specific code lives only here and in `src/features/pr`. Real pull requests are exercised in the private `agentlint-playground` repository, never on this repository's `main`.
 
 ## Boundaries
 

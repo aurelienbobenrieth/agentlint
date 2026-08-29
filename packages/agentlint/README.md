@@ -257,40 +257,53 @@ The selector cache under `.agentlint/.cache/` only maps short run-local numbers 
 
 ## CI
 
-CI runs the same binary gate as local development. There is no CI-only severity model: every current finding must disappear or have an exact compatible acceptance.
+The [GitHub action](../../action/README.md) runs the same gate on every pull request. It creates the `agentlint` check run with one annotation per finding, keeps a summary comment up to date, and opens one review thread per finding on the diff. A collaborator with write access replies `/agentlint approve <reason>` in a thread to record human authority; the action commits the acceptance on the branch as that person and updates the check without re-running the workflow. Mark the `agentlint` check as required and the gate is enforced.
 
 ```yaml
 name: agentlint
-
 on:
   pull_request:
-
-permissions:
-  contents: read
-
+  issue_comment: { types: [created] }
+  pull_request_review_comment: { types: [created] }
+concurrency:
+  group: agentlint-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
 jobs:
   gate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write, checks: write }
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v5
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm agentlint rules test
-      - run: pnpm agentlint check --all --base "origin/${{ github.base_ref }}" --review-output artifacts/agentlint-review.json
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: agentlint-review
-          path: artifacts/agentlint-review.json
+        with: { node-version: 22 }
+      - uses: aurelienbobenrieth/agentlint/action@v0.2.0
+  command:
+    if: github.event_name != 'pull_request' && startsWith(github.event.comment.body, '/agentlint')
+    runs-on: ubuntu-latest
+    permissions: { contents: write, pull-requests: write, checks: write }
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - uses: aurelienbobenrieth/agentlint/action@v0.2.0
 ```
 
-`fetch-depth: 0` is required because change rules use the merge base. The artifact step is safe on untrusted pull requests: it uploads repository-derived review data and needs no write permission, secret, bot, or waiting browser. Open it locally with `pnpm agentlint review --from agentlint-review.json` and bring decisions back through `acceptances import` (see [Detached CI review](#detached-ci-review)).
+`fetch-depth: 0` is required because change rules use the merge base. The action runs `npx @aurelienbbn/agentlint@<version>` and resolves the package for `.agentlint/config.ts` itself, so no install step is needed unless the config imports third-party rule packages (`install: true`). Pull requests from forks run with a read-only token: they get annotations and the review artifact, not comments or approvals. See the [action README](../../action/README.md) for every input and output, and `dry-run` for testing.
+
+Without the action, any CI can run the gate and upload the artifact:
+
+```yaml
+- run: npx @aurelienbbn/agentlint rules test
+- run: npx @aurelienbbn/agentlint check --all --base "origin/${{ github.base_ref }}" --review-output artifacts/agentlint-review.json
+- uses: actions/upload-artifact@v4
+  if: failure()
+  with: { name: agentlint-review, path: artifacts/agentlint-review.json }
+```
+
+Open an uploaded artifact locally with `agentlint pr <number>` (see [Detached CI review](#detached-ci-review)).
 
 ## Integration boundary
 

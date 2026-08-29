@@ -66,7 +66,7 @@ pnpm agentlint explain 1
 pnpm agentlint accept 1 --reason "The route caps every request at 100 rows."
 ```
 
-For findings that need a human, `pnpm agentlint review` opens a local, keyboard-first review workspace with the code, the standard, and the agent's proposal side by side. CI emits the same review as a portable artifact.
+For findings that need a human, `pnpm agentlint review` opens a local, keyboard-first review workspace with the code, the standard, and the agent's proposal side by side. The [GitHub action](action/README.md) brings the same review to the pull request: one thread per finding, and `/agentlint approve` to record human authority in place.
 
 Read the [package guide](packages/agentlint/README.md) for the full model, walk through the [demo](examples/demo/README.md), or start with the [decision records](docs/decisions/README.md).
 
@@ -79,6 +79,7 @@ Read the [package guide](packages/agentlint/README.md) for the full model, walk 
 | `examples/demo`      | A small commerce app with six rules that exercise every part of the loop. |
 | `examples/minimal`   | The smallest consumer: one dependency, one rule, one source file.         |
 | `docs/decisions`     | Product and architecture decision records.                                |
+| `action`             | Reusable GitHub action: check run, review threads, `/agentlint approve`.  |
 
 ## Contributing
 
