@@ -33,7 +33,7 @@ export default defineConfig({
       const treeSitterWasm = resolve(__dirname, "node_modules/web-tree-sitter/tree-sitter.wasm");
       if (existsSync(treeSitterWasm)) {
         cpSync(treeSitterWasm, resolve(wasmDir, "tree-sitter.wasm"));
-      }
+      } else throw new Error(`Required parser asset is missing: ${treeSitterWasm}`);
 
       // Copy language grammars from tree-sitter-wasms
       const grammars = [
@@ -46,7 +46,7 @@ export default defineConfig({
         const src = resolve(__dirname, `node_modules/tree-sitter-wasms/out/${grammar}`);
         if (existsSync(src)) {
           cpSync(src, resolve(wasmDir, grammar));
-        }
+        } else throw new Error(`Required grammar asset is missing: ${src}`);
       }
 
       console.log("WASM files copied to dist/wasm/");

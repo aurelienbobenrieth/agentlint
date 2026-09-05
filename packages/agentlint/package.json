@@ -46,6 +46,22 @@
       "import": "./dist/contract.mjs"
     }
   },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "import": "./dist/index.mjs"
+      },
+      "./testing": {
+        "types": "./dist/testing.d.mts",
+        "import": "./dist/testing.mjs"
+      },
+      "./contract": {
+        "types": "./dist/contract.d.mts",
+        "import": "./dist/contract.mjs"
+      }
+    }
+  },
   "scripts": {
     "build": "tsdown && pnpm --filter @agentlint/review build",
     "prepack": "pnpm run build",

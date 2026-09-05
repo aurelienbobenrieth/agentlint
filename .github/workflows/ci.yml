@@ -15,8 +15,19 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate
-    runs-on: ubuntu-latest
+    name: Validate (${{ matrix.os }}, Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: 22 }
+          - { os: windows-latest, node: 22 }
+          - { os: macos-latest, node: 22 }
+          - { os: ubuntu-latest, node: 24 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -30,7 +41,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Install dependencies
