@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, FileSystem, Layer, PlatformError } from "effect";
+import { symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -59,6 +60,35 @@ beforeAll(() => Effect.runPromise(setup));
 afterAll(() => Effect.runPromise(cleanup));
 
 describe("resolveFiles", () => {
+  it("accepts absolute files through an alias of the repository directory", async () => {
+    const alias = `${cwd}-alias`;
+    symlinkSync(cwd, alias, "junction");
+    try {
+      const aliasEnv = Layer.succeed(
+        Env,
+        Env.of({
+          cwd: alias,
+          argv: [],
+          actor: "agent:test",
+          platform: "test",
+          noColor: true,
+          isTTY: false,
+          setExitCode: () => {},
+        }),
+      );
+      const layer = aliasEnv.pipe(Layer.provideMerge(NodeServices.layer));
+      expect(
+        await resolve(
+          { all: true, positionalFiles: [join(alias, "src/a.ts"), join(cwd, "src/b.js")] },
+          changedFiles([]),
+          layer,
+        ),
+      ).toEqual(["src/a.ts", "src/b.js"]);
+    } finally {
+      unlinkSync(alias);
+    }
+  });
+
   it("rejects explicit paths outside the repository", async () => {
     await expect(resolve({ all: true, positionalFiles: [".."] })).rejects.toMatchObject({ reason: "filesystem" });
   });

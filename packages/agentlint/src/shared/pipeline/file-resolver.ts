@@ -193,7 +193,7 @@ export function resolveFiles(
             .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
           if (info.type === "Directory")
             literalFiles.push(...(yield* listAllFiles(target, cwd, fs, path, ignoreMatcher)));
-          else literalFiles.push(toProjectPath(file, cwd, path));
+          else literalFiles.push(toProjectPath(target, cwd, path));
         }
       }
 
