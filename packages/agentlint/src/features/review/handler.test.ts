@@ -1,0 +1,161 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { Effect, FileSystem, Layer, Path } from "effect";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "vitest";
+import { Env } from "../../config/env.js";
+import { normalizeConfig } from "../../domain/config.js";
+import { defineRule } from "../../domain/rule.js";
+import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
+import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
+import { Git } from "../../shared/infrastructure/git.js";
+import { Parser } from "../../shared/infrastructure/parser.js";
+import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
+import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
+import { applyReviewAction, buildReviewPayload, makeReviewSessionState } from "./handler.js";
+import { checkHandler } from "../check/handler.js";
+import { CheckCommand } from "../check/request.js";
+
+const cwd = join(tmpdir(), "agentlint-v02-review-payload-test");
+const source = 'export const result =\n  danger("x")\n';
+const rule = defineRule({
+  lifecycle: "state",
+  standard: { id: "security/danger", revision: 1, title: "Danger is reviewed", guidance: "Review danger calls." },
+  detector: {
+    id: "typescript/danger-call",
+    version: 1,
+    match: { pattern: "danger($$$ARGS)", message: "danger needs judgment" },
+  },
+  binding: { id: "security/danger", authority: "agent", include: ["src/**/*.ts"] },
+});
+const TestEnv = Layer.succeed(
+  Env,
+  Env.of({ cwd, argv: [], actor: "agent:test", platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
+);
+const TestConfig = Layer.succeed(
+  ConfigLoader,
+  ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [rule] })) }),
+);
+const TestGit = Layer.succeed(
+  Git,
+  Git.of({
+    detectDefaultBranch: () => Effect.succeed("main"),
+    changedFiles: () => Effect.succeed([]),
+    changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
+  }),
+);
+const TestLayer = Layer.mergeAll(
+  TestConfig,
+  TestGit,
+  Parser.layer,
+  AcceptanceStore.layer,
+  ProposalStore.layer,
+  SelectorCache.layer,
+).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(TestEnv));
+
+const cleanup = Effect.gen(function* () {
+  yield* (yield* FileSystem.FileSystem).remove(cwd, { recursive: true }).pipe(Effect.orElseSucceed(() => undefined));
+}).pipe(Effect.provide(TestLayer));
+
+afterEach(() => Effect.runPromise(cleanup));
+
+describe("review payload", () => {
+  it("revokes accepted findings when changes are requested and reuses captured scan evidence", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
+        yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
+        const session = makeReviewSessionState();
+        const payload = yield* buildReviewPayload({ mode: "review", transport: "attached", session });
+        const findingId = payload.findings[0]?.id;
+        if (!findingId) throw new Error("Expected finding");
+        expect(
+          yield* applyReviewAction(
+            { type: "accept", findingId, reason: "Reviewed sandbox." },
+            { mode: "review", session },
+          ),
+        ).toMatchObject({ ok: true });
+        expect(
+          yield* applyReviewAction({ type: "withdraw", findingId }, { mode: "calibration", session }),
+        ).toMatchObject({ ok: false });
+        expect((yield* (yield* AcceptanceStore).read()).records).toHaveLength(1);
+        const calibrationSession = makeReviewSessionState();
+        const calibrationBefore = yield* buildReviewPayload({
+          mode: "calibration",
+          transport: "attached",
+          session: calibrationSession,
+        });
+        expect(calibrationBefore.findings.every((item) => item.status === "unresolved")).toBe(true);
+        yield* applyReviewAction(
+          { type: "calibrate", findingId, calibration: "applies", note: "Useful trigger" },
+          { mode: "calibration", session: calibrationSession },
+        );
+        const calibrationAfter = yield* buildReviewPayload({
+          mode: "calibration",
+          transport: "attached",
+          session: calibrationSession,
+        });
+        expect(calibrationAfter.findings.find((item) => item.id === findingId)?.status).toBe("accepted");
+        expect((yield* (yield* AcceptanceStore).read()).records).toHaveLength(1);
+        expect(
+          yield* applyReviewAction(
+            { type: "request_changes", findingId, reason: "The sandbox is insufficient." },
+            { mode: "review", session },
+          ),
+        ).toMatchObject({ ok: true });
+        const result = yield* checkHandler(
+          new CheckCommand({ all: true, rules: [], files: [], base: undefined, format: "text" }),
+        );
+        expect(result.exitCode).toBe(1);
+        yield* fs.writeFileString(join(cwd, "src", "demo.ts"), "safe()");
+        const artifact = yield* buildReviewPayload({ mode: "review", transport: "detached", check: result });
+        expect(artifact.sources["src/demo.ts"]).toBe(source);
+        expect(artifact.findings).toHaveLength(1);
+        expect(artifact.coverage.scope).toBe("complete");
+      }).pipe(Effect.provide(TestLayer)),
+    );
+  });
+  it("includes the complete source and the detector-selected focus range", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* fs.makeDirectory(path.resolve(cwd, "src"), { recursive: true });
+        yield* fs.writeFileString(path.resolve(cwd, "src", "demo.ts"), source);
+      }).pipe(Effect.provide(TestLayer)),
+    );
+
+    const payload = await Effect.runPromise(
+      buildReviewPayload({
+        mode: "review",
+        transport: "attached",
+        applications: [{ id: "vscode", label: "VS Code" }],
+      }).pipe(Effect.provide(TestLayer)),
+    );
+
+    expect(payload.findings).toHaveLength(1);
+    expect(payload.sources["src/demo.ts"]).toBe(source);
+    expect(payload.findings[0]?.code).toEqual({
+      focus: { startLine: 2, startColumn: 3, endLine: 2, endColumn: 14 },
+    });
+    expect(payload.findings[0]?.editor).toEqual({ canOpen: true });
+    expect(payload.applications).toEqual([{ id: "vscode", label: "VS Code" }]);
+    expect(payload.findings[0]?.guidance).toMatchObject({
+      summary: null,
+      standard: "Review danger calls.",
+      checks: [],
+      examples: [],
+    });
+
+    const detached = await Effect.runPromise(
+      buildReviewPayload({ mode: "review", transport: "detached", source: "review.json" }).pipe(
+        Effect.provide(TestLayer),
+      ),
+    );
+    expect(detached.findings[0]?.editor).toBeNull();
+    expect(detached.applications).toEqual([]);
+  });
+});

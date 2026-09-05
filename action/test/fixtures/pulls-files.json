@@ -1,0 +1,37 @@
+[
+  {
+    "sha": "1111111111111111111111111111111111111111",
+    "filename": "src/vendor/legacy-parser.js",
+    "status": "added",
+    "additions": 4,
+    "deletions": 0,
+    "changes": 4,
+    "patch": "@@ -0,0 +1,4 @@\n+export function parseFormula(input) {\n+  // vendored from formula-parser@1.x\n+  return eval(input);\n+}"
+  },
+  {
+    "sha": "2222222222222222222222222222222222222222",
+    "filename": "src/payments/capture-order.ts",
+    "status": "modified",
+    "additions": 2,
+    "deletions": 1,
+    "changes": 3,
+    "patch": "@@ -1,8 +1,9 @@\n declare const payments: {\n   capture(input: Record<string, unknown>): Promise<void>;\n };\n export async function captureOrder(order: Order): Promise<void> {\n   await payments.capture({\n-    orderId: order.id, amount: order.total,\n+    orderId: order.id,\n+    amount: order.total,\n     currency: order.currency,\n   });\n }"
+  },
+  {
+    "sha": "3333333333333333333333333333333333333333",
+    "filename": "src/legacy/removed.ts",
+    "status": "removed",
+    "additions": 0,
+    "deletions": 3,
+    "changes": 3,
+    "patch": "@@ -1,3 +0,0 @@\n-export const gone = 1;\n-export const also = 2;\n-export const done = 3;"
+  },
+  {
+    "sha": "4444444444444444444444444444444444444444",
+    "filename": "assets/logo.png",
+    "status": "added",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0
+  }
+]

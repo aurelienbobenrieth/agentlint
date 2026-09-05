@@ -1,0 +1,18 @@
+packages:
+  - "action"
+  - "apps/*"
+  - "packages/*"
+  - "examples/*"
+
+onlyBuiltDependencies:
+  - "@parcel/watcher"
+  - esbuild
+  - msgpackr-extract
+
+catalog:
+  "@effect/platform-node": 4.0.0-rc.112
+  "@effect/platform-node-shared": 4.0.0-rc.112
+  "@tanstack/intent": 0.3.7
+  effect: 4.0.0-rc.112
+  typescript: 7.0.2
+  vitest: 4.1.11

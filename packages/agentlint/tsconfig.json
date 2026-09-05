@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/@effect/language-service/schema.json",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "exactOptionalPropertyTypes": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "plugins": [{ "name": "@effect/language-service" }],
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "examples", "src/**/*.test.ts", "src/__fixtures__"]
+}

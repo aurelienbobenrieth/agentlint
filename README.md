@@ -4,147 +4,86 @@
 [![npm version](https://img.shields.io/npm/v/@aurelienbbn/agentlint.svg)](https://www.npmjs.com/package/@aurelienbbn/agentlint)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Stateless, deterministic CLI that bridges traditional linters and AI-assisted code review.
+**Deterministic findings and explicit judgment gates for coding agents.**
 
-agentlint uses tree-sitter to parse code, runs visitor-based rules that flag suspicious patterns, and outputs structured reports with natural language instructions. The output is designed to be consumed by an AI coding agent (Claude Code, Cursor, etc.) that evaluates each finding in context.
+Linters reject code that is mechanically wrong. Prompts ask agents to remember concerns. agentlint covers the space between them: it deterministically finds the places that need judgment, gives the reviewer the applicable standard, and keeps the gate closed until the evidence changes or someone with enough authority records an acceptance.
 
-## How it works
-
-```
-Phase 1 - Deterministic (agentlint)
-  tree-sitter AST parsing -> visitor dispatch -> pattern match -> collect flags
-
-Phase 2 - AI-evaluated (the calling agent)
-  reads agentlint stdout -> evaluates each match per instructions -> acts
+```text
+repository evidence -> deterministic detector -> finding
+finding + exact compatible acceptance      -> gate open
+finding without acceptance                 -> gate closed
 ```
 
-agentlint owns Phase 1 only. It does not call any AI model. It does not require an API key.
+agentlint calls no model, ships no rules, and prescribes no agent harness. Your repository owns every standard.
+
+## Why
+
+An agent that touches a payment call, drops a column, or widens a permission usually does the mechanical part right. The part that goes wrong is the judgment: _is this retry safe, is this migration reversible, should a human see this?_ A linter cannot answer that. A prompt cannot guarantee the agent asked. agentlint turns the question into a deterministic trigger with a written standard and an explicit answer that survives in Git.
+
+- **State rules** judge current source: `db.users.findMany()` without a bound, a tagged error with a stringly message.
+- **Change rules** judge the Git change itself: a dropped table between the merge base and the working tree, a widened role.
+- **Authority** decides who may close the gate. An agent can accept a bounded query with a concrete reason. Only a human can accept a destructive migration.
+- **Fingerprints** keep an acceptance across formatting and line moves and invalidate it when the code materially changes.
 
 ## Quick start
 
 ```bash
-pnpm add @aurelienbbn/agentlint
+pnpm add -D @aurelienbbn/agentlint
+pnpm agentlint init          # creates .agentlint/config.ts
+pnpm agentlint rules test    # proves each detector against its fixtures
+pnpm agentlint check --all   # runs the gate
 ```
 
-Create `.agentlint/config.ts`:
+A rule is one `defineRule` value:
 
-```typescript
+```ts
 import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
-const noNoiseComments = defineRule({
-  meta: {
-    name: "no-noise-comments",
-    description: "Flags comments for AI evaluation",
-    languages: ["ts", "tsx"],
-    instruction: `Evaluate each comment. Is it noise or valuable?
-Remove noise comments. Keep valuable ones.`,
+const boundedReads = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "data/bounded-reads",
+    revision: 1,
+    title: "Production reads are bounded",
+    guidance: "Reads that scale with production data have an explicit bound or pagination contract.",
   },
-  createOnce(context) {
-    return {
-      comment(node) {
-        const text = node.text.replace(/^\/\/\s*/, "").trim();
-        if (text === "") return;
-        context.flag({ node, message: `Comment: "${text.slice(0, 60)}"` });
-      },
-    };
+  detector: {
+    id: "prisma/find-many-without-take",
+    version: 1,
+    match: { pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB has no bound." },
+    fixtures: { mustReport: ["db.users.findMany({})"], mustStaySilent: ["db.users.findMany({ take: 50 })"] },
   },
+  binding: { id: "data/bounded-reads", authority: "agent", include: ["src/**/*.ts"] },
 });
 
-export default defineConfig({
-  rules: { "no-noise-comments": noNoiseComments },
-});
+export default defineConfig({ rules: [boundedReads] });
 ```
 
-Run:
+When the gate closes, the agent reads the standard, fixes the evidence or records a reason:
 
 ```bash
-# Scan files changed in current branch
-pnpm agentlint check
-
-# Scan all files
-pnpm agentlint check --all
-
-# Scan specific files or globs
-pnpm agentlint check src/utils.ts "src/**/*.tsx"
-
-# List registered rules
-pnpm agentlint list
-
-# Mark flags as reviewed
-pnpm agentlint review <hash...>
+pnpm agentlint explain 1
+pnpm agentlint accept 1 --reason "The route caps every request at 100 rows."
 ```
 
-## Output format
+For findings that need a human, `pnpm agentlint review` opens a local, keyboard-first review workspace with the code, the standard, and the agent's proposal side by side. The [GitHub action](action/README.md) brings the same review to the pull request: one thread per finding, and `/agentlint approve` to record human authority in place.
 
-```
-agentlint v0.1.0 - 1 rule(s) triggered, 3 match(es)
+Read the [package guide](packages/agentlint/README.md) for the full model, walk through the [demo](examples/demo/README.md), or start with the [decision records](docs/decisions/README.md).
 
-━━━ no-noise-comments: Flags comments for AI evaluation (3 match(es)) ━━━
+## Workspace
 
-  [abc1234] src/utils.ts:5:1  // Increment the counter
-  [def5678] src/utils.ts:12:1  // Helper function
-  [ghi9012] src/utils.ts:18:3  // TODO: implement later
-
-  ┌─ Instruction ─────────────────────────────────────────
-  │ Evaluate each comment. Is it noise or valuable?
-  │ Remove noise comments. Keep valuable ones.
-  └───────────────────────────────────────────────────────
-
-3 match(es) across 1 rule(s)
-```
-
-## CLI reference
-
-### `agentlint check [files...] [options]`
-
-| Flag                  | Description                             |
-| --------------------- | --------------------------------------- |
-| `--all`, `-a`         | Scan all files (not just git diff)      |
-| `--rule`, `-r <name>` | Run only this rule                      |
-| `--dry-run`, `-d`     | Show counts only, no instruction blocks |
-| `--base <ref>`        | Git ref to diff against                 |
-
-### `agentlint list`
-
-Lists all registered rules with their metadata.
-
-### `agentlint init`
-
-Scaffolds a starter `.agentlint/config.ts` file in the current directory.
-
-### `agentlint review [hashes...] [options]`
-
-Manages per-developer reviewed-flag state. When you run `agentlint check`, flags that have been marked as reviewed are automatically filtered out of the output.
-
-| Flag          | Description                              |
-| ------------- | ---------------------------------------- |
-| `--all`, `-a` | Mark all current flags as reviewed       |
-| `--reset`     | Wipe the state file (`.agentlint-state`) |
-
-**Review workflow:**
-
-1. Run `agentlint check` to see current flags.
-2. After evaluating a flag, mark it as reviewed by passing its hash:
-   ```bash
-   pnpm agentlint review abc1234 def5678
-   ```
-3. To mark every current flag as reviewed at once:
-   ```bash
-   pnpm agentlint review --all
-   ```
-4. Reviewed flags are stored in `.agentlint-state` (a local file, not committed to git). Future `check` runs hide them automatically.
-5. To start fresh and see all flags again:
-   ```bash
-   pnpm agentlint review --reset
-   ```
+| Path                 | Purpose                                                                   |
+| -------------------- | ------------------------------------------------------------------------- |
+| `packages/agentlint` | The published package: CLI, engine, rule API, packaged review UI, skills. |
+| `apps/review`        | FoldKit single-page review application, built into the package.           |
+| `examples/demo`      | A small commerce app with six rules that exercise every part of the loop. |
+| `examples/minimal`   | The smallest consumer: one dependency, one rule, one source file.         |
+| `docs/decisions`     | Product and architecture decision records.                                |
+| `action`             | Reusable GitHub action: check run, review threads, `/agentlint approve`.  |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup and how to write rules.
-
-## Security
-
-Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Agents working on this repository read [`AGENTS.md`](AGENTS.md) first.
 
 ## License
 

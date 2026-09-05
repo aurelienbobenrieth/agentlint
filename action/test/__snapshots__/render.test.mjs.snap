@@ -1,0 +1,57 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`render > renders inline bodies with the marker first and the right reply instruction 1`] = `
+"<!-- agentlint:dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52 -->
+### Dynamic code execution has an explicit trust boundary
+
+**needs human approval**
+
+Runtime input reaches dynamic code execution.
+
+**Standard**
+
+Code that evaluates strings at runtime names the trust boundary the string crossed.
+
+- Where does the evaluated string come from?
+- Is there an allowlist or a constrained evaluator instead?
+
+**Agent proposal**
+
+Not fixed. This file is vendored from formula-parser@1.x and the eval is its core. Replacing it means adopting a constrained evaluator, which changes the formula surface for customers. Needs a product decision.
+
+<details><summary>Proposed diff</summary>
+
+\`\`\`diff
+--- a/src/vendor/legacy-parser.js
++++ b/src/vendor/legacy-parser.js
+@@ -1,4 +1,5 @@
+ export function parseFormula(input) {
+   // vendored from formula-parser@1.x
++  // TODO(product): constrained evaluator with an allowlist
+   return eval(input);
+ }
+\`\`\`
+
+</details>
+
+Reply "/agentlint approve <reason>" to accept."
+`;
+
+exports[`render > renders the sticky summary with links, commands, and out-of-diff findings 1`] = `
+"<!-- agentlint:summary -->
+## agentlint: gate closed
+
+3 unresolved (2 human, 1 agent), 0 accepted. Head \`abcdef1\`.
+
+| Rule | Location | Authority | Message | Record the decision |
+| --- | --- | --- | --- | --- |
+| Dynamic code execution has an explicit trust boundary | [src/vendor/legacy-parser.js:3](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3) | human | Runtime input reaches dynamic code execution. | \`/agentlint approve dd03e1e41c97 --reason "..."\` |
+| Destructive migrations ship with a rollback | [src/migrations/2026-07-drop-legacy-users.ts:4](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/migrations/2026-07-drop-legacy-users.ts#L4) | human | This change drops a table. | \`/agentlint approve 8b1164038383 --reason "..."\` |
+| Payment captures are safe to retry | [src/payments/capture-order.ts:6](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/payments/capture-order.ts#L6) | agent | Payment capture has no explicit idempotency key. | \`agentlint accept 103d435f608a --reason "..."\` |
+
+Not inside this pull request's diff, so only listed here:
+
+- \`src/migrations/2026-07-drop-legacy-users.ts:4\` Destructive migrations ship with a rollback (human)
+
+Human findings: comment \`/agentlint approve <digest> --reason "..."\` here, or reply \`/agentlint approve <reason>\` on the inline comment. Agent findings: run \`agentlint accept <digest> --reason "..."\` locally and push. Review everything locally with \`agentlint pr 42\`."
+`;

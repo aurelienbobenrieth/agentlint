@@ -1,0 +1,16 @@
+{
+  "name": "@agentlint/action",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reusable GitHub Action that runs the agentlint gate on pull requests. Zero runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

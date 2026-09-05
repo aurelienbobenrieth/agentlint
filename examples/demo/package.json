@@ -1,0 +1,15 @@
+{
+  "name": "@agentlint/demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Walkthrough project for the agentlint loop. See README.md in this directory.",
+  "type": "module",
+  "scripts": {
+    "agentlint": "node ../../packages/agentlint/dist/bin.mjs",
+    "check": "pnpm agentlint check --all",
+    "review": "pnpm agentlint review --no-open --port 4973"
+  },
+  "devDependencies": {
+    "@aurelienbbn/agentlint": "workspace:*"
+  }
+}

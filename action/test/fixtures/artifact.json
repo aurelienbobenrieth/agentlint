@@ -1,0 +1,181 @@
+{
+  "version": 2,
+  "state": {
+    "version": 2,
+    "mode": "review",
+    "transport": "detached",
+    "project": "demo",
+    "base": "origin/main",
+    "generatedAt": "2026-08-29T10:00:00.000Z",
+    "applications": [],
+    "detached": {
+      "source": "artifact",
+      "canPersistAcceptances": false
+    },
+    "findings": [
+      {
+        "id": "security/dynamic-code-execution:src/vendor/legacy-parser.js:3:10",
+        "identity": {
+          "source": {
+            "standardId": "security/dynamic-code-execution",
+            "standardRevision": 1,
+            "detectorId": "javascript/eval-call",
+            "detectorVersion": 1,
+            "bindingId": "security/dynamic-code-execution",
+            "bindingDigest": "664688aed0066db69d12b33eb20e69d0e0ea1a3b603c4674465fa23807bd43fa"
+          },
+          "fingerprint": {
+            "scheme": "source-structure",
+            "version": 1,
+            "digest": "9abade664c94c5b47c74e29e92c6a01b848db0a3d51982cd1ac7c26c8d2ebbc1"
+          },
+          "lineageKey": null
+        },
+        "ruleId": "security/dynamic-code-execution",
+        "ruleTitle": "Dynamic code execution has an explicit trust boundary",
+        "lifecycle": "state",
+        "authority": "human",
+        "file": "src/vendor/legacy-parser.js",
+        "line": 3,
+        "column": 10,
+        "message": "Runtime input reaches dynamic code execution.",
+        "editor": null,
+        "code": {
+          "focus": {
+            "startLine": 3,
+            "startColumn": 10,
+            "endLine": 3,
+            "endColumn": 21
+          }
+        },
+        "guidance": {
+          "summary": null,
+          "standard": "Code that evaluates strings at runtime names the trust boundary the string crossed.",
+          "checks": [
+            "Where does the evaluated string come from?",
+            "Is there an allowlist or a constrained evaluator instead?"
+          ],
+          "examples": [],
+          "references": []
+        },
+        "status": "unresolved",
+        "acceptance": null,
+        "lineageReason": null,
+        "proposal": {
+          "summary": "Not fixed. This file is vendored from formula-parser@1.x and the eval is its core. Replacing it means adopting a constrained evaluator, which changes the formula surface for customers. Needs a product decision.",
+          "diff": "--- a/src/vendor/legacy-parser.js\n+++ b/src/vendor/legacy-parser.js\n@@ -1,4 +1,5 @@\n export function parseFormula(input) {\n   // vendored from formula-parser@1.x\n+  // TODO(product): constrained evaluator with an allowlist\n   return eval(input);\n }\n",
+          "actor": "agent:claude",
+          "at": "2026-08-28T12:59:26.706Z"
+        }
+      },
+      {
+        "id": "database/destructive-migrations:src/migrations/2026-07-drop-legacy-users.ts:4:1",
+        "identity": {
+          "source": {
+            "standardId": "database/destructive-migrations",
+            "standardRevision": 1,
+            "detectorId": "text/destructive-schema-addition",
+            "detectorVersion": 1,
+            "bindingId": "database/destructive-migrations",
+            "bindingDigest": "d8c8212bb8e5ff2452134d32be17bcde97c659512ac27f94fbec49bd87b48f76"
+          },
+          "fingerprint": {
+            "scheme": "git-change",
+            "version": 1,
+            "digest": "491c4234aa755be203c51244ea550702585ee1cacbabeeac2199436310a06087"
+          },
+          "lineageKey": "src/migrations/2026-07-drop-legacy-users.ts:destructive-schema"
+        },
+        "ruleId": "database/destructive-migrations",
+        "ruleTitle": "Destructive migrations ship with a rollback",
+        "lifecycle": "change",
+        "authority": "human",
+        "file": "src/migrations/2026-07-drop-legacy-users.ts",
+        "line": 4,
+        "column": 1,
+        "message": "This change drops a table.",
+        "editor": null,
+        "code": {
+          "focus": {
+            "startLine": 4,
+            "startColumn": 1,
+            "endLine": 4,
+            "endColumn": 40
+          }
+        },
+        "guidance": {
+          "summary": null,
+          "standard": "A destructive schema change names the backup and the rollback path before it merges.",
+          "checks": ["Is there a verified backup?", "Can the change be rolled back without data loss?"],
+          "examples": [],
+          "references": []
+        },
+        "status": "unresolved",
+        "acceptance": null,
+        "lineageReason": "Approved with the staged backup and rollback runbook attached to OPS-1842.",
+        "proposal": null
+      },
+      {
+        "id": "payments/idempotent-capture:src/payments/capture-order.ts:6:9",
+        "identity": {
+          "source": {
+            "standardId": "payments/idempotent-capture",
+            "standardRevision": 1,
+            "detectorId": "typescript/payment-capture-without-idempotency-key",
+            "detectorVersion": 1,
+            "bindingId": "payments/idempotent-capture",
+            "bindingDigest": "a51565c14bb4c3b570b7c8f60a728f71e837dfa8cabe2a456cafbaf419f27eba"
+          },
+          "fingerprint": {
+            "scheme": "source-structure",
+            "version": 1,
+            "digest": "4b47d62994f7a5370890913876a6781a970f48d7ee9e52bde3bc40b52ec861ef"
+          },
+          "lineageKey": null
+        },
+        "ruleId": "payments/idempotent-capture",
+        "ruleTitle": "Payment captures are safe to retry",
+        "lifecycle": "state",
+        "authority": "agent",
+        "file": "src/payments/capture-order.ts",
+        "line": 6,
+        "column": 9,
+        "message": "Payment capture has no explicit idempotency key.",
+        "editor": null,
+        "code": {
+          "focus": {
+            "startLine": 6,
+            "startColumn": 9,
+            "endLine": 6,
+            "endColumn": 25
+          }
+        },
+        "guidance": {
+          "summary": null,
+          "standard": "Every capture carries an idempotency key derived from the order, so a retry cannot charge twice.",
+          "checks": ["Does a retry reuse the same key?"],
+          "examples": [],
+          "references": []
+        },
+        "status": "unresolved",
+        "acceptance": null,
+        "lineageReason": null,
+        "proposal": null
+      }
+    ],
+    "sources": {
+      "src/vendor/legacy-parser.js": "export function parseFormula(input) {\n  // vendored from formula-parser@1.x\n  return eval(input);\n}\n",
+      "src/migrations/2026-07-drop-legacy-users.ts": "export async function up(db) {\n  await db.dropTable(\"users\", { cascade: true });\n}\n",
+      "src/payments/capture-order.ts": ""
+    },
+    "coverage": {
+      "scope": "complete",
+      "files": [
+        "src/vendor/legacy-parser.js",
+        "src/migrations/2026-07-drop-legacy-users.ts",
+        "src/payments/capture-order.ts"
+      ],
+      "rules": ["security/dynamic-code-execution", "database/destructive-migrations", "payments/idempotent-capture"]
+    }
+  }
+}

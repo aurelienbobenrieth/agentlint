@@ -1,93 +1,50 @@
 # Contributing
 
-## How to contribute
+Thanks for helping. agentlint is small on purpose. Read [`AGENTS.md`](AGENTS.md) for the boundaries we hold and [`docs/decisions/`](docs/decisions/README.md) for the reasons behind them.
 
-- [Open an issue](https://github.com/aurelienbobenrieth/agentlint/issues) to report bugs or request rules.
-- [Start a discussion](https://github.com/aurelienbobenrieth/agentlint/discussions) for broader ideas, questions, or feedback.
+## Setup
 
-## Local development
-
-- Node 22+, pnpm 10+
-- `pnpm install`
-- `pnpm check` runs the full validation suite (typecheck, lint, format check, test)
+Node 22.19+ and pnpm 10+. The repository declares its package manager, so Corepack picks the right pnpm.
 
 ```bash
-pnpm typecheck    # Type check
-pnpm test         # Run tests
-pnpm test:watch   # Run tests in watch mode
-pnpm lint         # Lint with oxlint
-pnpm fmt          # Format with oxfmt
-pnpm build        # Build with tsdown
-pnpm check        # Run all checks
+pnpm install
+pnpm build      # CLI, declarations, review UI (dist/ui), grammar WASM (dist/wasm)
+pnpm check      # typecheck, oxlint, oxfmt, skill validation, tests
 ```
 
-## Writing a rule
+Other useful commands:
 
-Rules use `defineRule()` with metadata and a visitor factory:
-
-```typescript
-import { defineRule } from "agentlint";
-
-export const myRule = defineRule({
-  meta: {
-    name: "my-rule",
-    description: "What it checks",
-    languages: ["ts", "tsx"],
-    instruction: "How the AI should evaluate matches",
-  },
-  createOnce(context) {
-    return {
-      // Optional: per-file setup. Return false to skip.
-      before(filename) {},
-
-      // Visitor for specific AST node types (tree-sitter names)
-      function_declaration(node) {
-        context.flag({
-          node,
-          message: "Something suspicious",
-        });
-      },
-
-      // Optional: aggregate analysis after all files
-      after() {},
-    };
-  },
-});
+```bash
+pnpm test:watch                      # package tests in watch mode
+pnpm --filter @agentlint/review dev  # review SPA against a running `agentlint review --port 4973`
+pnpm fmt                             # format everything
+pnpm refs:sync                       # refresh the reference clones under .agents/ref-repos
 ```
 
-### Available visitor keys
+Configure your editor to use the workspace TypeScript so the Effect language service plugin loads.
 
-Any tree-sitter node type string is a valid visitor key. Common ones:
+## Making a change
 
-- `comment` - all comments
-- `function_declaration`, `arrow_function`, `method_definition`
-- `class_declaration`
-- `call_expression`, `new_expression`
-- `import_statement`, `export_statement`
-- `if_statement`, `try_statement`, `return_statement`
-- `jsx_element`, `jsx_self_closing_element`
-- `type_alias_declaration`, `interface_declaration`
+1. Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI separate. A feature lives in `packages/agentlint/src/features/<name>/` as a `request.ts` and a `handler.ts`.
+2. Prefer Effect services for infrastructure and Effect Schema for anything public or persisted.
+3. Product rules belong in consumer repositories or rule packages, never in the core.
+4. Acceptance compatibility is gate-critical. Changes to source identity, fingerprints, authority, lineage, or cleanup need tests.
+5. Add a changeset (`pnpm changeset`) for anything a user can notice: public API, CLI, persisted data, dependencies, packaged skills. Use conventional commit prefixes.
+6. Run `pnpm fmt` and `pnpm check` before opening the pull request.
 
-### The AgentReviewNode API
+## Verifying the package
 
-```typescript
-node.type; // tree-sitter node type string
-node.text; // full source text
-node.startPosition; // { row, column } (0-indexed)
-node.endPosition; // { row, column } (0-indexed)
-node.children; // child nodes (lazily wrapped)
-node.parent; // parent node or null
-node.childCount; // number of children
+CI packs the tarball and installs it in an empty project. Do the same locally when you touch dependencies, the build, or the CLI entry:
 
-node.childByFieldName("name"); // grammar field access
-node.childrenByType("comment"); // direct children of type
-node.descendantsOfType("string"); // recursive search
+```bash
+pnpm --filter @aurelienbbn/agentlint pack --pack-destination /tmp
+node scripts/smoke-package.mjs /tmp/aurelienbbn-agentlint-*.tgz
 ```
 
-## Testing rules
+## Releasing
 
-Tests use real tree-sitter WASM parsing. See `test/services/TreeWalker.test.ts` for examples.
+`release.yml` turns pending changesets into a version pull request. Merging it bumps the package and the skill frontmatter (`scripts/version.sh`). Pushing the matching `v*.*.*` tag runs `publish.yml`, which rebuilds, checks, smoke-tests, and publishes with provenance.
 
-## Commits
+## Writing rules
 
-Use conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`.
+The package README covers the rule API. In short: one `defineRule` value composes a revisioned `standard`, a versioned `detector`, and a repository `binding`. Fixtures are proof samples, not a catalogue of mistakes. Run `agentlint rules test` and calibrate with `agentlint rules scan --review` before enabling a binding.
