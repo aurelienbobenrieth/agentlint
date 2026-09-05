@@ -21,9 +21,7 @@ const topbar = (
   h.header(
     [h.Class("topbar")],
     [
-      iconButton(model.sidebarOpen ? "Hide list" : "Show list", [h.OnClick(Message.ToggledSidebar())], "panel", h, [
-        "[",
-      ]),
+      iconButton("Toggle list", [h.OnClick(Message.ToggledSidebar())], "panel", h, ["["]),
       h.span([h.Class("brand")], ["agentlint"]),
       h.span(
         [

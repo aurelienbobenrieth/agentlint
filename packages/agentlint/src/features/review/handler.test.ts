@@ -81,6 +81,24 @@ describe("review payload", () => {
           yield* applyReviewAction({ type: "withdraw", findingId }, { mode: "calibration", session }),
         ).toMatchObject({ ok: false });
         expect((yield* (yield* AcceptanceStore).read()).records).toHaveLength(1);
+        const calibrationSession = makeReviewSessionState();
+        const calibrationBefore = yield* buildReviewPayload({
+          mode: "calibration",
+          transport: "attached",
+          session: calibrationSession,
+        });
+        expect(calibrationBefore.findings.every((item) => item.status === "unresolved")).toBe(true);
+        yield* applyReviewAction(
+          { type: "calibrate", findingId, calibration: "applies", note: "Useful trigger" },
+          { mode: "calibration", session: calibrationSession },
+        );
+        const calibrationAfter = yield* buildReviewPayload({
+          mode: "calibration",
+          transport: "attached",
+          session: calibrationSession,
+        });
+        expect(calibrationAfter.findings.find((item) => item.id === findingId)?.status).toBe("accepted");
+        expect((yield* (yield* AcceptanceStore).read()).records).toHaveLength(1);
         expect(
           yield* applyReviewAction(
             { type: "request_changes", findingId, reason: "The sandbox is insufficient." },

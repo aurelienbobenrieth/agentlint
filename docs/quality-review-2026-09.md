@@ -54,13 +54,13 @@ These are a reproducible reference point, not a before/after speedup claim or a 
 1. Run the pilot on actual individual and small-team work. Measure useful interceptions, repeated review cost and rule maintenance before growing the product surface.
 2. Profile CLI startup and larger repositories. Consider further loading isolation or caching only after profiling identifies the cost and a safe invalidation contract.
 3. Measure conservative fingerprint invalidation in practice. Narrower evidence scopes need regression evidence that they cannot retain acceptance after a relevant guard or dependency changes.
-4. Complete visual browser QA. Browser discovery returned no available browser in this session. UI state transitions and server behavior are tested; visual rendering is not certified.
-5. Run the newly configured remote OS/Node matrix before release. Local execution validates Windows/Node 24 only. Effect remains pinned to a prerelease; the compiler build also reports an experimental TypeScript API warning.
+4. Browser QA completed in local Chrome using an isolated headless profile. Desktop rendering and widths of 320, 390 and 820 pixels were checked, along with mobile selection, keyboard help/search/acceptance, an HTTP failure, accept/request changes/undo, finishing, detached export/import/revocation and calibration. This is Chrome validation, not a cross-browser or assistive-technology certification.
+5. The remote Linux/Node 22 and 24, macOS/Node 22, and Windows/Node 22 matrix passed after correcting a macOS canonical-path bug. Re-run it for subsequent changes. Effect remains pinned to a prerelease; the compiler build also reports an experimental TypeScript API warning.
 6. Treat local authority as declared accountability. Authenticated provider identity, protected-branch enforcement and tamper-resistant history require deployment-level controls; the core has no cryptographic identity service.
 7. Treat the acceptance transaction guarantees as local filesystem guarantees. Abrupt process death can leave a lock requiring manual recovery. Power-loss durability, network filesystem semantics and a persistent historical ledger are not certified. Proposal and selector files remain contextual stores, outside the acceptance transaction.
 8. Keep detectors deterministic and trusted. In-process repository code can still use external state or change files. The engine's deterministic contract is not a sandbox against deliberately nondeterministic or malicious rules.
 
-No release, push or deployment was performed by this pass.
+Changes were committed and pushed to PR #32 for remote validation. No merge, release or deployment was performed.
 
 ## Pre-release follow-up
 
@@ -68,4 +68,4 @@ The pre-v1 policy is to support the current API and artifacts without migration 
 
 Attached UI actions now update decision drafts only after server confirmation, serialize submissions and prevent finishing during a pending request. Calibration displays calibration progress, not an open gate. Detached reviews expose undo only for local decisions; use request changes to revoke an acceptance carried by the artifact.
 
-Before publishing, finish desktop/narrow-screen and keyboard QA, including failed requests, accept/request changes/undo, detached export/import and calibration. The narrow-screen CSS currently inverts the list toggle's desktop semantics; settle the intended navigation with a browser check instead of certifying this layout from source inspection alone.
+Browser testing exposed and corrected three issues: narrow-screen overflow (578 pixels of content in a 390-pixel viewport), keyboard help without modal focus management, and calibration choices disappearing from the queue before Save label could be pressed. The corrected mobile header keeps Finish visible, selecting a finding returns to its details, keyboard help uses a native modal, and only saved calibration labels leave the queue. Existing code acceptances no longer count as completed calibration. The full Chrome scenario was rerun successfully, with no page JavaScript errors.

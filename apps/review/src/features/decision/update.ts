@@ -50,7 +50,7 @@ const requestFor = (
 };
 
 const dispositionFor = (kind: DecisionKind, current: Draft["disposition"]): Draft["disposition"] =>
-  kind === "accept"
+  kind === "accept" || kind === "calibrate"
     ? "accept"
     : kind === "request_changes"
       ? "request_changes"

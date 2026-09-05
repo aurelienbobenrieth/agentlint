@@ -98,11 +98,14 @@ describe("review stories", () => {
   it("keeps calibration feedback temporary and copyable", () => {
     let current = model("calibration");
     current = send(current, Message.SelectedCalibration({ findingId: "finding-1", calibration: "does_not_apply" }));
+    expect(deriveReview(reviewing(current), current).queueCount).toBe(1);
+    current = send(current, Message.ClickedSaveCalibration({ findingId: "finding-1" }));
+    expect(deriveReview(reviewing(current), current).queueCount).toBe(0);
     current = send(current, Message.UpdatedNote({ findingId: "finding-1", value: "Ignore generated clients." }));
 
     expect(agentInstructions(current)).toContain("does_not_apply");
     expect(agentInstructions(current)).toContain("Ignore generated clients.");
-    expect(current.drafts["finding-1"]?.disposition).toBe("none");
+    expect(detachedOutput(current, "2026-09-05T12:00:00.000Z").acceptanceOutput).toBe("");
   });
 
   it("exports full identity for a detached acceptance", () => {

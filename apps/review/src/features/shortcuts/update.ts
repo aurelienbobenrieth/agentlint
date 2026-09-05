@@ -9,7 +9,7 @@ import { effectiveReason } from "../decision/selectors";
 import { submit } from "../decision/update";
 import { persistChange } from "../session/update";
 import { dismissToast } from "../toasts/update";
-import { BlurActive, FocusElement, RevealSelectedRow, TogglePopover } from "./command";
+import { BlurActive, FocusElement, RevealSelectedRow, ShowHelp, TogglePopover } from "./command";
 import type { fields } from "./messages";
 
 type Update = (model: Model, message: Message) => UpdateReturn;
@@ -18,9 +18,10 @@ type Update = (model: Model, message: Message) => UpdateReturn;
  *  `update` with the click Message they stand for, so the root passes itself in. */
 const pressedShortcut = (model: Model, action: Shortcut, update: Update): UpdateReturn => {
   if (action === "escape") {
-    return { model: evo(model, { helpOpen: () => false }), commands: [BlurActive()] };
+    if (model.helpOpen) return update(model, Message.ToggledHelp());
+    return { model, commands: [BlurActive()] };
   }
-  if (action === "help") return { model: evo(model, { helpOpen: (open) => !open }) };
+  if (action === "help") return update(model, Message.ToggledHelp());
   if (model.screen._tag !== "Reviewing" || model.helpOpen) return { model };
   const state = model.screen.state;
   const { visible, selected, selectedIndex } = deriveReview(state, model);
@@ -74,6 +75,9 @@ const pressedShortcut = (model: Model, action: Shortcut, update: Update): Update
 
 export const cases = (model: Model, update: Update): Handlers<keyof typeof fields> => ({
   PressedShortcut: ({ action }) => pressedShortcut(model, action, update),
-  ToggledHelp: () => ({ model: evo(model, { helpOpen: (open) => !open }) }),
+  ToggledHelp: () => ({
+    model: evo(model, { helpOpen: (open) => !open }),
+    commands: model.helpOpen ? [] : [ShowHelp()],
+  }),
   PerformedDomEffect: () => ({ model }),
 });

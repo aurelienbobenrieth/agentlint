@@ -24,7 +24,8 @@ export const effectiveFindingStatus = (
   model: Model,
 ): FindingStatus => {
   const draft = draftFor(model, finding.id);
-  if (state.mode === "calibration" && draft.calibration !== "unreviewed") return "accepted";
+  if (state.mode === "calibration")
+    return state.transport === "attached" ? finding.status : draft.disposition === "accept" ? "accepted" : "unresolved";
   // Attached sessions refetch server state after every action, so the server is the
   // truth there; a stale local draft must not paint a decision the server no longer holds.
   if (state.transport === "attached") return finding.status;

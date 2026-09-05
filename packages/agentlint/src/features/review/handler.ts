@@ -140,7 +140,16 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
         })),
         references,
       },
-      status: options.session?.requested.has(id) ? "changes_requested" : acceptance ? "accepted" : "unresolved",
+      status:
+        options.mode === "calibration"
+          ? options.session?.calibration.some((item) => item.findingId === id)
+            ? "accepted"
+            : "unresolved"
+          : options.session?.requested.has(id)
+            ? "changes_requested"
+            : acceptance
+              ? "accepted"
+              : "unresolved",
       acceptance: acceptance
         ? {
             reason: acceptance.reason,

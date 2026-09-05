@@ -44,3 +44,12 @@ export const RevealSelectedRow = Command.define("RevealSelectedRow", {
     return Message.PerformedDomEffect();
   }),
 });
+
+/** Let the native modal manage focus trapping and background interaction. */
+export const ShowHelp = Command.define("ShowHelp", {
+  messages: [Message.PerformedDomEffect],
+  execute: Effect.sync(() => {
+    requestAnimationFrame(() => document.querySelector<HTMLDialogElement>("dialog.help")?.showModal());
+    return Message.PerformedDomEffect();
+  }),
+});

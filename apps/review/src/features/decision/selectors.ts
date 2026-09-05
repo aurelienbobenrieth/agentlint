@@ -11,6 +11,8 @@ export const effectiveReason = (model: Model, finding: ReviewFindingPayload): st
 
 const carriesFeedback = (model: Model, finding: ReviewFindingPayload): boolean => {
   const draft = draftFor(model, finding.id);
+  if (model.screen._tag === "Reviewing" && model.screen.state.mode === "calibration")
+    return draft.disposition === "accept";
   return draft.disposition === "request_changes" || draft.note.length > 0 || draft.calibration !== "unreviewed";
 };
 

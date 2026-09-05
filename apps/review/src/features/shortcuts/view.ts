@@ -15,8 +15,8 @@ export const helpDialog = (model: Model, h: HtmlBuilder<Message>): Html => {
         ),
       ],
     );
-  return h.div(
-    [h.Class("help"), h.Role("dialog"), h.AriaLabel("Keyboard shortcuts")],
+  return h.dialog(
+    [h.Class("help"), h.AriaLabel("Keyboard shortcuts")],
     [
       h.div([h.Class("help__backdrop"), h.OnClick(Message.ToggledHelp())], []),
       h.div(

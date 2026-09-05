@@ -9,5 +9,5 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   SelectedView: ({ view }) =>
     persistChange(model, (current) => evo(current, { view: () => view, selectedFindingId: () => null })),
   SelectedFinding: ({ findingId }) =>
-    persistChange(model, (current) => evo(current, { selectedFindingId: () => findingId })),
+    persistChange(model, (current) => evo(current, { selectedFindingId: () => findingId, sidebarOpen: () => true })),
 });
