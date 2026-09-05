@@ -26,7 +26,7 @@ export const fetchState = Effect.gen(function* () {
 });
 
 export const reviewStorageKey = (state: ReviewStatePayload): string =>
-  `agentlint:review:v1:${encodeURIComponent(state.project)}:${encodeURIComponent(state.base)}:${state.mode}`;
+  `agentlint:review:v2:${encodeURIComponent(state.project)}:${encodeURIComponent(state.base)}:${state.mode}:${state.transport}${state.transport === "detached" ? `:${encodeURIComponent(state.generatedAt)}` : ""}`;
 
 const readSavedReview = (state: ReviewStatePayload) =>
   Effect.sync(() => {

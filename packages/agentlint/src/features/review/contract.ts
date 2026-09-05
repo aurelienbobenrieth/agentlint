@@ -48,6 +48,7 @@ export const ReviewGuidance = Schema.Struct({
 export type ReviewGuidance = Schema.Schema.Type<typeof ReviewGuidance>;
 
 export const ReviewAcceptance = Schema.Struct({
+  authority: Schema.Literals(["agent", "human"]),
   reason: Schema.String,
   actor: Schema.String,
   at: Schema.String,
@@ -104,8 +105,6 @@ export const ReviewFindingPayload = Schema.Struct({
   /** Present only when the live localhost session can safely resolve this finding in its repository. */
   editor: Schema.NullOr(Schema.Struct({ canOpen: Schema.Literal(true) })),
   code: Schema.Struct({
-    /** Complete current file source when available. */
-    source: Schema.String,
     /** One-based source range. End coordinates follow the parser's exclusive end position. */
     focus: Schema.Struct({
       startLine: Schema.Number,
@@ -123,7 +122,13 @@ export const ReviewFindingPayload = Schema.Struct({
 export type ReviewFindingPayload = Schema.Schema.Type<typeof ReviewFindingPayload>;
 
 export const ReviewStatePayload = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
+  sources: Schema.Record(Schema.String, Schema.String),
+  coverage: Schema.Struct({
+    scope: Schema.Literals(["partial", "complete"]),
+    files: Schema.Array(Schema.String),
+    rules: Schema.Array(Schema.String),
+  }),
   mode: ReviewMode,
   transport: ReviewTransport,
   project: Schema.String,
@@ -193,7 +198,7 @@ export type ReviewArtifactAcceptance = Schema.Schema.Type<typeof ReviewArtifactA
 
 /** Detached artifact format written by `check --review-output` and read by `review --from`. */
 export const ReviewArtifact = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   state: ReviewStatePayload,
   acceptances: Schema.optional(Schema.Array(ReviewArtifactAcceptance)),
 });

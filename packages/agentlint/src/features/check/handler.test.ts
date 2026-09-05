@@ -62,6 +62,105 @@ const cleanup = Effect.gen(function* () {
 afterEach(() => Effect.runPromise(cleanup));
 
 describe("binary check and acceptance loop", () => {
+  it("scans dependent state files even when Git reports no source change", async () => {
+    await Effect.runPromise(writeSource('danger("x")'));
+    await Effect.runPromise(
+      Effect.flatMap(FileSystem.FileSystem, (fs) =>
+        fs.writeFileString(join(cwd, "policy.txt"), "sandbox required"),
+      ).pipe(Effect.provide(TestLayer)),
+    );
+    const config = Layer.succeed(
+      ConfigLoader,
+      ConfigLoader.of({
+        load: () =>
+          Effect.succeed(
+            normalizeConfig({
+              rules: [defineRule({ ...rule, binding: { ...rule.binding, dependencies: ["policy.txt"] } })],
+            }),
+          ),
+      }),
+    );
+    const result = await Effect.runPromise(
+      checkHandler(new CheckCommand({ ...command, all: false })).pipe(
+        Effect.provide(config),
+        Effect.provide(TestLayer),
+      ),
+    );
+    expect(result.findings).toHaveLength(1);
+    expect(result.scannedFiles).toEqual(["src/demo.ts"]);
+    expect(result.scope).toBe("partial");
+  });
+
+  it("does not load change snapshots for file-local state detectors", async () => {
+    await Effect.runPromise(writeSource('danger("x")'));
+    const git = Layer.succeed(
+      Git,
+      Git.of({
+        detectDefaultBranch: () => Effect.succeed("main"),
+        changedFiles: () => Effect.succeed(["src/demo.ts"]),
+        changeSet: () => Effect.die("State-only scans must not load snapshots"),
+      }),
+    );
+    const result = await Effect.runPromise(
+      checkHandler(new CheckCommand({ ...command, all: false })).pipe(Effect.provide(git), Effect.provide(TestLayer)),
+    );
+    expect(result.findings).toHaveLength(1);
+  });
+
+  it("fails incomplete syntax without pruning existing decisions", async () => {
+    await Effect.runPromise(writeSource('danger("x")'));
+    const [finding] = (await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)))).findings;
+    if (!finding) throw new Error("Expected finding");
+    await Effect.runPromise(
+      acceptFinding(finding, { authority: "agent", reason: "Reviewed." }).pipe(Effect.provide(TestLayer)),
+    );
+    await Effect.runPromise(writeSource('danger("x"'));
+    await expect(Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)))).rejects.toMatchObject({
+      reason: "parse_failed",
+    });
+    expect(await Effect.runPromise(readStoredAcceptances)).toHaveLength(1);
+  });
+
+  it("keeps all separately accepted calls open", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(writeSource('danger("x"); danger("y"); danger("x");'));
+    const first = await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)));
+    await Effect.runPromise(
+      Effect.forEach(first.findings, (finding) =>
+        acceptFinding(finding, { authority: "agent", reason: "Reviewed independently." }),
+      ).pipe(Effect.provide(TestLayer)),
+    );
+    const result = await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)));
+    expect(result.exitCode).toBe(0);
+    expect(result.accepted).toHaveLength(3);
+  });
+
+  it("fails missing paths without removing acceptance state", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(writeSource('danger("x")'));
+    const first = await Effect.runPromise(checkHandler(command).pipe(Effect.provide(TestLayer)));
+    const finding = first.findings[0];
+    if (!finding) throw new Error("Expected finding");
+    await Effect.runPromise(
+      acceptFinding(finding, { authority: "agent", reason: "Reviewed." }).pipe(Effect.provide(TestLayer)),
+    );
+    await expect(
+      Effect.runPromise(
+        checkHandler(new CheckCommand({ ...command, files: ["src/missing.ts"] })).pipe(Effect.provide(TestLayer)),
+      ),
+    ).rejects.toMatchObject({ reason: "filesystem" });
+    expect(await Effect.runPromise(readStoredAcceptances)).toHaveLength(1);
+  });
+
+  it("rejects unknown bindings instead of silently running a subset", async () => {
+    await expect(
+      Effect.runPromise(
+        checkHandler(new CheckCommand({ ...command, rules: [rule.binding.id, "missing"] })).pipe(
+          Effect.provide(TestLayer),
+        ),
+      ),
+    ).rejects.toMatchObject({ ruleId: "missing" });
+  });
   it("preserves formatting-only decisions and invalidates material evidence with transient lineage", async () => {
     await Effect.runPromise(cleanup);
     await Effect.runPromise(writeSource('danger("x")\n'));

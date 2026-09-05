@@ -11,7 +11,13 @@ import { sidebar } from "../list/view";
 import { helpDialog } from "../shortcuts/view";
 import { toasts } from "../toasts/view";
 
-const topbar = (state: ReviewStatePayload, model: Model, openCount: number, h: HtmlBuilder<Message>): Html =>
+const topbar = (
+  state: ReviewStatePayload,
+  model: Model,
+  openCount: number,
+  undecidedCount: number,
+  h: HtmlBuilder<Message>,
+): Html =>
   h.header(
     [h.Class("topbar")],
     [
@@ -19,6 +25,13 @@ const topbar = (state: ReviewStatePayload, model: Model, openCount: number, h: H
         "[",
       ]),
       h.span([h.Class("brand")], ["agentlint"]),
+      h.span(
+        [
+          h.Class("badge"),
+          h.Title(`${state.coverage.files.length} files; ${state.coverage.rules.length} bindings executed`),
+        ],
+        [state.coverage.scope === "complete" ? "Complete scan" : "Partial scan"],
+      ),
       h.span(
         [h.Class("crumb")],
         [
@@ -38,13 +51,21 @@ const topbar = (state: ReviewStatePayload, model: Model, openCount: number, h: H
         : []),
       h.span([h.Class("topbar__spacer")], []),
       h.span(
-        [h.Class(`gate${openCount === 0 ? " gate--open" : ""}`)],
-        [openCount === 0 ? "Gate open" : `${openCount} to decide`],
+        [h.Class(`gate${openCount === 0 && state.mode === "review" ? " gate--open" : ""}`)],
+        [
+          state.mode === "calibration"
+            ? `${openCount} to calibrate`
+            : openCount === 0
+              ? state.transport === "detached"
+                ? "Decisions prepared"
+                : "Gate open"
+              : `${openCount} unresolved`,
+        ],
       ),
       iconButton("Keyboard shortcuts", [h.OnClick(Message.ToggledHelp())], "keyboard", h, ["?"]),
       button("Finish", Message.ClickedFinish(), "primary", h, {
         size: "sm",
-        disabled: openCount > 0 && state.mode === "review",
+        disabled: model.busyFindingId !== null || (undecidedCount > 0 && state.mode === "review"),
       }),
     ],
   );
@@ -57,7 +78,7 @@ export const reviewView = (state: ReviewStatePayload, model: Model, h: HtmlBuild
       h.Style({ "--sidebar-w": `${model.sidebarWidth}px` }),
     ],
     [
-      topbar(state, model, derived.openCount, h),
+      topbar(state, model, derived.openCount, derived.undecidedCount, h),
       h.div(
         [h.Class("workspace")],
         [

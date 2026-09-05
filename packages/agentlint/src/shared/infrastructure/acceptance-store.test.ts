@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, FileSystem, Layer } from "effect";
+import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +65,41 @@ function cleanup(cwd: string) {
 }
 
 describe("acceptance current-state reconciliation", () => {
+  it("preserves the previous file and releases the lock when atomic replacement fails", async () => {
+    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+    const layer = testLayer(cwd);
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const store = yield* AcceptanceStore;
+          const fs = yield* FileSystem.FileSystem;
+          yield* store.write([record("original")]);
+          const broken = FileSystem.makeNoop({
+            ...fs,
+            rename: () =>
+              Effect.fail(
+                new PlatformError.BadArgument({
+                  module: "FileSystem",
+                  method: "rename",
+                  description: "simulated replacement failure",
+                }),
+              ),
+          });
+          const failed = yield* Effect.flatMap(AcceptanceStore, (other) => other.write([record("replacement")])).pipe(
+            Effect.provide(Layer.fresh(AcceptanceStore.layer)),
+            Effect.provideService(FileSystem.FileSystem, broken),
+            Effect.result,
+          );
+          expect(failed._tag).toBe("Failure");
+          expect((yield* store.read()).records).toEqual([record("original")]);
+          expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
+        }).pipe(Effect.provide(layer)),
+      );
+    } finally {
+      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
+    }
+  });
+
   it("sorts records and rejects duplicate exact identities", () => {
     const a = record("a");
     const b = record("b");
@@ -95,7 +130,7 @@ describe("acceptance current-state reconciliation", () => {
     expect(result.removed).toEqual([stale]);
   });
 
-  it("replaces stale evidence in the same explicit lineage", () => {
+  it("preserves other identities in the same lineage during partial updates", () => {
     const prior = record("prior", { lineageKey: "query:list-users" });
     const next = record("next", { lineageKey: "query:list-users", reason: "Reviewed the new limit." });
     const result = reconcileAcceptanceRecords([prior], {
@@ -103,8 +138,8 @@ describe("acceptance current-state reconciliation", () => {
       current: [current(next)],
       accepted: [next],
     });
-    expect(result.records).toEqual([next]);
-    expect(result.removed).toEqual([prior]);
+    expect(result.records).toEqual([next, prior]);
+    expect(result.removed).toEqual([]);
   });
 
   it("rejects an acceptance outside the checked view", () => {
@@ -115,6 +150,46 @@ describe("acceptance current-state reconciliation", () => {
 });
 
 describe("AcceptanceStore", () => {
+  it("serializes concurrent read-modify-write transactions across service instances", async () => {
+    const cwd = join(tmpdir(), `agentlint-concurrent-${randomUUID()}`);
+    try {
+      await Promise.all(
+        Array.from({ length: 8 }, (_, index) => {
+          const accepted = record(String(index));
+          return Effect.runPromise(
+            Effect.flatMap(AcceptanceStore, (store) =>
+              store.reconcile({ scope: "partial", current: [current(accepted)], accepted: [accepted] }),
+            ).pipe(Effect.provide(testLayer(cwd))),
+          );
+        }),
+      );
+      const result = await Effect.runPromise(
+        Effect.flatMap(AcceptanceStore, (store) => store.read()).pipe(Effect.provide(testLayer(cwd))),
+      );
+      expect(result.records).toHaveLength(8);
+    } finally {
+      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(NodeServices.layer)));
+    }
+  });
+
+  it("rejects revocations if the reviewed decision was replaced", () => {
+    const previous = record("a");
+    const replaced = record("a", { reason: "A newer decision." });
+    expect(() =>
+      reconcileAcceptanceRecords([replaced], {
+        scope: "partial",
+        current: [current(previous)],
+        revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+      }),
+    ).toThrow("changed after review");
+    expect(
+      reconcileAcceptanceRecords([previous], {
+        scope: "partial",
+        current: [current(previous)],
+        revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+      }).records,
+    ).toEqual([]);
+  });
   it("treats a missing file as empty and rewrites sorted current state", async () => {
     const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
     const layer = testLayer(cwd);

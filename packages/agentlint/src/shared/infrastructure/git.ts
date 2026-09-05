@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
+import { textLines } from "../pipeline/change-hunks.js";
 import { Env } from "../../config/env.js";
 import type { ChangeHunk, ChangeLine, ChangeSet, ChangedFile, FileSnapshot } from "../../domain/rule.js";
 
@@ -43,7 +44,17 @@ const gitCommand = (cwd: string, args: ReadonlyArray<string>) =>
       new Promise<string>((resolve, reject) => {
         execFile(
           "git",
-          ["-c", "core.fsmonitor=false", ...args],
+          [
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "color.ui=false",
+            "-c",
+            "diff.algorithm=myers",
+            "-c",
+            "diff.indentHeuristic=false",
+            ...args,
+          ],
           { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, windowsHide: true },
           (error, stdout, stderr) => {
             if (error) reject(new Error(stderr.trim() || error.message));
@@ -186,7 +197,9 @@ export class Git extends Context.Service<
       const readWorkingFile = (filePath: string) =>
         fs.readFileString(path.resolve(env.cwd, filePath)).pipe(
           Effect.map((content): string | undefined => content),
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.mapError(
+            (error) => new GitError({ operation: "working file read", detail: `${filePath}: ${String(error)}` }),
+          ),
         );
 
       const collectStatus = (baseCommit: string) =>
@@ -219,46 +232,51 @@ export class Git extends Context.Service<
         Effect.gen(function* () {
           const baseline = yield* resolveBaseline(baseRef);
           const statuses = yield* collectStatus(baseline.commit);
-          const files: ChangedFile[] = [];
+          const files: ChangedFile[] = yield* Effect.forEach(
+            statuses,
+            (entry) =>
+              Effect.gen(function* () {
+                const beforePath = entry.previousPath ?? entry.path;
+                const beforeContent =
+                  entry.status === "added" ? undefined : yield* showFile(baseline.commit, beforePath);
+                const afterContent = entry.status === "deleted" ? undefined : yield* readWorkingFile(entry.path);
+                const diff = yield* runRaw("diff generation", [
+                  "diff",
+                  "--relative",
+                  "--no-ext-diff",
+                  "--no-textconv",
+                  "--unified=3",
+                  "--find-renames",
+                  baseline.commit,
+                  "--",
+                  beforePath,
+                  ...(entry.previousPath ? [entry.path] : []),
+                ]);
+                const parsedHunks = parseUnifiedHunks(diff);
+                const hunks =
+                  parsedHunks.length === 0 && entry.status === "added" && afterContent !== undefined
+                    ? [
+                        {
+                          oldStart: 0,
+                          oldLines: 0,
+                          newStart: 1,
+                          newLines: textLines(afterContent).length,
+                          lines: textLines(afterContent).map((content) => ({ kind: "addition" as const, content })),
+                        },
+                      ]
+                    : parsedHunks;
 
-          for (const entry of statuses) {
-            const beforePath = entry.previousPath ?? entry.path;
-            const beforeContent = entry.status === "added" ? undefined : yield* showFile(baseline.commit, beforePath);
-            const afterContent = entry.status === "deleted" ? undefined : yield* readWorkingFile(entry.path);
-            const diff = yield* runRaw("diff generation", [
-              "diff",
-              "--relative",
-              "--no-ext-diff",
-              "--unified=3",
-              "--find-renames",
-              baseline.commit,
-              "--",
-              beforePath,
-              ...(entry.previousPath ? [entry.path] : []),
-            ]);
-            const parsedHunks = parseUnifiedHunks(diff);
-            const hunks =
-              parsedHunks.length === 0 && entry.status === "added" && afterContent !== undefined
-                ? [
-                    {
-                      oldStart: 0,
-                      oldLines: 0,
-                      newStart: 1,
-                      newLines: afterContent.split(/\r?\n/).length,
-                      lines: afterContent.split(/\r?\n/).map((content) => ({ kind: "addition" as const, content })),
-                    },
-                  ]
-                : parsedHunks;
-
-            files.push({
-              status: entry.status,
-              path: entry.path,
-              ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
-              before: beforeContent === undefined ? null : snapshot(beforeContent),
-              after: afterContent === undefined ? null : snapshot(afterContent),
-              hunks: [...hunks],
-            });
-          }
+                return {
+                  status: entry.status,
+                  path: entry.path,
+                  ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
+                  before: beforeContent === undefined ? null : snapshot(beforeContent),
+                  after: afterContent === undefined ? null : snapshot(afterContent),
+                  hunks: [...hunks],
+                };
+              }),
+            { concurrency: 4 },
+          );
 
           return {
             baseline: { kind: "git" as const, ref: baseline.ref, commit: baseline.commit },

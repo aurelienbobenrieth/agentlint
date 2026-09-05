@@ -17,9 +17,11 @@ const TestEnv = Layer.succeed(
 );
 
 const artifact: ReviewArtifact = {
-  version: 1,
+  version: 2,
   state: {
-    version: 1,
+    version: 2,
+    sources: {},
+    coverage: { scope: "complete", files: [], rules: [] },
     mode: "review",
     transport: "detached",
     project: "demo",

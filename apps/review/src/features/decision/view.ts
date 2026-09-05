@@ -17,7 +17,7 @@ export const decisionForm = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const draft = draftFor(model, finding.id);
-  const busy = model.busyFindingId === finding.id;
+  const busy = model.busyFindingId !== null;
   const status = statusFor(derived, finding);
   const reasonId = `reason-${finding.id}`;
   const empty = draft.reason.trim().length === 0 && finding.proposal === null;
@@ -140,7 +140,7 @@ export const decisionForm = (
             }),
             h,
           ),
-          ...(status === "accepted" || status === "changes_requested"
+          ...((status === "accepted" || status === "changes_requested") && (!detached || draft.disposition !== "none")
             ? [
                 h.span(
                   [h.Class(`decision__status decision__status--${status}`)],

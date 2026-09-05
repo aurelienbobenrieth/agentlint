@@ -9,8 +9,8 @@ import {
 } from "./fingerprint.js";
 
 describe("canonical fingerprints", () => {
-  it("ignores object key order and normalizes Unicode", () => {
-    expect(canonicalDigest({ b: 2, a: "e\u0301" })).toBe(canonicalDigest({ a: "é", b: 2 }));
+  it("ignores object key order and preserves distinct Unicode", () => {
+    expect(canonicalDigest({ b: 2, a: "e\u0301" })).not.toBe(canonicalDigest({ a: "é", b: 2 }));
     expect(canonicalStringify({ b: 2, a: 1 })).toBe('{"a":1,"b":2}');
   });
 

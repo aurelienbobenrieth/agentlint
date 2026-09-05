@@ -1,14 +1,17 @@
 {
-  "version": 1,
+  "version": 2,
   "state": {
-    "version": 1,
+    "version": 2,
     "mode": "review",
     "transport": "detached",
     "project": "demo",
     "base": "origin/main",
     "generatedAt": "2026-08-29T10:00:00.000Z",
     "applications": [],
-    "detached": { "source": "artifact", "canPersistAcceptances": false },
+    "detached": {
+      "source": "artifact",
+      "canPersistAcceptances": false
+    },
     "findings": [
       {
         "id": "security/dynamic-code-execution:src/vendor/legacy-parser.js:3:10",
@@ -38,8 +41,12 @@
         "message": "Runtime input reaches dynamic code execution.",
         "editor": null,
         "code": {
-          "source": "export function parseFormula(input) {\n  // vendored from formula-parser@1.x\n  return eval(input);\n}\n",
-          "focus": { "startLine": 3, "startColumn": 10, "endLine": 3, "endColumn": 21 }
+          "focus": {
+            "startLine": 3,
+            "startColumn": 10,
+            "endLine": 3,
+            "endColumn": 21
+          }
         },
         "guidance": {
           "summary": null,
@@ -89,8 +96,12 @@
         "message": "This change drops a table.",
         "editor": null,
         "code": {
-          "source": "export async function up(db) {\n  await db.dropTable(\"users\", { cascade: true });\n}\n",
-          "focus": { "startLine": 4, "startColumn": 1, "endLine": 4, "endColumn": 40 }
+          "focus": {
+            "startLine": 4,
+            "startColumn": 1,
+            "endLine": 4,
+            "endColumn": 40
+          }
         },
         "guidance": {
           "summary": null,
@@ -132,8 +143,12 @@
         "message": "Payment capture has no explicit idempotency key.",
         "editor": null,
         "code": {
-          "source": "",
-          "focus": { "startLine": 6, "startColumn": 9, "endLine": 6, "endColumn": 25 }
+          "focus": {
+            "startLine": 6,
+            "startColumn": 9,
+            "endLine": 6,
+            "endColumn": 25
+          }
         },
         "guidance": {
           "summary": null,
@@ -147,6 +162,20 @@
         "lineageReason": null,
         "proposal": null
       }
-    ]
+    ],
+    "sources": {
+      "src/vendor/legacy-parser.js": "export function parseFormula(input) {\n  // vendored from formula-parser@1.x\n  return eval(input);\n}\n",
+      "src/migrations/2026-07-drop-legacy-users.ts": "export async function up(db) {\n  await db.dropTable(\"users\", { cascade: true });\n}\n",
+      "src/payments/capture-order.ts": ""
+    },
+    "coverage": {
+      "scope": "complete",
+      "files": [
+        "src/vendor/legacy-parser.js",
+        "src/migrations/2026-07-drop-legacy-users.ts",
+        "src/payments/capture-order.ts"
+      ],
+      "rules": ["security/dynamic-code-execution", "database/destructive-migrations", "payments/idempotent-capture"]
+    }
   }
 }

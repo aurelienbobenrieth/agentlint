@@ -26,11 +26,16 @@ export const initHandler = Effect.fn("initHandler")(function* (_command: InitCom
   }
 
   const cacheEntry = ".agentlint/.cache/";
+  const ephemeralEntries = [cacheEntry, ".agentlint/acceptances.lock", ".agentlint/acceptances.*.tmp"];
   const currentIgnore = yield* fs.readFileString(gitignorePath).pipe(Effect.orElseSucceed(() => ""));
-  const ignoreUpdated = !currentIgnore.split(/\r?\n/).includes(cacheEntry);
+  const missingEntries = ephemeralEntries.filter((entry) => !currentIgnore.split(/\r?\n/).includes(entry));
+  const ignoreUpdated = missingEntries.length > 0;
   if (ignoreUpdated) {
     const prefix = currentIgnore.length === 0 || currentIgnore.endsWith("\n") ? currentIgnore : `${currentIgnore}\n`;
-    yield* fs.writeFileString(gitignorePath, `${prefix}\n# agentlint ephemeral selector cache\n${cacheEntry}\n`);
+    yield* fs.writeFileString(
+      gitignorePath,
+      `${prefix}\n# agentlint ephemeral selector cache\n${missingEntries.join("\n")}\n`,
+    );
   }
 
   return new InitResult({

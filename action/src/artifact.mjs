@@ -5,6 +5,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 /**
  * @typedef {object} Proposal
@@ -134,14 +135,14 @@ function oneOf(key, allowed, value) {
 export function decodeFinding(raw) {
   if (!isRecord(raw)) throw new TypeError("finding is not an object");
   const identity = recordAt(raw, "identity");
-  const fingerprint = recordAt(identity, "fingerprint");
+  recordAt(identity, "fingerprint");
   const guidance = recordAt(raw, "guidance");
   const checks = guidance["checks"];
   const acceptance = raw["acceptance"];
   const proposal = raw["proposal"];
   return {
     id: stringAt(raw, "id"),
-    digest: stringAt(fingerprint, "digest"),
+    digest: createHash("sha256").update(stringAt(raw, "id")).digest("hex"),
     ruleId: stringAt(raw, "ruleId"),
     ruleTitle: stringAt(raw, "ruleTitle"),
     lifecycle: oneOf("lifecycle", ["state", "change"], raw["lifecycle"]),
@@ -175,7 +176,7 @@ export function decodeFinding(raw) {
  * @returns {Artifact}
  */
 export function decodeArtifact(raw) {
-  if (!isRecord(raw) || raw["version"] !== 1) throw new TypeError("not a version 1 review artifact");
+  if (!isRecord(raw) || raw["version"] !== 2) throw new TypeError("not a version 2 review artifact");
   const state = recordAt(raw, "state");
   const findings = state["findings"];
   if (!Array.isArray(findings)) throw new TypeError("state.findings is not an array");

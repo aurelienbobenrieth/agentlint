@@ -81,6 +81,11 @@ export async function run(options) {
     const workspace = resolve(env["GITHUB_WORKSPACE"] ?? process.cwd());
     const workingDirectory = resolve(workspace, inputs.workingDirectory);
     const eventName = env["GITHUB_EVENT_NAME"] ?? "";
+    if (eventName === "pull_request_target") {
+      throw new InputError(
+        "pull_request_target is unsupported: repository configuration executes code. Use pull_request with least-privilege permissions.",
+      );
+    }
     const event = await readEvent(env["GITHUB_EVENT_PATH"] ?? "");
     github = createGitHub({
       token: inputs.githubToken,

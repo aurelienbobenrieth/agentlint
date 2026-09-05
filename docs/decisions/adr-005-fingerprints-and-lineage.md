@@ -29,25 +29,25 @@ The `FindingSource` contains `standardId`, `standardRevision`, `detectorId`, `de
 
 The `Fingerprint` contains a `scheme`, a `version`, and a `digest`.
 
-The scheme identifies the evidence family. The version identifies the normalization algorithm for that scheme. The digest is a SHA-256 hash of canonical JSON evidence with sorted object keys and NFC strings.
+The scheme identifies the evidence family. The version identifies the normalization algorithm for that scheme. The digest is a SHA-256 hash of canonical JSON evidence with sorted object keys and exact Unicode strings.
 
 The acceptance key contains the complete source identity and the complete fingerprint.
 
 ## State evidence
 
-The `source-structure` scheme has version 1. It hashes these values:
+The `source-structure` scheme has version 2. It hashes these values:
 
 - The normalized repository-relative path.
-- The semantic structure of the matched node. The structure contains node types and leaf text. It excludes positions.
-- An occurrence key. The key contains the node type and an ordinal among equal structures in the same file.
+- The semantic structure of the containing file. The structure contains node types and leaf text. It excludes positions.
+- An occurrence key. The key contains a structural child path or a unique detector-owned key.
 
-Formatting and line movement do not change the fingerprint when the node structure stays equal. A file move or a change inside the matched node invalidates the acceptance.
+Formatting and line movement do not change the fingerprint when the node structure stays equal. A file move or a change to the containing file structure invalidates the acceptance. Explicit binding dependency contents and optional reported evidence also enter the fingerprint.
 
-Two equal occurrences in one file get different fingerprints. The ordinal follows document order. When an earlier equal occurrence disappears, later occurrences get new fingerprints.
+Two equal occurrences in one file get different fingerprints. Structural paths follow document order. The file structure also changes when an occurrence disappears. An acceptance cannot transfer to an equal sibling.
 
 ## Change evidence
 
-The `git-change` scheme has version 1. It hashes these values:
+The `git-change` scheme has version 2. It hashes these values:
 
 - The detector-selected `evidence` value.
 - The normalized before path and after path.
@@ -95,7 +95,7 @@ A stale acceptance has no equal finding in a complete check.
 
 A complete check removes stale records. A partial check cannot prove that a record is stale and never removes one.
 
-When a new acceptance has the same lineage as an older record, the writer replaces the older record.
+A writer replaces only the same exact acceptance identity. Related lineage never removes another record during a partial update; a complete check proves which identities are stale.
 
 `acceptances import` validates each record against a complete check and rejects records that no longer match.
 
@@ -147,3 +147,5 @@ A fingerprint change is a documented compatibility event in the release notes.
 - 2026-08-10: The team added standard revisions, binding digests, and independent authority validation.
 - 2026-08-10: The team accepted the record after the 0.2 implementation and compatibility tests.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+
+- 2026-09-05: Version 2 preserves Unicode distinctions and includes containing-file structure and declared dependencies. Regression probes showed that node-only evidence retained decisions after guard removal. Structural occurrence identity fixes lineage collisions. Partial updates preserve other exact identities even when lineage matches. Version 1 fingerprints remain readable but require new review.

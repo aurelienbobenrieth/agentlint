@@ -59,6 +59,10 @@ beforeAll(() => Effect.runPromise(setup));
 afterAll(() => Effect.runPromise(cleanup));
 
 describe("resolveFiles", () => {
+  it("rejects explicit paths outside the repository", async () => {
+    await expect(resolve({ all: true, positionalFiles: [".."] })).rejects.toMatchObject({ reason: "filesystem" });
+  });
+
   it("lists every file with an extension outside skipped directories for --all", async () => {
     expect(await resolve({ all: true })).toEqual([
       "docs/guide.md",
@@ -108,12 +112,13 @@ describe("resolveFiles", () => {
     expect(await resolve({ all: false }, changedFiles(["README"]))).toEqual([]);
   });
 
-  it("keeps the siblings of an entry that cannot be inspected", async () => {
-    expect(await resolve({ all: true }, changedFiles([]), BrokenLayer)).toEqual([
-      "docs/guide.md",
-      "src/a.ts",
-      "src/b.js",
-      "src/nested/c.tsx",
-    ]);
+  it("fails a complete scan when an entry cannot be inspected", async () => {
+    await expect(resolve({ all: true }, changedFiles([]), BrokenLayer)).rejects.toMatchObject({ reason: "filesystem" });
+  });
+  it("rejects missing explicit paths and expands explicit directories", async () => {
+    await expect(resolve({ all: false, positionalFiles: ["missing.ts"] })).rejects.toMatchObject({
+      reason: "filesystem",
+    });
+    expect(await resolve({ all: false, positionalFiles: ["src/nested"] })).toEqual(["src/nested/c.tsx"]);
   });
 });

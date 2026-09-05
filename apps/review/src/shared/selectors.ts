@@ -54,6 +54,7 @@ export interface ReviewDerivation {
   readonly decisionsCount: number;
   /** Findings still unresolved. Zero means the gate is open. */
   readonly openCount: number;
+  readonly undecidedCount: number;
   /** Facet option counts within the current view, before facets and the query apply. */
   readonly counts: {
     readonly statuses: ReadonlyMap<StatusFacet, number>;
@@ -96,12 +97,14 @@ const compute = (state: ReviewStatePayload, model: Model): ReviewDerivation => {
   const listed: ReviewFindingPayload[] = [];
   let queueCount = 0;
   let openCount = 0;
+  let undecidedCount = 0;
 
   for (const finding of state.findings) {
     const status = effectiveFindingStatus(finding, state, model);
     statusOf.set(finding.id, status);
     titles.set(finding.ruleId, finding.ruleTitle);
-    if (status === "unresolved") openCount += 1;
+    if (status !== "accepted") openCount += 1;
+    if (status === "unresolved") undecidedCount += 1;
     if (inView(status, "queue")) queueCount += 1;
     if (!inView(status, model.view)) continue;
     const facet = statusFacet(status);
@@ -136,6 +139,7 @@ const compute = (state: ReviewStatePayload, model: Model): ReviewDerivation => {
     queueCount,
     decisionsCount: state.findings.length - queueCount,
     openCount,
+    undecidedCount,
     counts,
     rules: [...titles.entries()].toSorted(([left], [right]) => left.localeCompare(right)),
   };

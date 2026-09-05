@@ -27,8 +27,8 @@ agentlint fills this gap. It combines deterministic detection, contextual guidan
 
 The project solves these problems in this order:
 
-1. Prevent repeated human review feedback.
-2. Prevent agents from missing repository instructions.
+1. Make configured review obligations explicit and their decisions attributable.
+2. Prevent repeated human review feedback and missed repository instructions.
 3. Add human gates for sensitive changes.
 4. Keep a reviewable record of accepted findings.
 
@@ -136,3 +136,5 @@ The documentation describes agentlint as a judgment gate, not only as a linter.
 - 2026-08-10: The project accepted standards, detectors, and repository bindings as separate product objects.
 - 2026-08-10: The project required state and change detector workflows in the 0.2 baseline.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+
+- 2026-09-05: Clarified the primary value as explicit review obligations and traceable decisions for individual developers and small teams. An acceptance establishes a recorded decision, not proof of its correctness or authenticated local identity.

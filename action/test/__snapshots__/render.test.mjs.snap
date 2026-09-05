@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`render > renders inline bodies with the marker first and the right reply instruction 1`] = `
-"<!-- agentlint:9abade664c94c5b47c74e29e92c6a01b848db0a3d51982cd1ac7c26c8d2ebbc1 -->
+"<!-- agentlint:dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52 -->
 ### Dynamic code execution has an explicit trust boundary
 
 **needs human approval**
@@ -45,9 +45,9 @@ exports[`render > renders the sticky summary with links, commands, and out-of-di
 
 | Rule | Location | Authority | Message | Record the decision |
 | --- | --- | --- | --- | --- |
-| Dynamic code execution has an explicit trust boundary | [src/vendor/legacy-parser.js:3](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3) | human | Runtime input reaches dynamic code execution. | \`/agentlint approve 9abade664c94 --reason "..."\` |
-| Destructive migrations ship with a rollback | [src/migrations/2026-07-drop-legacy-users.ts:4](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/migrations/2026-07-drop-legacy-users.ts#L4) | human | This change drops a table. | \`/agentlint approve 491c4234aa75 --reason "..."\` |
-| Payment captures are safe to retry | [src/payments/capture-order.ts:6](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/payments/capture-order.ts#L6) | agent | Payment capture has no explicit idempotency key. | \`agentlint accept 4b47d62994f7 --reason "..."\` |
+| Dynamic code execution has an explicit trust boundary | [src/vendor/legacy-parser.js:3](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3) | human | Runtime input reaches dynamic code execution. | \`/agentlint approve dd03e1e41c97 --reason "..."\` |
+| Destructive migrations ship with a rollback | [src/migrations/2026-07-drop-legacy-users.ts:4](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/migrations/2026-07-drop-legacy-users.ts#L4) | human | This change drops a table. | \`/agentlint approve 8b1164038383 --reason "..."\` |
+| Payment captures are safe to retry | [src/payments/capture-order.ts:6](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/payments/capture-order.ts#L6) | agent | Payment capture has no explicit idempotency key. | \`agentlint accept 103d435f608a --reason "..."\` |
 
 Not inside this pull request's diff, so only listed here:
 

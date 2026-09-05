@@ -1,13 +1,15 @@
 /** Review payload and action application. @module @since 0.2.0 */
 
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, Path } from "effect";
+import type { CheckResult } from "../check/request.js";
+import { acceptanceKey } from "../../domain/acceptance.js";
 import { Env } from "../../config/env.js";
-import { acceptanceSatisfies, findLineage } from "../../domain/acceptance.js";
+import { findLineage, invalidationReasons } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
 import { findProposal } from "../../domain/proposal.js";
 import { acceptFinding } from "../accept/handler.js";
-import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
+import { AcceptanceStore, lookupAcceptance } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
@@ -43,6 +45,7 @@ export function makeReviewSessionState(): ReviewSessionState {
 }
 
 export interface BuildReviewPayloadOptions {
+  readonly check?: CheckResult;
   readonly base?: string | undefined;
   readonly mode: ReviewMode;
   readonly transport: ReviewTransport;
@@ -53,20 +56,24 @@ export interface BuildReviewPayloadOptions {
 
 export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (options: BuildReviewPayloadOptions) {
   const env = yield* Env;
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* (yield* ConfigLoader).load();
-  const snapshot = yield* (yield* AcceptanceStore).read();
+  const snapshot = options.check
+    ? {
+        records: options.check.acceptances,
+        byKey: new Map(options.check.acceptances.map((record) => [acceptanceKey(record), record])),
+      }
+    : yield* (yield* AcceptanceStore).read();
   const proposals = yield* (yield* ProposalStore).read();
-  const collection = yield* collectFindings({ all: true, rules: [], base: options.base ?? config.base, files: [] });
-  const sources = new Map<string, string>();
+  const collection =
+    options.check ?? (yield* collectFindings({ all: true, rules: [], base: options.base ?? config.base, files: [] }));
   const findings: ReviewFindingPayload[] = [];
 
   for (const finding of collection.findings) {
     const rule = config.rulesById.get(finding.ruleId);
     if (!rule) continue;
     const id = findingKey(finding);
-    const acceptance = snapshot.records.find((record) => acceptanceSatisfies(record, finding));
+    const acceptance = lookupAcceptance(snapshot, finding);
     const lineage = findLineage(snapshot.records, finding);
     const proposal = findProposal(proposals, finding);
     const absoluteFile = path.resolve(env.cwd, finding.file);
@@ -76,11 +83,6 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       !relativeFile.startsWith("../") &&
       !relativeFile.startsWith("..\\") &&
       !path.isAbsolute(relativeFile);
-    let source = sources.get(finding.file);
-    if (source === undefined) {
-      source = yield* fs.readFileString(path.resolve(env.cwd, finding.file)).pipe(Effect.orElseSucceed(() => ""));
-      sources.set(finding.file, source);
-    }
     const guidance = normalizeGuidance(rule.standard.guidance);
     const references: ReviewFindingPayload["guidance"]["references"][number][] = [];
     if (rule.standard.source) {
@@ -120,7 +122,6 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       message: finding.message,
       editor: options.transport === "attached" && isInsideRepository ? { canOpen: true } : null,
       code: {
-        source,
         focus: {
           startLine: finding.line,
           startColumn: finding.column,
@@ -141,9 +142,16 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       },
       status: options.session?.requested.has(id) ? "changes_requested" : acceptance ? "accepted" : "unresolved",
       acceptance: acceptance
-        ? { reason: acceptance.reason, actor: acceptance.actor ?? "unknown", at: acceptance.acceptedAt }
+        ? {
+            reason: acceptance.reason,
+            actor: acceptance.actor ?? "unknown",
+            at: acceptance.acceptedAt,
+            authority: acceptance.authority,
+          }
         : null,
-      lineageReason: lineage?.reason ?? null,
+      lineageReason: lineage
+        ? `${invalidationReasons(lineage, finding).join(" ")} Previous decision by ${lineage.actor ?? "unknown"} (${lineage.authority}, ${lineage.acceptedAt}): ${lineage.reason}`
+        : null,
       proposal: proposal
         ? { summary: proposal.summary, diff: proposal.diff ?? null, actor: proposal.actor, at: proposal.proposedAt }
         : null,
@@ -152,7 +160,13 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
   }
 
   return {
-    version: 1,
+    version: 2,
+    sources: collection.sources,
+    coverage: {
+      scope: collection.scope,
+      files: [...collection.scannedFiles],
+      rules: options.check?.availableRules ?? config.rules.map((rule) => rule.binding.id),
+    },
     mode: options.mode,
     transport: options.transport,
     project: path.basename(env.cwd),
@@ -205,17 +219,20 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
   }
 
   if (action.type === "withdraw") {
+    if (options.mode !== "review")
+      return { ok: false, message: "Calibration cannot revoke acceptances." } satisfies ReviewActionResult;
     // Undo a decision made in this session: drop the change request and any acceptance
     // that currently satisfies this exact finding.
     forget();
     const store = yield* AcceptanceStore;
-    const snapshot = yield* store.read();
-    const kept = snapshot.records.filter((record) => !acceptanceSatisfies(record, finding));
-    if (kept.length !== snapshot.records.length) yield* store.write(kept);
+    yield* store.reconcile({ scope: "partial", current: [finding], revoked: [finding] });
     return { ok: true, message: "Decision withdrawn." } satisfies ReviewActionResult;
   }
 
   if (action.type === "request_changes") {
+    if (options.mode !== "review")
+      return { ok: false, message: "Calibration cannot revoke acceptances." } satisfies ReviewActionResult;
+    yield* (yield* AcceptanceStore).reconcile({ scope: "partial", current: [finding], revoked: [finding] });
     // An empty request still tells the agent exactly which finding to revisit; the
     // finding message and standard carry the instruction.
     replaceByFindingId(options.session.feedback, {

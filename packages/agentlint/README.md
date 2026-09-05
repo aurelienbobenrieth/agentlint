@@ -1,8 +1,12 @@
 # agentlint
 
-Deterministic findings and explicit judgment gates for coding agents.
+Repository-owned review obligations and traceable decisions for coding agents.
 
 agentlint is for concerns that are too contextual for a conventional linter and too important to leave to prompt recall. It deterministically selects review points, supplies the repository standard, and blocks until the evidence changes or an acceptance with sufficient authority matches the exact finding.
+
+An open gate means every current finding in the reported scan scope has a compatible recorded decision. The record states who declared the decision, the authority used, the reason, and the exact standard and evidence identity. It does not prove that the judgment was correct or that unconfigured concerns were reviewed.
+
+Skills explain how to review. The gate requires a decision at the checkpoint where the CLI is enforced. Use a complete scan as the completion or CI checkpoint.
 
 It does not call an AI model. It does not ship rules. Repositories and plugin packages own their standards, detectors, and policy.
 
@@ -31,7 +35,7 @@ pnpm agentlint init
 
 Every command accepts `--help`. `--rule` may be repeated or comma-separated.
 
-`init` creates `.agentlint/config.ts` and ignores only the ephemeral selector cache. Commit the config and `.agentlint/acceptances.jsonl` when it exists.
+`init` creates `.agentlint/config.ts` and ignores ephemeral selector and acceptance-transaction files. Commit the config and `.agentlint/acceptances.jsonl` when it exists.
 
 ## Define a state rule
 
@@ -157,7 +161,7 @@ For an agent-authority finding:
 
 ```bash
 pnpm agentlint explain 1
-pnpm agentlint accept 1 --reason "The upstream route caps every request at 100 rows."
+pnpm agentlint accept 1 --reason "The containing function restricts this read to the verified finite lookup dataset."
 ```
 
 For a human-authority finding, open the review UI or use the explicit human entry point:
@@ -188,7 +192,13 @@ pnpm agentlint propose 6 --summary "Added an idempotent backfill before the drop
 - fingerprint scheme, version, and evidence digest;
 - sufficient authority.
 
-State fingerprints normalize syntax so a line move or formatting-only edit can retain acceptance. Material code changes invalidate it. Change detectors own their material `evidence`; changing it invalidates acceptance. Optional lineage can show a prior reason after invalidation, but it never opens the new gate.
+State fingerprints (version 2) include the containing file syntax, the structural occurrence, optional reported evidence, and the contents of explicit `binding.dependencies`. Whitespace between syntax nodes retains acceptance; literal and comment contents remain material. Changes to the containing file structure invalidate it, even outside the matched call. This is intentionally conservative: changes elsewhere in a busy file may require another review. Unicode source values stay exact.
+
+For a state binding, when a justification relies on another file, add its exact normalized repository-relative path to `binding.dependencies`, for example `["src/http/pagination.ts"]`. Dependencies are required inputs, not globs. Their contents are available as `context.dependencies[path]`. Include them in repository fixtures too. A dependency change triggers a full scan of the binding, even if its matched file did not change. The engine does not infer runtime or transitive dependencies. Change detectors define their supporting evidence explicitly through `report({ evidence })`; `binding.dependencies` is rejected for change rules.
+
+Imperative state detectors default to repository scans. A detector that is independent for each file can declare `scan: "file"`. Node wrappers are valid during their file visitor only. In `after()`, use captured plain data rather than retaining syntax nodes. `context.report` accepts optional material JSON `evidence` and a unique, stable `key`; the containing file remains part of the fingerprint.
+
+This pre-v1 draft supports the current format only and provides no migration or backward-compatibility layer. Regenerate artifacts and review findings again after a breaking change. Version fields remain part of the gate contract: unsupported evidence can never satisfy a finding. Change detectors own their material `evidence`; changing it invalidates acceptance. Optional lineage can show a prior reason after invalidation, but it never opens the new gate.
 
 Complete scans remove dead acceptances. Partial scans preserve anything they did not examine.
 
@@ -199,7 +209,7 @@ pnpm agentlint acceptances clean
 
 ## Review and calibration
 
-`agentlint review` serves the packaged FoldKit SPA on loopback with a session token. The **Queue** lists everything that still needs a decision, grouped by file, with the agent's proposal (summary and diff) shown next to the code when one exists. The **Decisions** view lists what is already accepted, by whom and when, so a human can audit agent acceptances and request a correction. Both feed the same handoff the coding agent receives when the review finishes.
+`agentlint review` serves the packaged FoldKit SPA on loopback with a session token. The **Queue** lists everything that still needs a decision, grouped by file, with the agent's proposal (summary and diff) shown next to the code when one exists. The **Decisions** view lists what is already accepted, by whom and when, so a human can audit agent acceptances and request a correction. Requesting changes revokes a compatible acceptance and closes its gate. Finishing the review can hand requested changes back to the agent while those findings remain unresolved. Both feed the same handoff the coding agent receives when the review finishes.
 
 The UI is keyboard-first: `J`/`K` move, `A` accepts, `R` requests changes, `E` opens the editor, `C` copies context, `/` searches, `F` opens filters, `1`/`2` switch views, `X` dismisses a toast, `?` lists everything. Requesting changes needs no text; accepting needs a reason unless an agent proposal exists, in which case the proposal becomes the reason.
 
@@ -225,12 +235,14 @@ Download the artifact, then open it locally:
 pnpm agentlint review --from artifacts/agentlint-review.json
 ```
 
-The detached UI stages decisions in the browser. It exports requested changes as Markdown and accepted decisions as exact `AcceptanceRecord` JSONL. Bring reviewed acceptances back through the validation path:
+The detached UI stages decisions in the browser. It exports requested changes as Markdown and decisions as JSONL. Accepted decisions use `AcceptanceRecord`. Requesting changes on an existing acceptance exports a conditional `type: "revoke"` operation targeting the exact identity, reviewed reason, and acceptance timestamp. Import rejects that revocation if the decision has since been replaced. Revocations are applied to the current store, not retained as another persisted finding outcome. Bring reviewed acceptances back through the validation path:
 
 ```bash
 pnpm agentlint acceptances import agentlint-acceptances.jsonl
 pnpm agentlint check --all
 ```
+
+Review artifacts use version 2 and contain each source file once, with the scan scope, executed bindings, and inspected files. Regenerate version 1 artifacts. The artifact uses the original check snapshot, including transient prior reasoning, rather than scanning again.
 
 Import re-runs the repository detectors. Decisions whose finding changed, disappeared, or no longer has compatible authority are rejected.
 
@@ -328,7 +340,9 @@ Provider adapters (pull-request comments, ownership routing, signed human author
 - The change evidence schemas (`ChangeSet`, `ChangedFile`, `ChangeHunk`, `ChangeLine`, `FileSnapshot`, `ChangeBaseline`) and `FindingRecord` as runtime values, so a consumer can construct or decode them.
 - Tagged errors: `RuleDefinitionError`, `ConfigError`, `PatternError`, `ParserError`.
 
-`@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, and `testRuleOnChange`, the Effect-based runners `runRuleFixtures`, `runRuleOnSource`, `runRuleOnSources`, and `runRuleOnChange`, `normalizeChangeFixture`, and the `FixtureReport` and `FixtureFailure` types.
+`@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, `testRuleOnSources`, and `testRuleOnChange`, plus `normalizeChangeFixture`, `FixtureReport`, and `FixtureFailure`. The public API does not require consumers to construct engine services or import Effect. `testRuleOnSources` accepts `[path, source]` pairs, including all declared dependencies.
+
+Compact change fixtures use an actual line comparison with three context lines. For very large fixtures or precise rename evidence, supply an explicit `ChangeSet`. Fixtures test detector activation; file scope is calibrated against a repository with `rules scan`.
 
 The package intentionally exports no bundled standards, detectors, rules, or presets.
 
@@ -339,3 +353,15 @@ Local human authority is accountability, not cryptographic identity. A process w
 ## License
 
 [MIT](LICENSE)
+
+## Adopt one useful review obligation
+
+Start with one correction you or a teammate has repeated. Write its review question and the permitted cases. Have the coding agent propose a detector with activation and silence fixtures. Check what justifies a decision and declare any supporting files as dependencies. Run `rules test`, then `rules scan --review` on real code before committing the rule.
+
+Keep the rule only when the review work it saves exceeds its interruptions and maintenance. [The pilot worksheet](../../docs/review-pilot.md) provides a small-team evaluation without telemetry or a central service.
+
+## Scan and storage guarantees
+
+State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
+
+Acceptance updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. If a process stops while holding `.agentlint/acceptances.lock`, verify it has stopped and remove that lock file before retrying. The CLI fails clearly after a bounded wait rather than stealing a possibly active lock. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.

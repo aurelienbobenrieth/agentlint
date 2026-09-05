@@ -1,11 +1,11 @@
 /** Detector fixture runners. @module @since 0.2.0 */
 
+import { fixtureHunks } from "./change-hunks.js";
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import {
-  ruleMatches,
   type AgentlintRule,
   type ChangeFixture,
   type ChangeRule,
@@ -14,43 +14,25 @@ import {
   type StateFixture,
   type StateRule,
 } from "../../domain/rule.js";
-import { RuleContextImpl } from "../../domain/rule-context.js";
-import { Parser } from "../infrastructure/parser.js";
 import { grammarForExtension } from "./language-map.js";
-import { compileMatches, PatternError, resolveWhereClauses, runMatches } from "./pattern-match.js";
-import { walkFile } from "./tree-walker.js";
+import { PatternError } from "./pattern-match.js";
+import { collectStateFindings } from "./collect-findings.js";
 
 /** Run one state detector against an in-memory repository. */
 export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
   rule: StateRule,
   sources: ReadonlyArray<readonly [file: string, source: string]>,
 ) {
-  const parser = yield* Parser;
-  const context = new RuleContextImpl(rule);
-  const visitors = rule.detector.createOnce?.(context, rule.binding.options) ?? {};
-  const findings: FindingRecord[] = [];
-
-  for (const [file, source] of sources) {
-    const extension = file.includes(".") ? (file.split(".").pop() ?? "") : "";
-    const grammar = grammarForExtension(extension);
-    if (!grammar) {
+  for (const [file] of sources) {
+    if (!grammarForExtension(file.split(".").pop() ?? "") && !(rule.binding.dependencies ?? []).includes(file)) {
       return yield* new PatternError({ ruleId: rule.binding.id, reason: "unknown_fixture_grammar", detail: file });
     }
-    context.setFile(file, file, source);
-    if (visitors.before?.(file) === false) continue;
-    const tree = yield* parser.parse(source, grammar);
-    const matches = ruleMatches(rule);
-    if (matches.length > 0) {
-      const compiled = yield* compileMatches({ ruleId: rule.binding.id, matches, grammar });
-      const runnable = yield* resolveWhereClauses(rule.binding.id, compiled, grammar);
-      runMatches(tree, runnable, context);
-    }
-    findings.push(...walkFile(tree, [{ ruleId: rule.binding.id, context, visitors }]));
-    findings.push(...context.drainFindings());
   }
-  visitors.after?.();
-  findings.push(...context.drainFindings());
-  return findings as ReadonlyArray<FindingRecord>;
+  return yield* collectStateFindings(
+    [rule],
+    sources.map(([file]) => file),
+    new Map(sources),
+  );
 });
 
 /** Run one state detector against one source file. */
@@ -90,25 +72,12 @@ export function normalizeChangeFixture(fixture: ChangeFixture): ChangeSet {
     const newContent = after[path];
     if (oldContent === newContent) continue;
     const status = oldContent === undefined ? "added" : newContent === undefined ? "deleted" : "modified";
-    const oldLines = oldContent?.split("\n") ?? [];
-    const newLines = newContent?.split("\n") ?? [];
     files.push({
       status,
       path: path.replace(/\\/g, "/"),
       before: oldContent === undefined ? null : snapshot(oldContent),
       after: newContent === undefined ? null : snapshot(newContent),
-      hunks: [
-        {
-          oldStart: oldLines.length === 0 ? 0 : 1,
-          oldLines: oldLines.length,
-          newStart: newLines.length === 0 ? 0 : 1,
-          newLines: newLines.length,
-          lines: [
-            ...oldLines.map((content) => ({ kind: "deletion" as const, content })),
-            ...newLines.map((content) => ({ kind: "addition" as const, content })),
-          ],
-        },
-      ],
+      hunks: fixtureHunks(oldContent, newContent),
     });
   }
   return { baseline: { kind: "git", ref: "fixture" }, files };

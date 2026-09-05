@@ -67,7 +67,7 @@ export interface ChangeFingerprintEvidence {
 
 function encode(value: unknown, ancestors: ReadonlySet<object>): string {
   if (value === null) return "null";
-  if (typeof value === "string") return JSON.stringify(value.normalize("NFC"));
+  if (typeof value === "string") return JSON.stringify(value);
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
@@ -87,7 +87,7 @@ function encode(value: unknown, ancestors: ReadonlySet<object>): string {
 
   const nextAncestors = new Set(ancestors).add(value);
   if (Array.isArray(value)) {
-    return `[${value.map((entry) => encode(entry, nextAncestors)).join(",")}]`;
+    return `[${Array.from(value, (entry) => encode(entry, nextAncestors)).join(",")}]`;
   }
 
   const prototype = Object.getPrototypeOf(value);
@@ -97,10 +97,10 @@ function encode(value: unknown, ancestors: ReadonlySet<object>): string {
 
   const object = value as Record<string, unknown>;
   const keys = Object.keys(object).toSorted();
-  return `{${keys.map((key) => `${JSON.stringify(key.normalize("NFC"))}:${encode(object[key], nextAncestors)}`).join(",")}}`;
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${encode(object[key], nextAncestors)}`).join(",")}}`;
 }
 
-/** Encode JSON data with stable object key ordering and Unicode normalization. */
+/** Encode JSON data with stable object key ordering, preserving exact Unicode values. */
 export function canonicalStringify(value: CanonicalValue): string {
   return encode(value, new Set());
 }
@@ -127,7 +127,7 @@ export function normalizeRepositoryPath(input: string): string {
       parts.pop();
       continue;
     }
-    parts.push(part.normalize("NFC"));
+    parts.push(part);
   }
   if (parts.length === 0) {
     throw new FingerprintError({ reason: "invalid_path", detail: "path must identify a repository file" });
@@ -135,25 +135,20 @@ export function normalizeRepositoryPath(input: string): string {
   return parts.join("/");
 }
 
-function normalizeBindingValue(value: CanonicalValue, key?: string): CanonicalValue {
-  if (Array.isArray(value)) {
-    const normalized = value.map((entry) => normalizeBindingValue(entry));
-    // Routing collections are sets. Detector option arrays retain their order.
-    return key === "include" || key === "exclude" || key === "files" || key === "ignores"
-      ? normalized.toSorted((left, right) => canonicalStringify(left).localeCompare(canonicalStringify(right)))
-      : normalized;
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([entryKey, entry]) => [entryKey, normalizeBindingValue(entry, entryKey)]),
-    );
-  }
-  return value;
-}
-
-/** Normalize material binding configuration and set-like routing fields. */
+/** Only top-level routing fields are sets. Arbitrary detector options preserve all array order. */
 export function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalValue {
-  return normalizeBindingValue(materialConfig);
+  if (materialConfig === null || typeof materialConfig !== "object" || Array.isArray(materialConfig))
+    return materialConfig;
+  return Object.fromEntries(
+    Object.entries(materialConfig).map(([key, value]) => [
+      key,
+      ["include", "exclude", "dependencies"].includes(key) && Array.isArray(value)
+        ? [...new Map(value.map((entry) => [canonicalStringify(entry), entry])).entries()]
+            .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([, entry]) => entry)
+        : value,
+    ]),
+  );
 }
 
 /** Calculate the material digest of a binding configuration. */
@@ -168,7 +163,7 @@ export function createFingerprint(scheme: string, version: number, evidence: Can
 
 /** Fingerprint semantic state evidence. Presentation positions are excluded. */
 export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprint {
-  return createFingerprint("source-structure", 1, {
+  return createFingerprint("source-structure", 2, {
     path: normalizeRepositoryPath(evidence.path),
     structure: evidence.structure,
     captures: evidence.captures ?? {},
@@ -178,7 +173,7 @@ export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprin
 
 /** Fingerprint a semantic comparison without using commit identifiers. */
 export function fingerprintChange(evidence: ChangeFingerprintEvidence): Fingerprint {
-  return createFingerprint("git-change", 1, {
+  return createFingerprint("git-change", 2, {
     before: evidence.before,
     after: evidence.after,
     beforePath: normalizeRepositoryPath(evidence.beforePath),
@@ -209,8 +204,8 @@ export function sameFingerprint(left: Fingerprint, right: Fingerprint): boolean 
 /** Check whether the engine knows the canonical evidence contract. */
 export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
   return (
-    (fingerprint.scheme === "source-structure" && fingerprint.version === 1) ||
-    (fingerprint.scheme === "git-change" && fingerprint.version === 1)
+    (fingerprint.scheme === "source-structure" && fingerprint.version === 2) ||
+    (fingerprint.scheme === "git-change" && fingerprint.version === 2)
   );
 }
 

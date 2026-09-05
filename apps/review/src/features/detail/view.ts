@@ -12,12 +12,13 @@ import { highlightedLine, highlightedLines } from "./syntax";
 
 const renderCodePanel = (
   finding: ReviewFindingPayload,
+  source: string,
   codeView: CodeView,
   canOpen: boolean,
   preferred: EditorApplication | undefined,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const allLines = highlightedLines(finding.code.source, finding.file);
+  const allLines = highlightedLines(source, finding.file);
   const start = Math.max(1, finding.code.focus.startLine);
   const end = Math.max(start, finding.code.focus.endLine);
   const first = codeView === "full" ? 1 : Math.max(1, start - 3);
@@ -146,7 +147,13 @@ const acceptanceCard = (
         [h.Class("card__head")],
         [
           h.span([h.Class("card__title")], [icon("check", h), h.span([], ["Accepted"])]),
-          actorRow(acceptance.actor, acceptance.at, state.generatedAt, "accepted", h),
+          actorRow(
+            acceptance.actor,
+            acceptance.at,
+            state.generatedAt,
+            `accepted with ${acceptance.authority} authority (declared identity)`,
+            h,
+          ),
         ],
       ),
       h.p([h.Class("card__text")], [acceptance.reason]),
@@ -405,7 +412,14 @@ export const detail = (
           h.p([h.Class("detail__standard")], [finding.guidance.standard]),
         ],
       ),
-      codePanel(finding.id, renderCodePanel, [finding, model.codeView, canOpen, preferred, h]),
+      codePanel(finding.id, renderCodePanel, [
+        finding,
+        state.sources[finding.file] ?? "",
+        model.codeView,
+        canOpen,
+        preferred,
+        h,
+      ]),
       ...(proposal === null ? [] : [proposal]),
       ...(acceptance === null ? [] : [acceptance]),
       ...(finding.lineageReason === null ? [] : [lineageCard(finding.lineageReason, h)]),

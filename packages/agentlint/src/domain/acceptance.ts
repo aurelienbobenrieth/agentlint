@@ -35,6 +35,42 @@ export class AcceptanceRecord extends Schema.Class<AcceptanceRecord>("Acceptance
   acceptedAt: NonEmptyString,
 }) {}
 
+/** An imported revocation targets the reviewed decision, never a later replacement. Not persisted in the store. */
+export class AcceptanceRevocation extends Schema.Class<AcceptanceRevocation>("AcceptanceRevocation")({
+  schemaVersion: Schema.Literal(1),
+  type: Schema.Literal("revoke"),
+  source: FindingSource,
+  fingerprint: Fingerprint,
+  expectedAcceptedAt: NonEmptyString,
+  expectedReason: NonEmptyString,
+}) {}
+
+export const AcceptanceDecision = Schema.Union([AcceptanceRecord, AcceptanceRevocation]);
+export type AcceptanceDecision = Schema.Schema.Type<typeof AcceptanceDecision>;
+
+/** Explain compatibility changes without claiming to reconstruct historical source. */
+export function invalidationReasons(prior: AcceptanceRecord, current: FindingRecord): string[] {
+  const reasons: string[] = [];
+  if (prior.source.standardRevision !== current.source.standardRevision) reasons.push("The standard revision changed.");
+  if (prior.source.detectorVersion !== current.source.detectorVersion) reasons.push("The detector version changed.");
+  if (prior.source.bindingDigest !== current.source.bindingDigest)
+    reasons.push("The binding scope, options, or declared dependencies changed.");
+  if (
+    prior.fingerprint.version !== current.fingerprint.version ||
+    prior.fingerprint.scheme !== current.fingerprint.scheme
+  )
+    reasons.push("The evidence fingerprint scheme changed; a new review is required.");
+  else if (prior.fingerprint.digest !== current.fingerprint.digest)
+    reasons.push(
+      current.lifecycle === "state"
+        ? "The containing file structure, occurrence, or declared dependency evidence changed."
+        : "The detector-selected change evidence changed.",
+    );
+  if (!authoritySatisfies(prior.authority, current.authority))
+    reasons.push("The binding now requires human authority.");
+  return reasons;
+}
+
 /** Gate state is derived, not persisted. */
 export const FindingState = Schema.Literals(["unresolved", "accepted"]);
 export type FindingState = Schema.Schema.Type<typeof FindingState>;

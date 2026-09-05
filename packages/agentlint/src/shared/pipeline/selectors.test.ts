@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FindingRecord, findingKey } from "../../domain/finding.js";
+import { FindingRecord, findingKey, findingId } from "../../domain/finding.js";
 import { Fingerprint, FindingSource } from "../../domain/fingerprint.js";
 import type { SelectorCachePayload } from "../infrastructure/selector-cache.js";
 import { resolveFindingSelector } from "./selectors.js";
@@ -20,7 +20,7 @@ function finding(digest: string, file: string, line: number): FindingRecord {
     lifecycle: "state",
     authority: "agent",
     source,
-    fingerprint: new Fingerprint({ scheme: "source-structure", version: 1, digest }),
+    fingerprint: new Fingerprint({ scheme: "source-structure", version: 2, digest }),
     lineageKey: undefined,
     file,
     absolutePath: `/repo/${file}`,
@@ -60,25 +60,16 @@ describe("resolveFindingSelector", () => {
   it("resolves the full finding key and the full digest without a cache", () => {
     const empty: SelectorCachePayload = { version: 1, findings: [] };
     expect(resolveFindingSelector(findingKey(third), findings, empty)).toEqual({ ok: true, finding: third });
-    expect(resolveFindingSelector("0123456789abcdef", findings, empty)).toEqual({ ok: true, finding: third });
+    expect(resolveFindingSelector(findingId(third), findings, empty)).toEqual({ ok: true, finding: third });
   });
 
-  it("resolves a unique digest prefix and rejects an ambiguous one", () => {
-    expect(resolveFindingSelector("0123456", findings, cache)).toEqual({ ok: true, finding: third });
-    expect(resolveFindingSelector("abcdef12", findings, cache)).toEqual({ ok: true, finding: first });
-    const ambiguous = resolveFindingSelector("abcdef", findings, cache);
-    expect(ambiguous.ok).toBe(false);
-    const tooShortButAmbiguous = resolveFindingSelector("abcdef1", findings, cache);
-    expect(tooShortButAmbiguous).toEqual({ ok: true, finding: first });
-    const sharedPrefix = resolveFindingSelector("abcdef9", findings, cache);
-    expect(sharedPrefix).toEqual({ ok: true, finding: second });
-  });
-
-  it("reports an ambiguous shared prefix", () => {
-    const result = resolveFindingSelector("abcdef1234", [first, finding("abcdef1234000000", "src/c.ts", 1)], cache);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.message).toContain("ambiguous");
+  it("resolves complete identity prefixes and rejects standalone evidence digests", () => {
+    expect(resolveFindingSelector(findingId(third).slice(0, 10), findings, cache)).toEqual({
+      ok: true,
+      finding: third,
+    });
+    expect(resolveFindingSelector(first.fingerprint.digest, findings, cache).ok).toBe(false);
+    expect(resolveFindingSelector(findingId(first).slice(0, 6), findings, cache).ok).toBe(false);
   });
 
   it("resolves file:line when exactly one finding is on that line", () => {

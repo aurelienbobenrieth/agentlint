@@ -12,7 +12,7 @@ const source = new FindingSource({
   bindingId: "app-queries",
   bindingDigest: "binding-a",
 });
-const fingerprint = new Fingerprint({ scheme: "source-structure", version: 1, digest: "evidence-a" });
+const fingerprint = new Fingerprint({ scheme: "source-structure", version: 2, digest: "evidence-a" });
 
 function finding(overrides: Partial<ConstructorParameters<typeof FindingRecord>[0]> = {}) {
   return new FindingRecord({
@@ -67,7 +67,7 @@ describe("acceptance compatibility", () => {
       { source: new FindingSource({ ...source, bindingId: "worker-queries" }) },
       { source: new FindingSource({ ...source, bindingDigest: "binding-b" }) },
       { fingerprint: new Fingerprint({ ...fingerprint, scheme: "git-change" }) },
-      { fingerprint: new Fingerprint({ ...fingerprint, version: 2 }) },
+      { fingerprint: new Fingerprint({ ...fingerprint, version: 1 }) },
       { fingerprint: new Fingerprint({ ...fingerprint, digest: "evidence-b" }) },
     ];
     for (const changed of cases) {
@@ -84,7 +84,7 @@ describe("acceptance compatibility", () => {
 
   it("keeps unknown schemes and versions unresolved", () => {
     const unknownScheme = new Fingerprint({ scheme: "future-evidence", version: 1, digest: "same" });
-    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 2, digest: "same" });
+    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 3, digest: "same" });
     expect(
       acceptanceSatisfies(acceptance({ fingerprint: unknownScheme }), finding({ fingerprint: unknownScheme })),
     ).toBe(false);

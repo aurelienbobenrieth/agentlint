@@ -58,9 +58,9 @@ const dispositionFor = (kind: DecisionKind, current: Draft["disposition"]): Draf
         ? "none"
         : current;
 
-/** Detached: the decision lives in the draft. Attached: optimistic draft, then the server confirms. */
+/** Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation. */
 export const submit = (model: Model, kind: DecisionKind, findingId: string): UpdateReturn => {
-  if (model.screen._tag !== "Reviewing") return { model };
+  if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null) return { model };
   const finding = findingById(model.screen.state, findingId);
   const request = requestFor(model, kind, findingId, finding);
   const decided = updateDraft(model, findingId, (draft) => ({
@@ -75,7 +75,7 @@ export const submit = (model: Model, kind: DecisionKind, findingId: string): Upd
     );
     return appendCommands(persist(notified.model), notified.commands ?? []);
   }
-  return appendCommands(persist(evo(decided, { busyFindingId: () => findingId })), [SubmitAction({ request })]);
+  return appendCommands(persist(evo(model, { busyFindingId: () => findingId })), [SubmitAction({ request })]);
 };
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
@@ -87,9 +87,18 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   ClickedRequestChanges: ({ findingId }) => submit(model, "request_changes", findingId),
   ClickedWithdraw: ({ findingId }) => submit(model, "withdraw", findingId),
   ClickedSaveCalibration: ({ findingId }) => submit(model, "calibrate", findingId),
-  CompletedAction: ({ state, message }) =>
+  CompletedAction: ({ findingId, state, message }) =>
     enqueueToast(
-      evo(model, { screen: () => Screen.Reviewing({ state }), busyFindingId: () => null }),
+      evo(
+        updateDraft(model, findingId, (draft) => {
+          const status = findingById(state, findingId)?.status;
+          return {
+            ...draft,
+            disposition: status === "accepted" ? "accept" : status === "changes_requested" ? "request_changes" : "none",
+          };
+        }),
+        { screen: () => Screen.Reviewing({ state }), busyFindingId: () => null },
+      ),
       message,
       "success",
     ),

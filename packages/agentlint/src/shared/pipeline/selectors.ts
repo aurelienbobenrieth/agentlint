@@ -3,14 +3,14 @@
  *
  * Supported selectors:
  * - latest-check ordinals: `1` or `[1]`
- * - full finding hash, or a unique fingerprint digest prefix of at least 7 hex characters
+ * - full finding hash, or a unique complete identity digest prefix of at least 7 hex characters
  * - `file:line`
  *
  * @module
  * @since 0.2.0
  */
 
-import { findingKey, type FindingRecord } from "../../domain/finding.js";
+import { findingId, findingKey, type FindingRecord } from "../../domain/finding.js";
 import type { SelectorCachePayload } from "../infrastructure/selector-cache.js";
 
 export type SelectorResolution =
@@ -38,13 +38,13 @@ export function resolveFindingSelector(
   const cachedHash = resolveHashFromCache(normalized, cache);
   const hash = cachedHash ?? normalized;
 
-  const hashMatch = findings.find((finding) => findingKey(finding) === hash || finding.fingerprint.digest === hash);
+  const hashMatch = findings.find((finding) => findingKey(finding) === hash);
   if (hashMatch) {
     return { ok: true, finding: hashMatch };
   }
 
   if (HASH_PREFIX.test(normalized)) {
-    const prefixed = findings.filter((finding) => finding.fingerprint.digest.startsWith(normalized));
+    const prefixed = findings.filter((finding) => findingId(finding).startsWith(normalized));
     const [match] = prefixed;
     if (prefixed.length === 1 && match) {
       return { ok: true, finding: match };

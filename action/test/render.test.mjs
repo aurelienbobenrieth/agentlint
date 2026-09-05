@@ -33,8 +33,8 @@ describe("render", () => {
     expect(summary).toContain(
       "https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3",
     );
-    expect(summary).toContain('/agentlint approve 9abade664c94 --reason "..."');
-    expect(summary).toContain('agentlint accept 4b47d62994f7 --reason "..."');
+    expect(summary).toContain('/agentlint approve dd03e1e41c97 --reason "..."');
+    expect(summary).toContain('agentlint accept 103d435f608a --reason "..."');
     expect(summary).toContain("agentlint pr 42");
     expect(summary).toContain("`src/migrations/2026-07-drop-legacy-users.ts:4`");
     expect(summary).toMatchSnapshot();
@@ -51,7 +51,7 @@ describe("render", () => {
     expect(human).toMatchSnapshot();
 
     expect(renderInlineBody(withLineage)).toContain("Prior judgment (context only)");
-    expect(renderInlineBody(agent)).toContain('agentlint accept 4b47d62994f7 --reason "..."');
+    expect(renderInlineBody(agent)).toContain('agentlint accept 103d435f608a --reason "..."');
     expect(renderInlineBody(agent)).not.toContain("<details>");
   });
 

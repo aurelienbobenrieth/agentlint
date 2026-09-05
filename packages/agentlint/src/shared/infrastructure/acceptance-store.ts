@@ -10,7 +10,8 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
-import { AcceptanceRecord, acceptanceKey, acceptanceSatisfies, sameLineage } from "../../domain/acceptance.js";
+import { AcceptanceDecision, AcceptanceRecord, acceptanceKey, acceptanceSatisfies } from "../../domain/acceptance.js";
+import { randomUUID } from "node:crypto";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
 
@@ -36,6 +37,12 @@ export interface ReconcileInput {
   readonly scope: "partial" | "complete";
   readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>;
   readonly accepted?: ReadonlyArray<AcceptanceRecord>;
+  readonly revoked?: ReadonlyArray<
+    Pick<FindingRecord, "source" | "fingerprint"> & {
+      readonly expectedAcceptedAt?: string;
+      readonly expectedReason?: string;
+    }
+  >;
 }
 
 export interface ReconcileResult extends AcceptanceSnapshot {
@@ -44,6 +51,24 @@ export interface ReconcileResult extends AcceptanceSnapshot {
 
 const ACCEPTANCE_PATH = [".agentlint", "acceptances.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
+
+/** Decode a portable decision batch. Conflicting decisions for one identity are rejected. */
+export function parseDecisions(content: string): AcceptanceDecision[] {
+  const decode = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceDecision));
+  const seen = new Set<string>();
+  return content.split(/\r?\n/).flatMap((line, index) => {
+    if (!line.trim()) return [];
+    try {
+      const decision = decode(line);
+      const key = acceptanceKey(decision);
+      if (seen.has(key)) throw new Error("duplicate decision identity");
+      seen.add(key);
+      return [decision];
+    } catch (error) {
+      throw new AcceptanceStoreError({ reason: "invalid_record", detail: String(error), line: index + 1 });
+    }
+  });
+}
 
 function snapshot(records: ReadonlyArray<AcceptanceRecord>): AcceptanceSnapshot {
   return {
@@ -125,7 +150,7 @@ export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): 
 /**
  * Apply new acceptances and check cleanup rules without performing I/O.
  *
- * A new record replaces an older record in the same explicit lineage. A
+ * A new record replaces only the same exact identity. A
  * partial view never removes other records. A complete view removes records
  * whose exact identities are absent.
  */
@@ -147,9 +172,29 @@ export function reconcileAcceptanceRecords(
         line: undefined,
       });
     }
-    records = records.filter((candidate) => keyOf(candidate) !== key && !sameLineage(candidate, record));
+    records = records.filter((candidate) => keyOf(candidate) !== key);
     records.push(record);
   }
+
+  for (const revocation of input.revoked ?? []) {
+    if (revocation.expectedAcceptedAt === undefined) continue;
+    const previous = existing.find((record) => acceptanceKey(record) === acceptanceKey(revocation));
+    if (
+      !previous ||
+      previous.acceptedAt !== revocation.expectedAcceptedAt ||
+      previous.reason !== revocation.expectedReason
+    ) {
+      throw new AcceptanceStoreError({
+        reason: "invalid_acceptance",
+        detail: "The decision to revoke changed after review",
+        line: undefined,
+      });
+    }
+  }
+  const revoked = new Set(
+    (input.revoked ?? []).map((finding) => findingIdentityKey(finding.source, finding.fingerprint)),
+  );
+  records = records.filter((record) => !revoked.has(keyOf(record)));
 
   if (input.scope === "complete") {
     records = records.filter((record) => currentKeys.has(keyOf(record)));
@@ -177,10 +222,33 @@ export class AcceptanceStore extends Context.Service<
       const path = yield* Path.Path;
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(env.cwd, ...ACCEPTANCE_PATH);
+      const lock = path.resolve(directory, "acceptances.lock");
+      const ioError = (error: unknown) =>
+        new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined });
+      const acquire = Effect.gen(function* () {
+        yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(ioError));
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const result = yield* fs
+            .writeFileString(lock, "agentlint acceptance transaction\n", { flag: "wx" })
+            .pipe(Effect.result);
+          if (result._tag === "Success") return;
+          if (result.failure.reason._tag !== "AlreadyExists") return yield* ioError(result.failure);
+          yield* Effect.sleep(20);
+        }
+        return yield* ioError(
+          `Acceptance store is locked: ${lock}. If its owning process stopped, remove this lock file and retry.`,
+        );
+      });
+      const locked = <A>(operation: Effect.Effect<A, AcceptanceStoreError>) =>
+        Effect.acquireUseRelease(
+          acquire,
+          () => operation,
+          () => fs.remove(lock).pipe(Effect.orDie),
+        );
 
       const readRecords = (): Effect.Effect<AcceptanceRecord[], AcceptanceStoreError> =>
         fs.exists(file).pipe(
-          Effect.orElseSucceed(() => false),
+          Effect.mapError(ioError),
           Effect.flatMap((exists) => {
             if (!exists) return Effect.succeed([]);
             return fs.readFileString(file).pipe(
@@ -222,32 +290,39 @@ export class AcceptanceStore extends Context.Service<
                 (error) => new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined }),
               ),
             );
+          const temporary = path.resolve(directory, `acceptances.${randomUUID()}.tmp`);
           yield* fs
-            .writeFileString(file, prepared.serialized)
+            .writeFileString(temporary, prepared.serialized, { flag: "wx" })
             .pipe(
-              Effect.mapError(
-                (error) => new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined }),
-              ),
+              Effect.andThen(fs.rename(temporary, file)),
+              Effect.mapError(ioError),
+              Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
             );
           return snapshot(prepared.validated);
         });
 
       return AcceptanceStore.of({
         read: () => readRecords().pipe(Effect.map(snapshot)),
-        write: writeRecords,
+        write: (records) => locked(writeRecords(records)),
         reconcile: (input) =>
-          Effect.gen(function* () {
-            const existing = yield* readRecords();
-            const result = yield* Effect.try({
-              try: () => reconcileAcceptanceRecords(existing, input),
-              catch: (error) =>
-                error instanceof AcceptanceStoreError
-                  ? error
-                  : new AcceptanceStoreError({ reason: "invalid_acceptance", detail: String(error), line: undefined }),
-            });
-            yield* writeRecords(result.records);
-            return result;
-          }),
+          locked(
+            Effect.gen(function* () {
+              const existing = yield* readRecords();
+              const result = yield* Effect.try({
+                try: () => reconcileAcceptanceRecords(existing, input),
+                catch: (error) =>
+                  error instanceof AcceptanceStoreError
+                    ? error
+                    : new AcceptanceStoreError({
+                        reason: "invalid_acceptance",
+                        detail: String(error),
+                        line: undefined,
+                      }),
+              });
+              yield* writeRecords(result.records);
+              return result;
+            }),
+          ),
       });
     }),
   );

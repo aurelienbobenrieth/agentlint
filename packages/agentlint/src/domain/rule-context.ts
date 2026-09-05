@@ -15,6 +15,8 @@ export interface RuleContext {
   readonly path: string;
   /** Full source text of the current file. */
   readonly source: string;
+  /** Explicit repository-relative binding dependencies, captured before detection. */
+  readonly dependencies: Readonly<Record<string, string>>;
   report(options: FindingOptions): void;
 }
 
@@ -31,17 +33,26 @@ export class RuleContextImpl implements RuleContext {
   #absolutePath = "";
   #file = "";
   #source = "";
-  #occurrences = new Map<string, number>();
+  #keys = new Set<string>();
+  #fileStructure: CanonicalValue | undefined;
+  #dependencyDigest: string;
+  #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
-  constructor(rule: StateRule) {
+  constructor(
+    rule: StateRule,
+    readonly dependencies: Readonly<Record<string, string>> = {},
+  ) {
     this.rule = rule;
+    this.#sourceIdentity = findingSourceForRule(rule);
+    this.#dependencyDigest = canonicalDigest(dependencies);
   }
 
   setFile(absolutePath: string, file: string, source: string): void {
     this.#absolutePath = absolutePath;
     this.#file = file.replace(/\\/g, "/");
     this.#source = source;
-    this.#occurrences = new Map();
+    this.#keys = new Set();
+    this.#fileStructure = undefined;
   }
 
   drainFindings(): FindingRecord[] {
@@ -65,15 +76,36 @@ export class RuleContextImpl implements RuleContext {
     const column = options.node.startPosition.column + 1;
     const endLine = options.node.endPosition.row + 1;
     const endColumn = options.node.endPosition.column + 1;
-    const rawLine = this.#source.split("\n")[line - 1] ?? "";
     const nodeSnippet = options.node.text.split("\n")[0]?.trim() ?? "";
-    const rawSnippet = nodeSnippet || rawLine.trim();
+    const rawSnippet = nodeSnippet;
     const sourceSnippet = rawSnippet.length > 160 ? `${rawSnippet.slice(0, 157)}...` : rawSnippet;
-    const structure = semanticStructure(options.node);
-    const occurrenceInput = canonicalDigest(structure);
-    const occurrence = (this.#occurrences.get(occurrenceInput) ?? 0) + 1;
-    this.#occurrences.set(occurrenceInput, occurrence);
-    const occurrenceKey = `${options.node.type}:${occurrence}`;
+    const position: number[] = [];
+    let root = options.node;
+    for (let parent = root.parent; parent; parent = root.parent) {
+      const child = root;
+      position.unshift(
+        parent.children.findIndex(
+          (candidate) =>
+            candidate.type === child.type &&
+            candidate.startPosition.row === child.startPosition.row &&
+            candidate.startPosition.column === child.startPosition.column &&
+            candidate.endPosition.row === child.endPosition.row &&
+            candidate.endPosition.column === child.endPosition.column,
+        ),
+      );
+      root = parent;
+    }
+    this.#fileStructure ??= canonicalDigest(semanticStructure(root));
+    const occurrenceKey = options.key ?? `${options.node.type}:${position.join("/")}`;
+    if (!occurrenceKey.trim() || this.#keys.has(occurrenceKey)) {
+      throw new Error(`Rule ${this.rule.binding.id} reported a duplicate or empty finding key: ${occurrenceKey}`);
+    }
+    this.#keys.add(occurrenceKey);
+    const structure = {
+      file: this.#fileStructure,
+      dependencies: this.#dependencyDigest,
+      evidence: options.evidence ?? null,
+    };
 
     this.findings.push(
       new FindingRecord({
@@ -81,7 +113,7 @@ export class RuleContextImpl implements RuleContext {
         ruleId: this.rule.binding.id,
         lifecycle: "state",
         authority: this.rule.binding.authority,
-        source: findingSourceForRule(this.rule),
+        source: this.#sourceIdentity,
         fingerprint: fingerprintState({
           path: this.#file,
           structure,

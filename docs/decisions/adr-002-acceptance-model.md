@@ -76,7 +76,7 @@ interface AcceptanceRecord {
 
 An acceptance opens the gate only when every source field, the full fingerprint, and the authority are compatible with a current finding. The engine also rejects a fingerprint scheme or version that it does not support. [ADR-005](./adr-005-fingerprints-and-lineage.md) defines fingerprints and lineage.
 
-A new acceptance must identify a finding in the current check view. The writer replaces an older record with the same identity or the same lineage. Git keeps previous file versions.
+A new acceptance must identify a finding in the current check view. The writer replaces an older record only with the same exact identity. Lineage is context and never removes a different identity during a partial update. Git keeps previous file versions.
 
 ## Invalidation and stale records
 
@@ -146,3 +146,5 @@ The review artifact and the SPA show current findings against current acceptance
 - 2026-08-10: The project aligned acceptance identity with standard, detector, and binding composition.
 - 2026-08-10: The project added semantic standard and material binding identity to acceptance compatibility.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+
+- 2026-09-05: Requesting changes revokes an existing acceptance. Detached imports can carry conditional revocations of the reviewed decision. Revocations are operations, not another stored outcome. Exclusive transactions and atomic replacement protect concurrent decisions.

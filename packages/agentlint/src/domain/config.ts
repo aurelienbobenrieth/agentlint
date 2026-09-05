@@ -1,7 +1,7 @@
 /** Repository configuration contracts. @module @since 0.2.0 */
 
 import { Schema } from "effect";
-import type { AgentlintRule } from "./rule.js";
+import { defineRule, type AgentlintRule } from "./rule.js";
 
 export interface AgentlintConfig {
   /** Reusable configuration layers. Earlier layers load first. */
@@ -46,6 +46,14 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
 }
 
 function assertConfig(config: AgentlintConfig): void {
+  Schema.decodeUnknownSync(
+    Schema.Struct({
+      extends: Schema.optional(Schema.Array(Schema.Unknown)),
+      rules: Schema.optional(Schema.Array(Schema.Unknown)),
+      ignores: Schema.optional(Schema.Array(Schema.String)),
+      base: Schema.optional(Schema.String),
+    }),
+  )(config);
   if (config.base !== undefined && config.base.trim().length === 0) {
     throw new ConfigError({ reason: "empty_base" });
   }
@@ -61,6 +69,7 @@ export function defineConfig<const Config extends AgentlintConfig>(config: Confi
 }
 
 function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active = new Set<AgentlintConfig>()): void {
+  assertConfig(config);
   if (active.has(config)) throw new ConfigError({ reason: "extends_cycle" });
   active.add(config);
   for (const parent of config.extends ?? []) flatten(parent, output, active);
@@ -79,6 +88,7 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   for (const layer of layers) {
     assertConfig(layer);
     for (const rule of layer.rules ?? []) {
+      defineRule(rule);
       const id = rule.binding.id;
       if (rulesById.has(id)) throw new ConfigError({ reason: "duplicate_binding", ruleId: id });
       rulesById.set(id, rule);

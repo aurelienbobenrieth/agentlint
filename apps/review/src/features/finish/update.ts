@@ -10,7 +10,7 @@ import type { fields } from "./messages";
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   ClickedFinish: () => {
-    if (model.screen._tag !== "Reviewing") return { model };
+    if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null) return { model };
     return {
       model,
       commands: [model.screen.state.transport === "detached" ? PrepareDetachedFinish() : FinishReview()],

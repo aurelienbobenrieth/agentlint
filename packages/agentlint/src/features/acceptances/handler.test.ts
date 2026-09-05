@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
-import { AcceptanceRecord } from "../../domain/acceptance.js";
+import { AcceptanceRecord, AcceptanceRevocation, type AcceptanceDecision } from "../../domain/acceptance.js";
 import { normalizeConfig } from "../../domain/config.js";
 import { Fingerprint } from "../../domain/fingerprint.js";
 import type { FindingRecord } from "../../domain/finding.js";
@@ -91,7 +91,7 @@ function decision(finding: FindingRecord, authority: "agent" | "human", digest =
   });
 }
 
-const importCommand = (imported: ReadonlyArray<AcceptanceRecord>) =>
+const importCommand = (imported: ReadonlyArray<AcceptanceDecision>) =>
   acceptancesHandler(new AcceptancesCommand({ action: "import", base: undefined, imported }));
 
 beforeEach(async () => {
@@ -101,6 +101,25 @@ beforeEach(async () => {
 afterEach(() => run(cleanup));
 
 describe("acceptances import", () => {
+  it("imports a detached revocation and rejects its replay", async () => {
+    const [finding] = (await run(checkAll)).unresolved;
+    if (!finding) throw new Error("Expected finding");
+    const accepted = decision(finding, "human");
+    await run(importCommand([accepted]));
+    const revoked = new AcceptanceRevocation({
+      schemaVersion: 1,
+      type: "revoke",
+      source: accepted.source,
+      fingerprint: accepted.fingerprint,
+      expectedAcceptedAt: accepted.acceptedAt,
+      expectedReason: accepted.reason,
+    });
+    expect((await run(importCommand([revoked]))).exitCode).toBe(0);
+    expect(await run(storedRecords)).toEqual([]);
+    expect((await run(checkAll)).unresolved).toHaveLength(2);
+    expect((await run(importCommand([revoked]))).rejectedCount).toBe(1);
+  });
+
   it("imports every decision when all of them identify current findings with enough authority", async () => {
     const check = await run(checkAll);
     expect(check.unresolved).toHaveLength(2);

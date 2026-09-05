@@ -1,6 +1,7 @@
 /** Check application contracts. @module @since 0.2.0 */
 
 import { Schema } from "effect";
+import { AcceptanceRecord } from "../../domain/acceptance.js";
 import { FindingRecord } from "../../domain/finding.js";
 
 export class CheckCommand extends Schema.TaggedClass<CheckCommand>()("CheckCommand", {
@@ -21,6 +22,9 @@ export type CheckLineage = Schema.Schema.Type<typeof CheckLineage>;
 
 export class CheckResult extends Schema.TaggedClass<CheckResult>()("CheckResult", {
   findings: Schema.Array(FindingRecord),
+  sources: Schema.Record(Schema.String, Schema.String),
+  scannedFiles: Schema.Array(Schema.String),
+  acceptances: Schema.Array(AcceptanceRecord),
   unresolved: Schema.Array(FindingRecord),
   accepted: Schema.Array(FindingRecord),
   lineage: Schema.Array(CheckLineage),

@@ -1,7 +1,7 @@
 /** Finding and rule explanation handler. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { findLineage, findingState } from "../../domain/acceptance.js";
+import { findLineage, invalidationReasons, findingState } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
 import type { AgentlintRule } from "../../domain/rule.js";
@@ -80,6 +80,8 @@ export const explainHandler = Effect.fn("explainHandler")(function* (command: Ex
       "This prior acceptance is context only. It does not open the gate.",
       "",
     );
+    lines.push(...invalidationReasons(lineage, finding));
+    lines.push(`Declared actor: ${lineage.actor ?? "unknown"}`);
     lines.push(`Reason: ${lineage.reason}`);
     lines.push(`Authority: ${lineage.authority}`);
     lines.push(`Accepted at: ${lineage.acceptedAt}`, "");

@@ -16,6 +16,9 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   if (collected.noMatchingRules) {
     return new CheckResult({
       findings: [],
+      sources: {},
+      scannedFiles: [],
+      acceptances: [],
       unresolved: [],
       accepted: [],
       lineage: [],
@@ -71,6 +74,9 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
 
   return new CheckResult({
     findings: [...collected.findings],
+    sources: collected.sources,
+    scannedFiles: [...collected.scannedFiles],
+    acceptances: [...snapshot.records],
     unresolved: selected,
     accepted,
     lineage,

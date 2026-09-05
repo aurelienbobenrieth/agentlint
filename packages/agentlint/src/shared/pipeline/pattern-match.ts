@@ -218,12 +218,17 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
     const result = yield* parser.parse(context(pattern), grammar).pipe(Effect.result);
     if (result._tag === "Failure") continue;
     const root = wrapNode(result.success.rootNode);
-    if (hasErrorNode(root)) continue;
-    const node = effectivePatternNode(root);
-    if (DEPRIORITIZED_TYPES.has(node.type)) {
-      fallback = fallback ?? { node, tree: result.success };
+    if (hasErrorNode(root)) {
+      result.success.delete();
       continue;
     }
+    const node = effectivePatternNode(root);
+    if (DEPRIORITIZED_TYPES.has(node.type)) {
+      if (fallback) result.success.delete();
+      else fallback = { node, tree: result.success };
+      continue;
+    }
+    fallback?.tree.delete();
     return { node, tree: result.success };
   }
 
@@ -242,40 +247,42 @@ export const compileMatches = Effect.fn("compileMatches")(function* (input: Comp
   const parser = yield* Parser;
   const compiled: CompiledMatch[] = [];
 
-  for (const match of input.matches) {
-    if (match.pattern !== undefined) {
-      const { node, tree } = yield* compilePatternNode(input.ruleId, match.pattern, input.grammar);
-      compiled.push({
-        kind: "pattern",
-        rootType: node.type,
-        patternNode: node,
-        where: match.where,
-        message: match.message,
-        tree,
-      });
-    } else if (match.query !== undefined) {
-      const language = yield* parser.language(input.grammar);
-      if (!language) {
-        return yield* new PatternError({
-          ruleId: input.ruleId,
-          reason: "unsupported_frontend",
-          grammar: input.grammar,
+  return yield* Effect.gen(function* () {
+    for (const match of input.matches) {
+      if (match.pattern !== undefined) {
+        const { node, tree } = yield* compilePatternNode(input.ruleId, match.pattern, input.grammar);
+        compiled.push({
+          kind: "pattern",
+          rootType: node.type,
+          patternNode: node,
+          where: match.where,
+          message: match.message,
+          tree,
         });
-      }
-      const query = yield* Effect.try({
-        try: () => new Query(language, match.query ?? ""),
-        catch: (error) =>
-          new PatternError({
+      } else if (match.query !== undefined) {
+        const language = yield* parser.language(input.grammar);
+        if (!language) {
+          return yield* new PatternError({
             ruleId: input.ruleId,
-            reason: "query_invalid",
-            detail: error instanceof Error ? error.message : String(error),
-          }),
-      });
-      compiled.push({ kind: "query", query, message: match.message });
+            reason: "unsupported_frontend",
+            grammar: input.grammar,
+          });
+        }
+        const query = yield* Effect.try({
+          try: () => new Query(language, match.query ?? ""),
+          catch: (error) =>
+            new PatternError({
+              ruleId: input.ruleId,
+              reason: "query_invalid",
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+        });
+        compiled.push({ kind: "query", query, message: match.message });
+      }
     }
-  }
 
-  return compiled as ReadonlyArray<CompiledMatch>;
+    return compiled as ReadonlyArray<CompiledMatch>;
+  }).pipe(Effect.onError(() => Effect.sync(() => disposeCompiled(compiled))));
 });
 
 function someDescendantOrSelf(node: AgentlintNode, predicate: (candidate: AgentlintNode) => boolean): boolean {
@@ -330,6 +337,7 @@ function interpolateQuery(message: string, captures: ReadonlyArray<{ name: strin
  * @category models
  */
 export interface RunnableMatches {
+  readonly whereTrees: ReadonlyArray<Tree>;
   readonly compiled: ReadonlyArray<CompiledMatch>;
   readonly resolvedWhere: ReadonlyMap<CompiledMatch, ResolvedWhere>;
   /** Pattern matches bucketed by the node type they can match, computed once. */
@@ -340,14 +348,22 @@ export interface RunnableMatches {
 
 /**
  * Release the native tree-sitter queries held by a compiled match set.
- * Pattern trees stay alive because their nodes may still be referenced.
+ * Pattern and constraint trees are released alongside queries.
  * The set must not be run again afterwards.
  *
  * @since 0.2.0
  * @category execution
  */
+function disposeCompiled(compiled: ReadonlyArray<CompiledMatch>): void {
+  for (const match of compiled) {
+    if (match.kind === "pattern") match.tree.delete();
+    else match.query.delete();
+  }
+}
+
 export function disposeMatches(runnable: RunnableMatches): void {
-  for (const query of runnable.queries) query.query.delete();
+  disposeCompiled(runnable.compiled);
+  for (const tree of runnable.whereTrees) tree.delete();
 }
 
 /**
@@ -362,28 +378,41 @@ export const resolveWhereClauses = Effect.fn("resolveWhereClauses")(function* (
   grammar: string,
 ) {
   const resolvedWhere = new Map<CompiledMatch, ResolvedWhere>();
-  for (const match of compiled) {
-    if (match.kind !== "pattern") continue;
-    const has =
-      match.where?.has !== undefined ? (yield* compilePatternNode(ruleId, match.where.has, grammar)).node : undefined;
-    const notHas =
-      match.where?.notHas !== undefined
-        ? (yield* compilePatternNode(ruleId, match.where.notHas, grammar)).node
-        : undefined;
-    resolvedWhere.set(match, { has, notHas });
-  }
-  const byType = new Map<string, CompiledPattern[]>();
-  const queries: CompiledQuery[] = [];
-  for (const match of compiled) {
-    if (match.kind === "query") {
-      queries.push(match);
-      continue;
+  const whereTrees: Tree[] = [];
+  const compileWhere = (pattern: string) =>
+    compilePatternNode(ruleId, pattern, grammar).pipe(
+      Effect.map(({ node, tree }) => {
+        whereTrees.push(tree);
+        return node;
+      }),
+    );
+  return yield* Effect.gen(function* () {
+    for (const match of compiled) {
+      if (match.kind !== "pattern") continue;
+      const has = match.where?.has !== undefined ? yield* compileWhere(match.where.has) : undefined;
+      const notHas = match.where?.notHas !== undefined ? yield* compileWhere(match.where.notHas) : undefined;
+      resolvedWhere.set(match, { has, notHas });
     }
-    const bucket = byType.get(match.rootType);
-    if (bucket) bucket.push(match);
-    else byType.set(match.rootType, [match]);
-  }
-  return { compiled, resolvedWhere, byType, queries } satisfies RunnableMatches;
+    const byType = new Map<string, CompiledPattern[]>();
+    const queries: CompiledQuery[] = [];
+    for (const match of compiled) {
+      if (match.kind === "query") {
+        queries.push(match);
+        continue;
+      }
+      const bucket = byType.get(match.rootType);
+      if (bucket) bucket.push(match);
+      else byType.set(match.rootType, [match]);
+    }
+    return { compiled, resolvedWhere, byType, queries, whereTrees } satisfies RunnableMatches;
+  }).pipe(
+    Effect.onError(() =>
+      Effect.sync(() => {
+        disposeCompiled(compiled);
+        for (const tree of whereTrees) tree.delete();
+      }),
+    ),
+  );
 });
 
 const EMPTY_WHERE: ResolvedWhere = { has: undefined, notHas: undefined };

@@ -7,6 +7,11 @@ function materialBinding(rule: AgentlintRule): CanonicalValue {
   return {
     include: [...(rule.binding.include ?? [])],
     exclude: [...(rule.binding.exclude ?? [])],
+    dependencies: [...(rule.binding.dependencies ?? [])].toSorted(),
+    scan:
+      rule.lifecycle === "state"
+        ? (rule.detector.scan ?? (rule.detector.createOnce ? "repository" : "file"))
+        : "change",
     options: rule.binding.options === undefined ? null : (rule.binding.options as CanonicalValue),
   };
 }

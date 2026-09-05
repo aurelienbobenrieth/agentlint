@@ -115,23 +115,29 @@ export class Parser extends Context.Service<
         });
 
       let parserInstance: TSParser | undefined;
+      yield* Effect.addFinalizer(() => Effect.sync(() => parserInstance?.delete()));
       let languageCache: HashMap.HashMap<string, Language> = HashMap.empty();
 
-      const ensureInit = Effect.gen(function* () {
-        if (parserInstance) return parserInstance;
-        const initPath = yield* resolveWasmPath("tree-sitter.wasm");
-        yield* Effect.tryPromise({
-          try: async () => {
-            await TSParser.init({ locateFile: () => initPath });
-            parserInstance = new TSParser();
-          },
-          catch: (error) =>
-            new ParserError({ reason: "init_failed", detail: error instanceof Error ? error.message : String(error) }),
-        });
-        const parser = parserInstance;
-        if (!parser) return yield* new ParserError({ reason: "init_failed" });
-        return parser;
-      });
+      const ensureInit = yield* Effect.cached(
+        Effect.gen(function* () {
+          if (parserInstance) return parserInstance;
+          const initPath = yield* resolveWasmPath("tree-sitter.wasm");
+          yield* Effect.tryPromise({
+            try: async () => {
+              await TSParser.init({ locateFile: () => initPath });
+              parserInstance = new TSParser();
+            },
+            catch: (error) =>
+              new ParserError({
+                reason: "init_failed",
+                detail: error instanceof Error ? error.message : String(error),
+              }),
+          });
+          const parser = parserInstance;
+          if (!parser) return yield* new ParserError({ reason: "init_failed" });
+          return parser;
+        }),
+      );
 
       const loadLanguage = (grammar: string): Effect.Effect<Language, ParserError> =>
         Effect.gen(function* () {

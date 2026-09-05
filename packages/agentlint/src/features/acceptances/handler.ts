@@ -1,7 +1,7 @@
 /** Acceptance maintenance handler. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { acceptanceKey, acceptanceSatisfies } from "../../domain/acceptance.js";
+import { acceptanceKey, acceptanceSatisfies, type AcceptanceRecord } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
@@ -27,13 +27,22 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
 
   const collected = yield* collectFindings({ all: true, rules: [], base: command.base, files: [] });
   if (command.action === "import") {
+    const snapshot = yield* store.read();
     const findingsByKey = new Map(collected.findings.map((finding) => [findingKey(finding), finding]));
     const rejectedCount = command.imported.filter((record) => {
       const finding = findingsByKey.get(acceptanceKey(record));
+      if ("type" in record) {
+        const existing = snapshot.byKey.get(acceptanceKey(record));
+        return (
+          finding === undefined ||
+          existing === undefined ||
+          existing.acceptedAt !== record.expectedAcceptedAt ||
+          existing.reason !== record.expectedReason
+        );
+      }
       return finding === undefined || !acceptanceSatisfies(record, finding);
     }).length;
     if (rejectedCount > 0) {
-      const snapshot = yield* store.read();
       return new AcceptancesResult({
         records: [...snapshot.records],
         removedCount: 0,
@@ -45,7 +54,8 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
     const result = yield* store.reconcile({
       scope: "partial",
       current: collected.findings,
-      accepted: command.imported,
+      accepted: command.imported.filter((record): record is AcceptanceRecord => !("type" in record)),
+      revoked: command.imported.filter((record) => "type" in record),
     });
     return new AcceptancesResult({
       records: [...result.records],

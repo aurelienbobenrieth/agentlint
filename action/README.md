@@ -136,3 +136,7 @@ On a pull request from a fork the token is read-only. The action still runs the 
 ```
 
 A dry run only needs read permissions. See [`.github/workflows/action-smoke.yml`](../.github/workflows/action-smoke.yml) for the full example.
+
+## Executable configuration and artifact confidentiality
+
+The action rejects `pull_request_target`: checking a repository executes its configuration and detectors. Untrusted pull requests need an isolated runner without secrets or a write token. A privileged follow-up job must not execute untrusted repository code. Detached artifacts include full source files with findings and review reasons; restrict their audience and retention like the repository itself. See [the security model](../SECURITY.md).

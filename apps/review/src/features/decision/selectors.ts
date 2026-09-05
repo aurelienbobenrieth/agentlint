@@ -65,8 +65,28 @@ export const detachedOutput = (model: Model, acceptedAt: string): DetachedOutput
         ]
       : [],
   );
-  const acceptanceOutput =
-    acceptances.length > 0 ? `${acceptances.map((acceptance) => JSON.stringify(acceptance)).join("\n")}\n` : "";
+  const revocations =
+    state.mode === "review"
+      ? state.findings.flatMap((finding) => {
+          const disposition = draftFor(model, finding.id).disposition;
+          return finding.acceptance !== null && disposition === "request_changes"
+            ? [
+                {
+                  schemaVersion: 1,
+                  type: "revoke",
+                  source: finding.identity.source,
+                  fingerprint: finding.identity.fingerprint,
+                  expectedAcceptedAt: finding.acceptance.at,
+                  expectedReason: finding.acceptance.reason,
+                },
+              ]
+            : [];
+        })
+      : [];
+  const decisions = [...acceptances, ...revocations];
+  const acceptanceOutput = decisions.length
+    ? `${decisions.map((decision) => JSON.stringify(decision)).join("\n")}\n`
+    : "";
   const summary =
     state.mode === "calibration"
       ? "Calibration feedback is ready for the rule author."

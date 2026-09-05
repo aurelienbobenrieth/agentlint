@@ -14,7 +14,7 @@ export { PatternError } from "./shared/pipeline/pattern-match.js";
 export { ParserError } from "./shared/infrastructure/parser.js";
 
 // Runtime schemas a consumer may need to construct or decode.
-export { FindingRecord } from "./domain/finding.js";
+export { FindingRecord, findingId } from "./domain/finding.js";
 export { ChangeBaseline, ChangedFile, ChangeHunk, ChangeLine, ChangeSet, FileSnapshot } from "./domain/rule.js";
 
 export type { AgentlintConfig } from "./domain/config.js";
@@ -46,3 +46,6 @@ export type {
   VisitorHooks,
   Visitors,
 } from "./domain/rule.js";
+
+export type { CanonicalValue, CanonicalObject } from "./domain/fingerprint.js";
+export type { FindingOptions } from "./domain/finding.js";

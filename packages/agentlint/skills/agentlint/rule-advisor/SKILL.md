@@ -22,7 +22,7 @@ First choose the right enforcement mechanism:
 - Use runtime tests or monitoring for runtime behavior.
 - Use agentlint when a deterministic trigger can identify evidence whose correct outcome still needs contextual judgment.
 
-Before authoring, inspect existing checks, rules, tests, and durable repository documentation. Establish the invariant, trigger, important permitted cases, scope, authority, and source. Ask only questions that can change that contract.
+Start from one concrete recurring correction or required review. Before authoring, inspect existing checks, rules, tests, and durable repository documentation. Establish the invariant, trigger, important permitted cases, scope, authority, and source. Ask only questions that can change that contract.
 
 Compose one effective `defineRule`:
 
@@ -33,6 +33,8 @@ Compose one effective `defineRule`:
 - Prefer parsed patterns or tree-sitter queries for local syntax, `createOnce` for stateful analysis, and a normalized change detector for operations.
 - Provide positive permitted examples in guidance. Do not teach agents a catalogue of tempting wrong answers.
 - Add focused `mustReport` activation fixtures and `mustStaySilent` boundary fixtures. They are proof samples, not an exhaustive taxonomy.
+- Identify the material justification. State fingerprints cover the containing file. Declare other supporting files in `binding.dependencies` and include them in fixtures. Test that changing supporting evidence invalidates the decision.
+- Imperative state detectors default to repository scans. Use `scan: "file"` only when files are independent. Keep plain data for `after()` because syntax nodes expire after their file visitor.
 - Emit concrete local messages. For change findings, choose stable `key`, material JSON `evidence`, and optional non-authoritative `lineageKey` deliberately.
 
 Keep the complete rule in the repository config or an imported rule package:

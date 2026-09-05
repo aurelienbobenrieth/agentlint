@@ -22,7 +22,8 @@ Resolve `<agentlint-cmd>` from the repository package manager: `pnpm agentlint`,
 4. For an `agent` authority finding that is already permitted, run `<agentlint-cmd> accept <selector> --reason "..."` with the concrete fact that satisfies the standard. Do not use a generic reason.
 5. Never create human authority. For a `human` finding, do the work you can, then run `<agentlint-cmd> propose <selector> --summary "..." [--diff-file path]` so the reviewer sees your change or your reason for not changing it next to the evidence. Then ask the user to run the review UI or `approve` command.
 6. A prior lineage reason is context only. Re-evaluate the changed evidence; do not assume the old acceptance still applies.
-7. Rerun the gate after changes or acceptance. Stop only when the applicable check reports the gate open.
+7. Check the reported scope. An open partial scan covers only that scope. A complete checkpoint must inspect every configured obligation. Resolve evidence-read and configuration failures before judging the gate.
+8. Rerun the gate after changes or acceptance. Stop only when the applicable check reports the gate open.
 
 Useful commands:
 
@@ -40,3 +41,5 @@ Useful commands:
 - When the work is on a pull request that runs the agentlint GitHub action, `<agentlint-cmd> pr <number>` downloads the review artifact and opens it. Never post `/agentlint approve` yourself; it is a human command.
 
 The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.
+
+Acceptance records attribute a declared decision and its reason to exact evidence. They do not authenticate local identity or prove the judgment correct. When a prior decision becomes incompatible, inspect the reported compatibility changes and the actual supporting code. Version 1 fingerprints require new review.

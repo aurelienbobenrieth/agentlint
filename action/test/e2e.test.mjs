@@ -18,8 +18,8 @@ const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const stub = join(fixtures, "cli-stub.mjs");
 const API = "https://api.github.com";
 const REPO = "aurelienbobenrieth/agentlint";
-const HUMAN_DIGEST = "9abade664c94c5b47c74e29e92c6a01b848db0a3d51982cd1ac7c26c8d2ebbc1";
-const AGENT_DIGEST = "4b47d62994f7a5370890913876a6781a970f48d7ee9e52bde3bc40b52ec861ef";
+const HUMAN_DIGEST = "dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52";
+const AGENT_DIGEST = "103d435f608a96c123f5d168f130495fdd20d00eacb575fb67f87e3849f6376a";
 
 /**
  * @typedef {{ method: string, url: string, body: unknown }} Recorded
@@ -335,7 +335,7 @@ describe("issue_comment", () => {
     expect(approveCall).toEqual({
       args: [
         "approve",
-        "9abade664c94",
+        "dd03e1e41c97",
         "--reason",
         "Vendored parser; the trust boundary is the formula allowlist in the caller",
         "--base",
@@ -436,5 +436,15 @@ describe("pull_request_review_comment", () => {
     ]);
     // dry-run: nothing was sent, the push and the reaction are in the plan
     expect(requests.every((r) => r.method === "GET" || r.url === "/graphql")).toBe(true);
+  });
+});
+
+describe("workflow trust boundary", () => {
+  it("rejects pull_request_target before executing repository code or calling GitHub", async () => {
+    const result = await runAction("pull_request_target", "pull_request.opened.json", {});
+    expect(result.exitCode).toBe(2);
+    expect(result.stubCalls).toEqual([]);
+    expect(result.requests).toEqual([]);
+    expect(result.logs.join("\n")).toContain("pull_request_target is unsupported");
   });
 });

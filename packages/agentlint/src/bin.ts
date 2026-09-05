@@ -13,7 +13,7 @@ import { AcceptCommand } from "./features/accept/request.js";
 import { acceptancesHandler } from "./features/acceptances/handler.js";
 import { AcceptancesCommand, type AcceptancesResult } from "./features/acceptances/request.js";
 import { checkHandler } from "./features/check/handler.js";
-import { CheckCommand } from "./features/check/request.js";
+import { CheckCommand, type CheckResult } from "./features/check/request.js";
 import { explainHandler } from "./features/explain/handler.js";
 import { ExplainCommand } from "./features/explain/request.js";
 import { initHandler } from "./features/init/handler.js";
@@ -27,7 +27,7 @@ import { buildReviewPayload } from "./features/review/handler.js";
 import { runReviewSession } from "./features/review/server.js";
 import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features/rules/handler.js";
 import { RulesListCommand, RulesScanCommand, RulesTestCommand } from "./features/rules/request.js";
-import { AcceptanceStore, parseAcceptances } from "./shared/infrastructure/acceptance-store.js";
+import { AcceptanceStore, parseDecisions } from "./shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "./shared/infrastructure/config-loader.js";
 import { Gh } from "./shared/infrastructure/gh.js";
 import { Git } from "./shared/infrastructure/git.js";
@@ -37,7 +37,7 @@ import { SelectorCache } from "./shared/infrastructure/selector-cache.js";
 
 declare const __AGENTLINT_VERSION__: string;
 
-const TAGLINE = "Deterministic findings. Explicit judgment. A gate agents cannot hand-wave past.";
+const TAGLINE = "Deterministic findings. Explicit judgment. Repository-owned review decisions.";
 const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage or configuration error.";
 
 // ---------------------------------------------------------------------------
@@ -100,18 +100,23 @@ const readArtifact = Effect.fn("readArtifact")(function* (file: string) {
   return { state: artifact.state, source: absolute };
 });
 
-const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (file: string, base?: string) {
+const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (
+  file: string,
+  check: CheckResult,
+  base?: string,
+) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const absolute = path.resolve(env.cwd, file);
   const state = yield* buildReviewPayload({
+    check,
     base,
     mode: "review",
     transport: "detached",
     source: path.basename(absolute),
   });
-  const artifact: ReviewArtifact = { version: 1, state };
+  const artifact: ReviewArtifact = { version: 2, state };
   yield* fs.makeDirectory(path.dirname(absolute), { recursive: true });
   yield* fs.writeFileString(absolute, `${JSON.stringify(artifact, null, 2)}\n`);
   return absolute;
@@ -122,7 +127,7 @@ const readAcceptanceRecords = Effect.fn("readAcceptanceRecords")(function* (file
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const raw = yield* fs.readFileString(path.resolve(env.cwd, file));
-  return yield* Effect.try(() => parseAcceptances(raw));
+  return yield* Effect.try(() => parseDecisions(raw));
 });
 
 const setExitCode = (code: number) => Effect.map(Env, (env) => env.setExitCode(code));
@@ -176,6 +181,10 @@ const check = Command.make(
         ? formatCheckJsonl(result.unresolved, config, result.lineage)
         : yield* formatCheckText(result.unresolved, config, __AGENTLINT_VERSION__, result.lineage);
     if (output) yield* Console.log(output);
+    if (format === "text")
+      yield* Console.log(
+        `Coverage: ${result.scope}; ${result.scannedFiles.length} files; ${result.availableRules.length} executed bindings. ${result.scope === "partial" ? "Run check --all for a complete checkpoint." : "Every current finding in this scope requires a compatible decision."}`,
+      );
     if (format === "text" && result.accepted.length) {
       yield* Console.log(
         `${result.accepted.length} accepted finding${result.accepted.length === 1 ? "" : "s"} hidden.`,
@@ -184,7 +193,7 @@ const check = Command.make(
     if (result.staleCount) {
       yield* Console.log(`${result.staleCount} stale acceptance${result.staleCount === 1 ? "" : "s"} removed.`);
     }
-    if (reviewOutput) yield* Console.log(`Review artifact: ${yield* writeReviewArtifact(reviewOutput, base)}`);
+    if (reviewOutput) yield* Console.log(`Review artifact: ${yield* writeReviewArtifact(reviewOutput, result, base)}`);
     yield* setExitCode(result.exitCode);
   }),
 ).pipe(Command.withDescription("Run the gate: report unresolved findings and exit 1 while any remain"));

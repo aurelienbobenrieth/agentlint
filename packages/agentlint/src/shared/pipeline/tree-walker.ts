@@ -8,6 +8,7 @@
  * @module
  */
 
+import { DetectionError } from "./detection-error.js";
 import type { Tree, TreeCursor } from "web-tree-sitter";
 import { type AgentlintNode, wrapNode } from "../../domain/node.js";
 import type { FindingRecord } from "../../domain/finding.js";
@@ -47,7 +48,14 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
   const dispatchTable = new Map<string, VisitorHandler[]>();
   for (const entry of rules) {
     for (const key of visitorKeys(entry.visitors)) {
-      const handler = (entry.visitors as Readonly<Record<string, unknown>>)[key] as VisitorHandler;
+      const visit = (entry.visitors as Readonly<Record<string, unknown>>)[key] as VisitorHandler;
+      const handler: VisitorHandler = (node) => {
+        try {
+          visit(node);
+        } catch (cause) {
+          throw new DetectionError({ ruleId: entry.ruleId, cause });
+        }
+      };
       const existing = dispatchTable.get(key);
       if (existing) {
         existing.push(handler);
@@ -60,22 +68,26 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
   const cursor: TreeCursor = tree.walk();
   let reachedEnd = false;
 
-  while (!reachedEnd) {
-    const handlers = dispatchTable.get(cursor.nodeType);
-    if (handlers) {
-      const wrapped: AgentlintNode = wrapNode(cursor.currentNode);
-      for (const handler of handlers) {
-        handler(wrapped);
+  try {
+    while (!reachedEnd) {
+      const handlers = dispatchTable.get(cursor.nodeType);
+      if (handlers) {
+        const wrapped: AgentlintNode = wrapNode(cursor.currentNode);
+        for (const handler of handlers) {
+          handler(wrapped);
+        }
       }
-    }
 
-    if (cursor.gotoFirstChild()) continue;
-    while (!cursor.gotoNextSibling()) {
-      if (!cursor.gotoParent()) {
-        reachedEnd = true;
-        break;
+      if (cursor.gotoFirstChild()) continue;
+      while (!cursor.gotoNextSibling()) {
+        if (!cursor.gotoParent()) {
+          reachedEnd = true;
+          break;
+        }
       }
     }
+  } finally {
+    cursor.delete();
   }
 
   const allFindings: FindingRecord[] = [];

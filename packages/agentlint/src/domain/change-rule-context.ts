@@ -21,6 +21,8 @@ function operation(file: ChangedFile): "add" | "delete" | "modify" | "rename" {
 export class ChangeRuleContextImpl implements ChangeRuleContext {
   readonly change: ChangeSet;
   readonly findings: FindingRecord[] = [];
+  #keys = new Set<string>();
+  #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
   constructor(
     readonly rule: ChangeRule,
@@ -28,6 +30,7 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
     private readonly absolutePath: (file: string) => string,
   ) {
     this.change = change;
+    this.#sourceIdentity = findingSourceForRule(rule);
   }
 
   report(options: ChangeFindingOptions): void {
@@ -37,6 +40,11 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
       throw new Error(`Rule ${this.rule.binding.id} reported evidence outside the change set: ${filePath}`);
     }
 
+    const identity = canonicalDigest({ path: changed.path, key: options.key });
+    if (!options.key.trim() || this.#keys.has(identity)) {
+      throw new Error(`Rule ${this.rule.binding.id} reported a duplicate or empty finding key: ${options.key}`);
+    }
+    this.#keys.add(identity);
     const beforePath = changed.previousPath ?? changed.path;
     const afterPath = changed.path;
     const line = options.startLine ?? 1;
@@ -50,7 +58,7 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
         ruleId: this.rule.binding.id,
         lifecycle: "change",
         authority: this.rule.binding.authority,
-        source: findingSourceForRule(this.rule),
+        source: this.#sourceIdentity,
         fingerprint: fingerprintChange({
           before: null,
           after: options.evidence,

@@ -12,7 +12,9 @@ import { Git } from "../../shared/infrastructure/git.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
-import { buildReviewPayload } from "./handler.js";
+import { applyReviewAction, buildReviewPayload, makeReviewSessionState } from "./handler.js";
+import { checkHandler } from "../check/handler.js";
+import { CheckCommand } from "../check/request.js";
 
 const cwd = join(tmpdir(), "agentlint-v02-review-payload-test");
 const source = 'export const result =\n  danger("x")\n';
@@ -58,6 +60,45 @@ const cleanup = Effect.gen(function* () {
 afterEach(() => Effect.runPromise(cleanup));
 
 describe("review payload", () => {
+  it("revokes accepted findings when changes are requested and reuses captured scan evidence", async () => {
+    await Effect.runPromise(cleanup);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
+        yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
+        const session = makeReviewSessionState();
+        const payload = yield* buildReviewPayload({ mode: "review", transport: "attached", session });
+        const findingId = payload.findings[0]?.id;
+        if (!findingId) throw new Error("Expected finding");
+        expect(
+          yield* applyReviewAction(
+            { type: "accept", findingId, reason: "Reviewed sandbox." },
+            { mode: "review", session },
+          ),
+        ).toMatchObject({ ok: true });
+        expect(
+          yield* applyReviewAction({ type: "withdraw", findingId }, { mode: "calibration", session }),
+        ).toMatchObject({ ok: false });
+        expect((yield* (yield* AcceptanceStore).read()).records).toHaveLength(1);
+        expect(
+          yield* applyReviewAction(
+            { type: "request_changes", findingId, reason: "The sandbox is insufficient." },
+            { mode: "review", session },
+          ),
+        ).toMatchObject({ ok: true });
+        const result = yield* checkHandler(
+          new CheckCommand({ all: true, rules: [], files: [], base: undefined, format: "text" }),
+        );
+        expect(result.exitCode).toBe(1);
+        yield* fs.writeFileString(join(cwd, "src", "demo.ts"), "safe()");
+        const artifact = yield* buildReviewPayload({ mode: "review", transport: "detached", check: result });
+        expect(artifact.sources["src/demo.ts"]).toBe(source);
+        expect(artifact.findings).toHaveLength(1);
+        expect(artifact.coverage.scope).toBe("complete");
+      }).pipe(Effect.provide(TestLayer)),
+    );
+  });
   it("includes the complete source and the detector-selected focus range", async () => {
     await Effect.runPromise(cleanup);
     await Effect.runPromise(
@@ -78,8 +119,8 @@ describe("review payload", () => {
     );
 
     expect(payload.findings).toHaveLength(1);
+    expect(payload.sources["src/demo.ts"]).toBe(source);
     expect(payload.findings[0]?.code).toEqual({
-      source,
       focus: { startLine: 2, startColumn: 3, endLine: 2, endColumn: 14 },
     });
     expect(payload.findings[0]?.editor).toEqual({ canOpen: true });

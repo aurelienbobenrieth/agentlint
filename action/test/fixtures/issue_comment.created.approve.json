@@ -10,7 +10,7 @@
   },
   "comment": {
     "id": 9001,
-    "body": "/agentlint approve 9abade664c94 --reason \"Vendored parser; the trust boundary is the formula allowlist in the caller\"",
+    "body": "/agentlint approve dd03e1e41c97 --reason \"Vendored parser; the trust boundary is the formula allowlist in the caller\"",
     "user": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" }
   },
   "repository": {

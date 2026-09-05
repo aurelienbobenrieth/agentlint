@@ -1,7 +1,8 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import { agentInstructions } from "./features/decision/selectors";
+import { agentInstructions, detachedOutput } from "./features/decision/selectors";
 import { findingContext } from "./features/detail/selectors";
 import { shortcutFor } from "./features/shortcuts/subscription";
 import { Message } from "./message";
@@ -10,7 +11,9 @@ import { deriveReview, effectiveFindingStatus } from "./shared/selectors";
 import { update } from "./update";
 
 const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
-  version: 1,
+  version: 2,
+  sources: { "src/query.ts": "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n" },
+  coverage: { scope: "complete", files: ["src/query.ts"], rules: ["data/bounded-query"] },
   mode,
   transport: "detached",
   project: "demo",
@@ -30,7 +33,7 @@ const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
           bindingId: "app/database",
           bindingDigest: "binding-digest",
         },
-        fingerprint: { scheme: "ast", version: 1, digest: "finding-digest" },
+        fingerprint: { scheme: "source-structure", version: 2, digest: "finding-digest" },
         lineageKey: null,
       },
       ruleId: "data/bounded-query",
@@ -43,7 +46,6 @@ const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
       message: "Review this unbounded query.",
       editor: null,
       code: {
-        source: "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n",
         focus: { startLine: 4, startColumn: 3, endLine: 4, endColumn: 21 },
       },
       guidance: {
@@ -320,5 +322,68 @@ describe("review stories", () => {
     expect(after.decisionsCount).toBe(1);
     expect(after.openCount).toBe(0);
     expect(after.visible).toEqual([]);
+  });
+});
+
+describe("review gate and detached revocations", () => {
+  it("keeps requested changes unresolved and exports a conditional revocation", () => {
+    const initial = model("review");
+    const payload = state("review");
+    const findings = payload.findings.map((finding) => ({
+      ...finding,
+      status: "accepted" as const,
+      acceptance: {
+        reason: "Previously examined",
+        actor: "human:reviewer",
+        authority: "human" as const,
+        at: "2026-09-05T12:00:00.000Z",
+      },
+    }));
+    const start = { ...initial, screen: Screen.Reviewing({ state: { ...payload, findings } }) };
+    const result = update(start, Message.ClickedRequestChanges({ findingId: "finding-1" }));
+    if (result.model.screen._tag !== "Reviewing") throw new Error("Expected review");
+    const derived = deriveReview(result.model.screen.state, result.model);
+    expect(derived.openCount).toBe(1);
+    expect(derived.undecidedCount).toBe(0);
+    const output = detachedOutput(result.model, "2026-09-05T13:00:00.000Z");
+    expect(
+      Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({ type: Schema.String, expectedReason: Schema.String, expectedAcceptedAt: Schema.String }),
+        ),
+      )(output.acceptanceOutput),
+    ).toMatchObject({
+      type: "revoke",
+      expectedReason: "Previously examined",
+      expectedAcceptedAt: "2026-09-05T12:00:00.000Z",
+    });
+  });
+});
+
+describe("attached action confirmation", () => {
+  it("keeps failed requests out of decisions and blocks concurrent submits and finish", () => {
+    const current = model("review");
+    const attached = {
+      ...current,
+      screen: Screen.Reviewing({ state: { ...state("review"), transport: "attached" as const, detached: null } }),
+    };
+    const pending = send(attached, Message.ClickedRequestChanges({ findingId: "finding-1" }));
+    expect(pending.busyFindingId).toBe("finding-1");
+    expect(pending.drafts["finding-1"]?.disposition ?? "none").toBe("none");
+    expect(update(pending, Message.ClickedRequestChanges({ findingId: "finding-1" })).commands ?? []).toEqual([]);
+    expect(update(pending, Message.ClickedFinish()).commands ?? []).toEqual([]);
+    const failed = send(pending, Message.FailedAction({ findingId: "finding-1", message: "Connection failed" }));
+    expect(failed.busyFindingId).toBeNull();
+    expect(agentInstructions(failed)).toBe("No review feedback has been recorded yet.");
+    const confirmedState = {
+      ...reviewing(attached),
+      findings: reviewing(attached).findings.map((finding) => ({ ...finding, status: "changes_requested" as const })),
+    };
+    const confirmed = send(
+      pending,
+      Message.CompletedAction({ findingId: "finding-1", state: confirmedState, message: "Saved" }),
+    );
+    expect(confirmed.drafts["finding-1"]?.disposition).toBe("request_changes");
+    expect(deriveReview(reviewing(confirmed), confirmed).openCount).toBe(1);
   });
 });

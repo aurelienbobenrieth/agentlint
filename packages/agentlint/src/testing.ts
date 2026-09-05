@@ -28,16 +28,11 @@ import {
   runRuleFixtures,
   runRuleOnChange,
   runRuleOnSource,
+  runRuleOnSources,
   type FixtureReport,
 } from "./shared/pipeline/rule-tester.js";
 
-export {
-  normalizeChangeFixture,
-  runRuleFixtures,
-  runRuleOnChange,
-  runRuleOnSource,
-  runRuleOnSources,
-} from "./shared/pipeline/rule-tester.js";
+export { normalizeChangeFixture };
 export type { FixtureFailure, FixtureReport } from "./shared/pipeline/rule-tester.js";
 
 const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
@@ -77,4 +72,12 @@ export function testRuleOnSource(
  */
 export function testRuleOnChange(rule: ChangeRule, fixture: ChangeFixture): Promise<ReadonlyArray<FindingRecord>> {
   return Promise.resolve(runRuleOnChange(rule, normalizeChangeFixture(fixture)));
+}
+
+/** Run repository-wide detector fixtures without exposing engine infrastructure. */
+export function testRuleOnSources(
+  rule: StateRule,
+  sources: ReadonlyArray<readonly [string, string]>,
+): Promise<ReadonlyArray<FindingRecord>> {
+  return Effect.runPromise(runRuleOnSources(rule, sources).pipe(Effect.provide(TestingLayer)));
 }

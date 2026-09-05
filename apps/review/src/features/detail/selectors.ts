@@ -7,8 +7,8 @@ const fenced = (content: string, language = ""): string => {
   return `${fence}${language}\n${content}\n${fence}`;
 };
 
-const focusedSource = (finding: ReviewFindingPayload): string => {
-  const lines = finding.code.source.split("\n");
+const focusedSource = (finding: ReviewFindingPayload, source: string): string => {
+  const lines = source.split("\n");
   const start = Math.max(0, finding.code.focus.startLine - 4);
   const end = Math.min(lines.length, finding.code.focus.endLine + 3);
   return lines
@@ -19,6 +19,7 @@ const focusedSource = (finding: ReviewFindingPayload): string => {
 
 /** Complete, paste-ready evidence for discussing one finding with another agent. */
 export const findingContext = (finding: ReviewFindingPayload, model: Model): string => {
+  const source = model.screen._tag === "Reviewing" ? (model.screen.state.sources[finding.file] ?? "") : "";
   const draft = draftFor(model, finding.id);
   const status =
     draft.disposition === "accept"
@@ -87,11 +88,11 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
     "",
     "## Focused code context",
     "",
-    fenced(focusedSource(finding), language),
+    fenced(focusedSource(finding, source), language),
     "",
     "## Complete file",
     "",
-    fenced(finding.code.source, language),
+    fenced(source, language),
     "",
     "## Permitted examples",
     "",
