@@ -1,19 +1,24 @@
 // @ts-check
 /**
- * Pure rendering of everything the action writes to GitHub: the sticky summary
- * comment, the inline review comment bodies, check-run annotations, and the
- * workflow commands used when the token cannot write.
+ * Pure rendering of everything the action writes to GitHub: the sticky summary comment, the inline review comment
+ * bodies, check-run annotations, and the workflow commands used when the token cannot write.
  */
 
 import { isRecord, shortDigest, unresolved } from "./artifact.mjs";
 
-/** @typedef {import("./artifact.mjs").Finding} Finding */
-/** @typedef {"open" | "closed" | "error"} Gate */
+/**
+ * @typedef {import("./artifact.mjs").Finding} Finding
+ */
+/**
+ * @typedef {"open" | "closed" | "error"} Gate
+ */
 
 export const SUMMARY_MARKER = "<!-- agentlint:summary -->";
 const INLINE_MARKER = /<!-- agentlint:([0-9a-f]{7,64}) -->/;
 
-/** @param {string} digest */
+/**
+ * @param {string} digest
+ */
 function inlineMarker(digest) {
   return `<!-- agentlint:${digest} -->`;
 }
@@ -42,10 +47,10 @@ export function headFromSummary(body) {
 
 /**
  * Anyone who can comment can write a marker, and so can any other bot. Only a comment posted by the account the
- * action's own token acts as is an agentlint comment. `identity` is that login as GitHub reports it for the token;
- * REST spells an application's account `<slug>[bot]`, so that spelling matches too, for a `Bot` account only.
+ * action's own token acts as is an agentlint comment. `identity` is that login as GitHub reports it for the token; REST
+ * spells an application's account `<slug>[bot]`, so that spelling matches too, for a `Bot` account only.
  *
- * @param {unknown} comment a GitHub issue or review comment
+ * @param {unknown} comment A GitHub issue or review comment
  * @param {string} identity
  */
 export function isActionComment(comment, identity) {
@@ -55,7 +60,9 @@ export function isActionComment(comment, identity) {
   return user["login"] === identity || (user["type"] === "Bot" && user["login"] === `${identity}[bot]`);
 }
 
-/** GitHub rejects a comment body above 65,536 characters. Everything rendered here stays under this. */
+/**
+ * GitHub rejects a comment body above 65,536 characters. Everything rendered here stays under this.
+ */
 export const BODY_BUDGET = 60_000;
 const MORE = "open the review artifact";
 
@@ -111,7 +118,9 @@ export function fenced(content, language = "") {
 
 const DIFF_LIMIT = 20_000;
 
-/** @param {string} diff */
+/**
+ * @param {string} diff
+ */
 function clipDiff(diff) {
   const trimmed = diff.trimEnd();
   if (trimmed.length <= DIFF_LIMIT) return trimmed;
@@ -133,7 +142,7 @@ export function renderFailureReply(heading, output) {
 
 /**
  * @param {ReadonlyArray<Finding>} findings
- * @returns {{ unresolved: number, human: number, agent: number, accepted: number }}
+ * @returns {{ unresolved: number; human: number; agent: number; accepted: number }}
  */
 export function countFindings(findings) {
   const open = unresolved(findings);
@@ -146,13 +155,17 @@ export function countFindings(findings) {
   };
 }
 
-/** @param {Finding} finding */
+/**
+ * @param {Finding} finding
+ */
 function acceptCommand(finding) {
   const verb = finding.authority === "human" ? "/agentlint approve" : "agentlint accept";
   return `${verb} ${shortDigest(finding)} --reason "..."`;
 }
 
-/** @param {Finding} finding */
+/**
+ * @param {Finding} finding
+ */
 function authorityBadge(finding) {
   return finding.authority === "human" ? "**needs human approval**" : "agent authority";
 }
@@ -165,7 +178,9 @@ function cell(text, limit) {
   return clip(plain(text.replace(/\s*\r?\n\s*/g, " ")), limit);
 }
 
-/** @param {string} file */
+/**
+ * @param {string} file
+ */
 function urlPath(file) {
   return file
     .split("/")
@@ -180,7 +195,7 @@ function urlPath(file) {
  * @param {number} input.pullNumber
  * @param {Gate} input.gate
  * @param {ReadonlyArray<Finding>} input.findings
- * @param {ReadonlySet<string>} input.inlineDigests digests that received an inline comment
+ * @param {ReadonlySet<string>} input.inlineDigests Digests that received an inline comment
  * @param {string} [input.serverUrl]
  */
 export function renderSummary(input) {
@@ -246,7 +261,9 @@ export function renderSummary(input) {
   return lines.join("\n");
 }
 
-/** @param {Gate} gate */
+/**
+ * @param {Gate} gate
+ */
 function gateLabel(gate) {
   return gate === "open" ? "open" : gate === "closed" ? "closed" : "error";
 }
@@ -328,7 +345,7 @@ export function renderAnnotations(findings) {
 /**
  * @param {Gate} gate
  * @param {ReadonlyArray<Finding>} findings
- * @returns {{ title: string, summary: string }}
+ * @returns {{ title: string; summary: string }}
  */
 export function renderCheckOutput(gate, findings) {
   const counts = countFindings(findings);
@@ -350,12 +367,16 @@ export function renderCheckOutput(gate, findings) {
   };
 }
 
-/** @param {string} value */
+/**
+ * @param {string} value
+ */
 function escapeData(value) {
   return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
 
-/** @param {string} value */
+/**
+ * @param {string} value
+ */
 function escapeProperty(value) {
   return escapeData(value).replace(/:/g, "%3A").replace(/,/g, "%2C");
 }

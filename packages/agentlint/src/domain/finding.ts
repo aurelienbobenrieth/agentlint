@@ -12,17 +12,25 @@ import type { AgentlintNode } from "./node.js";
 import type { CanonicalValue } from "./fingerprint.js";
 import { Lifecycle, RuleAuthority } from "./rule.js";
 
-/** Evidence reported by a state detector. */
+/**
+ * Evidence reported by a state detector.
+ */
 export interface FindingOptions {
   readonly node: AgentlintNode;
   readonly message: string;
-  /** Additional material judgment evidence. The containing file is always included. */
+  /**
+   * Additional material judgment evidence. The containing file is always included.
+   */
   readonly evidence?: CanonicalValue;
-  /** Stable detector-owned occurrence identity, unique within the current file. */
+  /**
+   * Stable detector-owned occurrence identity, unique within the current file.
+   */
   readonly key?: string;
 }
 
-/** One deterministic review point. */
+/**
+ * One deterministic review point.
+ */
 export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")({
   selector: Schema.UndefinedOr(Schema.String),
   ruleId: Schema.String,
@@ -40,17 +48,23 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
   sourceSnippet: Schema.String,
 }) {}
 
-/** Return the exact compatibility key of a finding. */
+/**
+ * Return the exact compatibility key of a finding.
+ */
 export function findingKey(finding: Pick<FindingRecord, "source" | "fingerprint">): string {
   return findingIdentityKey(finding.source, finding.fingerprint);
 }
 
-/** Compact transport identifier over the complete finding identity. */
+/**
+ * Compact transport identifier over the complete finding identity.
+ */
 export function findingId(finding: Pick<FindingRecord, "source" | "fingerprint">): string {
   return createHash("sha256").update(findingKey(finding)).digest("hex");
 }
 
-/** Add a run-local display selector without changing finding identity. */
+/**
+ * Add a run-local display selector without changing finding identity.
+ */
 export function withSelector(finding: FindingRecord, selector: string): FindingRecord {
   return new FindingRecord({ ...finding, selector });
 }

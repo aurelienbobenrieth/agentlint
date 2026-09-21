@@ -10,7 +10,9 @@ import { ConfigLoader } from "./config-loader.js";
 const TEST_CWD = join(tmpdir(), "agentlint-test-config-loader");
 const CONFIG_DIR = `${TEST_CWD}/.agentlint`;
 const CONFIG_PATH = `${CONFIG_DIR}/config.ts`;
-/** Separate directory: jiti caches modules by path, so the alias case must not reuse CONFIG_PATH. */
+/**
+ * Separate directory: jiti caches modules by path, so the alias case must not reuse CONFIG_PATH.
+ */
 const ALIAS_CWD = join(tmpdir(), "agentlint-test-config-loader-alias");
 
 const testEnv = (cwd: string) =>

@@ -1,4 +1,6 @@
-/** Calibration measurement, independent of gate semantics. @module @since 0.2.0 */
+/**
+ * Calibration measurement, independent of gate semantics. @module @since 0.2.0
+ */
 import { Schema } from "effect";
 import { CalibrationReport, type CalibrationObservation, type ReviewStatePayload } from "../review/contract.js";
 
@@ -17,11 +19,15 @@ export const CalibrationSummary = Schema.Struct({
       applies: Schema.Number,
       doesNotApply: Schema.Number,
       unsure: Schema.Number,
-      /** Applies / decided labels, excluding unsure. Null means no decided labels. */
+      /**
+       * Applies / decided labels, excluding unsure. Null means no decided labels.
+       */
       applicabilityRate: Schema.NullOr(Schema.Number),
       reasons: Schema.Record(Schema.String, Schema.Number),
       invalidatedEvidence: Schema.Number,
-      /** Lineages with at least two distinct observed invalidated identities. */
+      /**
+       * Lineages with at least two distinct observed invalidated identities.
+       */
       repeatedInvalidationLineages: Schema.Number,
     }),
   ),
@@ -55,7 +61,9 @@ const sourceKey = (source: CalibrationObservation["identity"]["source"]) => [
   source.bindingDigest,
 ];
 
-/** Each exact finding is counted once. Input order resolves replacement labels: later reports win. */
+/**
+ * Each exact finding is counted once. Input order resolves replacement labels: later reports win.
+ */
 export const summarizeCalibration = (reports: ReadonlyArray<CalibrationReport>): CalibrationSummary => {
   const observations = new Map<string, { project: string; observation: CalibrationObservation }>();
   for (const report of reports)

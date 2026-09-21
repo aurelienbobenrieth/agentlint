@@ -1,6 +1,8 @@
 import type { ChangeHunk, ChangeLine } from "../../domain/rule.js";
 
-/** Git-style text lines: a terminal newline terminates the last line, rather than adding one. */
+/**
+ * Git-style text lines: a terminal newline terminates the last line, rather than adding one.
+ */
 export function textLines(source: string | undefined): string[] {
   if (!source) return [];
   const lines = source.split(/\r?\n/);
@@ -8,7 +10,9 @@ export function textLines(source: string | undefined): string[] {
   return lines;
 }
 
-/** Small in-memory fixtures use an exact line diff with the same three-line context as Git. */
+/**
+ * Small in-memory fixtures use an exact line diff with the same three-line context as Git.
+ */
 export function fixtureHunks(before: string | undefined, after: string | undefined): ChangeHunk[] {
   const oldLines = textLines(before);
   const newLines = textLines(after);

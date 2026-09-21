@@ -1,9 +1,8 @@
 /**
  * Download the review artifact a pull request's agentlint action uploaded.
  *
- * The artifact is named `agentlint-review-<number>` and holds one
- * `agentlint-review.json`. Both the ZIP and the extracted JSON land under
- * `.agentlint/.cache/pr-<number>/`, which is disposable.
+ * The artifact is named `agentlint-review-<number>` and holds one `agentlint-review.json`. Both the ZIP and the
+ * extracted JSON land under `.agentlint/.cache/pr-<number>/`, which is disposable.
  *
  * @module
  * @since 0.2.0
@@ -52,7 +51,9 @@ const decodePullHead = Schema.decodeUnknownEffect(Schema.fromJsonString(PullHead
 const decodeArtifactListing = Schema.decodeUnknownEffect(Schema.fromJsonString(ArtifactListing));
 const decodeReviewArtifact = Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewArtifact));
 
-/** Artifact name the GitHub action uploads for a pull request. */
+/**
+ * Artifact name the GitHub action uploads for a pull request.
+ */
 const artifactName = (number: number): string => `agentlint-review-${number}`;
 
 export const prHandler = Effect.fn("prHandler")(function* (command: PrCommand) {

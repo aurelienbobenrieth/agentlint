@@ -1,4 +1,6 @@
-/** Finding and rule explanation handler. @module @since 0.2.0 */
+/**
+ * Finding and rule explanation handler. @module @since 0.2.0
+ */
 
 import { Effect } from "effect";
 import { findLineage, invalidationReasons, lookupAcceptance } from "../../domain/acceptance.js";

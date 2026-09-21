@@ -8,6 +8,8 @@ export const fields = {
   ClickedDismissToast: { id: S.Number },
   ExpiredToast: { id: S.Number },
   RemovedToast: { id: S.Number },
-  /** Outcome of a utility command (copy, open, download) reported as a toast. */
+  /**
+   * Outcome of a utility command (copy, open, download) reported as a toast.
+   */
   CompletedUtility: { message: S.String, tone: ToastTone },
 } satisfies Record<string, S.Struct.Fields>;

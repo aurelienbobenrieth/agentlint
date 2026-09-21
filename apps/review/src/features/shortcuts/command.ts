@@ -3,8 +3,10 @@ import { Command } from "foldkit";
 
 import { Message } from "../../message";
 
-/** DOM side effects behind keyboard shortcuts. They never change the model. Focus waits for the next
- *  frame because the target may only exist once the model change that asked for it has rendered. */
+/**
+ * DOM side effects behind keyboard shortcuts. They never change the model. Focus waits for the next frame because the
+ * target may only exist once the model change that asked for it has rendered.
+ */
 export const FocusElement = Command.define("FocusElement", {
   args: { selector: S.String },
   messages: [Message.PerformedDomEffect],
@@ -49,7 +51,9 @@ export const RevealSelectedRow = Command.define("RevealSelectedRow", {
   }),
 });
 
-/** Let the native modal manage focus trapping and background interaction. */
+/**
+ * Let the native modal manage focus trapping and background interaction.
+ */
 export const ShowHelp = Command.define("ShowHelp", {
   messages: [Message.PerformedDomEffect],
   execute: Effect.sync(() => {

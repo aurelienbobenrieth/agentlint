@@ -4,7 +4,9 @@ import { expect, it } from "vitest";
 import { createGitHub } from "../src/github.mjs";
 import { exec } from "../src/cli.mjs";
 
-/** @param {typeof fetch} fetchImpl */
+/**
+ * @param {typeof fetch} fetchImpl
+ */
 const client = (fetchImpl) =>
   createGitHub({
     token: "fixture",

@@ -103,7 +103,7 @@ describe("check reporter", () => {
     });
 
     const output = await Effect.runPromise(
-      formatCheckText([first, human, second], config, "0.2.0").pipe(Effect.provide(env)),
+      formatCheckText({ findings: [first, human, second], config, version: "0.2.0" }).pipe(Effect.provide(env)),
     );
 
     expect(output).toContain("security/danger — Danger calls need judgment (2 findings, state/agent)");
@@ -129,14 +129,19 @@ describe("check reporter", () => {
       digest: "b",
     });
     const output = await Effect.runPromise(
-      formatCheckText([first, second], config, "0.2.0", [
-        {
-          findingKey: findingKey(second),
-          reason: "The sandbox owns this path.",
-          authority: "agent",
-          acceptedAt: "2026-08-11T10:00:00.000Z",
-        },
-      ]).pipe(Effect.provide(env)),
+      formatCheckText({
+        findings: [first, second],
+        config,
+        version: "0.2.0",
+        lineage: [
+          {
+            findingKey: findingKey(second),
+            reason: "The sandbox owns this path.",
+            authority: "agent",
+            acceptedAt: "2026-08-11T10:00:00.000Z",
+          },
+        ],
+      }).pipe(Effect.provide(env)),
     );
 
     expect(output.match(/Prior judgment/g)).toHaveLength(1);
@@ -148,7 +153,7 @@ describe("check reporter", () => {
   it("retains full-fidelity JSONL fields", () => {
     const item = finding({ selector: "f1", file: "src/a.ts", line: 4, message: "Review the call", digest: "a" });
     const output = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
-      formatCheckJsonl([item], config),
+      formatCheckJsonl({ findings: [item], config }),
     ) as Record<string, unknown>;
 
     expect(output).toMatchObject({

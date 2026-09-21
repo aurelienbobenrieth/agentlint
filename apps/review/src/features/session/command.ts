@@ -15,10 +15,14 @@ import { markDirty } from "../../shared/dirty-flag";
 
 const decodeState = S.decodeUnknownEffect(ReviewStatePayload);
 
-/** A detached artifact embeds its state in the page. No review server stands behind such a page. */
+/**
+ * A detached artifact embeds its state in the page. No review server stands behind such a page.
+ */
 export const hasEmbeddedState = (): boolean => Reflect.get(window, "__AGENTLINT_REVIEW__") !== undefined;
 
-/** Embedded state (detached artifacts) wins over the live `/api/state` endpoint. */
+/**
+ * Embedded state (detached artifacts) wins over the live `/api/state` endpoint.
+ */
 export const fetchState = Effect.gen(function* () {
   const embedded = Reflect.get(window, "__AGENTLINT_REVIEW__");
   if (embedded !== undefined) {
@@ -40,7 +44,9 @@ export const reviewStorageKey = (state: ReviewStatePayload): string =>
 
 export interface SavedReview {
   readonly saved: PersistedReview | null;
-  /** Something was stored but this build cannot read it: corrupt, or written under another schema version. */
+  /**
+   * Something was stored but this build cannot read it: corrupt, or written under another schema version.
+   */
   readonly unreadable: boolean;
 }
 
@@ -53,7 +59,9 @@ export const decodeSavedReview = (value: string | null): SavedReview => {
   }
 };
 
-/** An unreadable blob moves to `<key>:bak` so the next save cannot overwrite decisions nobody exported. */
+/**
+ * An unreadable blob moves to `<key>:bak` so the next save cannot overwrite decisions nobody exported.
+ */
 const readSavedReview = (state: ReviewStatePayload) =>
   browserOperation("Load saved review", () => {
     const key = reviewStorageKey(state);
@@ -78,7 +86,9 @@ export const LoadReview = Command.define("LoadReview", {
   ),
 });
 
-/** `dirty` is decided by `update`. The flag is raised before the write so a failed save still warns on leave. */
+/**
+ * `dirty` is decided by `update`. The flag is raised before the write so a failed save still warns on leave.
+ */
 export const PersistReview = Command.define("PersistReview", {
   args: { key: S.String, content: S.String, dirty: S.Boolean },
   messages: [Message.CompletedPersistence, Message.FailedPersistence],
@@ -102,7 +112,9 @@ export const MarkDirty = Command.define("MarkDirty", {
 
 const PERSIST_DELAY_MS = 400;
 
-/** Trailing debounce for text edits. Stale timers resolve too; update ignores every version but the latest. */
+/**
+ * Trailing debounce for text edits. Stale timers resolve too; update ignores every version but the latest.
+ */
 export const DelayPersist = Command.define("DelayPersist", {
   args: { version: S.Number },
   messages: [Message.ElapsedPersistDelay],

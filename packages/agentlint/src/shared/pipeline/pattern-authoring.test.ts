@@ -10,7 +10,9 @@ const ruleFor = (match: RuleMatch) =>
     binding: { id: "test/pattern", authority: "agent" },
   });
 
-/** What a rule author sees: the matched code and the rendered message. */
+/**
+ * What a rule author sees: the matched code and the rendered message.
+ */
 const matches = async (match: RuleMatch, source: string, file = "fixture.ts") =>
   (await testRuleOnSource(ruleFor(match), source, file)).map(
     (finding) => `${finding.line}: ${finding.sourceSnippet} -> ${finding.message}`,

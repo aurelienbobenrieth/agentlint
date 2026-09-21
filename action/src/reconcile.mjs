@@ -1,17 +1,19 @@
 // @ts-check
 /**
- * Reconciliation plan between the current findings and the inline review
- * threads the action created earlier on the same pull request.
+ * Reconciliation plan between the current findings and the inline review threads the action created earlier on the same
+ * pull request.
  */
 
 import { isCommentable } from "./diff.mjs";
 
-/** @typedef {import("./artifact.mjs").Finding} Finding */
+/**
+ * @typedef {import("./artifact.mjs").Finding} Finding
+ */
 
 /**
  * @typedef {object} Thread
- * @property {number} commentId database id of the thread's first comment
- * @property {string} digest fingerprint digest from the inline marker
+ * @property {number} commentId Database id of the thread's first comment
+ * @property {string} digest Fingerprint digest from the inline marker
  * @property {boolean} resolved
  * @property {string | null} threadId GraphQL review thread id, when known
  */
@@ -24,10 +26,10 @@ import { isCommentable } from "./diff.mjs";
 
 /**
  * @typedef {object} Plan
- * @property {Finding[]} create unresolved findings that need a new inline comment
- * @property {Resolution[]} resolve threads to reply to once and resolve
- * @property {Thread[]} leave threads that still match an unresolved finding or are already resolved
- * @property {Finding[]} outside unresolved findings without a thread that cannot be commented inline
+ * @property {Finding[]} create Unresolved findings that need a new inline comment
+ * @property {Resolution[]} resolve Threads to reply to once and resolve
+ * @property {Thread[]} leave Threads that still match an unresolved finding or are already resolved
+ * @property {Finding[]} outside Unresolved findings without a thread that cannot be commented inline
  */
 
 /**
@@ -43,7 +45,7 @@ function resolutionReply(finding) {
 
 /**
  * @param {object} input
- * @param {ReadonlyArray<Finding>} input.findings every finding in the artifact, accepted ones included
+ * @param {ReadonlyArray<Finding>} input.findings Every finding in the artifact, accepted ones included
  * @param {ReadonlyArray<Thread>} input.threads
  * @param {Map<string, Set<number>>} input.commentable
  * @returns {Plan}
@@ -51,7 +53,9 @@ function resolutionReply(finding) {
 export function planReconciliation(input) {
   const byDigest = new Map(input.findings.map((finding) => [finding.digest, finding]));
   const threadDigests = new Set(input.threads.map((thread) => thread.digest));
-  /** @type {Plan} */
+  /**
+   * @type {Plan}
+   */
   const plan = { create: [], resolve: [], leave: [], outside: [] };
 
   for (const finding of input.findings) {

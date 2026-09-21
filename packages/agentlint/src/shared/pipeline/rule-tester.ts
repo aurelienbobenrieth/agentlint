@@ -1,6 +1,8 @@
 import { normalizeChangeFixture } from "./change-fixture.js";
 import type { FixtureReport, FixtureFailure } from "../../domain/fixture-report.js";
-/** Detector fixture runners. @module @since 0.2.0 */
+/**
+ * Detector fixture runners. @module @since 0.2.0
+ */
 
 import { Effect } from "effect";
 import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
@@ -18,7 +20,9 @@ import { grammarForExtension } from "./language-map.js";
 import { PatternError } from "../../domain/pattern-error.js";
 import { collectStateFindings } from "./collect-findings.js";
 
-/** Run one state detector against an in-memory repository. */
+/**
+ * Run one state detector against an in-memory repository.
+ */
 export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
   rule: StateRule,
   sources: ReadonlyArray<readonly [file: string, source: string]>,
@@ -35,7 +39,9 @@ export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
   );
 });
 
-/** Run one state detector against one source file. */
+/**
+ * Run one state detector against one source file.
+ */
 export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
   rule: StateRule,
   source: string,
@@ -45,9 +51,8 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
 });
 
 /**
- * Run one change detector against an already normalized change. Findings use
- * the same fingerprint and lineage construction as `agentlint check`; the
- * absolute path is the fixture path itself.
+ * Run one change detector against an already normalized change. Findings use the same fingerprint and lineage
+ * construction as `agentlint check`; the absolute path is the fixture path itself.
  */
 export function runRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<FindingRecord> {
   const context = new ChangeRuleContextImpl(rule, change);
@@ -69,7 +74,9 @@ const runStateFixture = Effect.fn("runStateFixture")(function* (rule: StateRule,
   return (yield* runRuleOnSources(rule, stateFiles(fixture))).length;
 });
 
-/** Run activation and silence fixtures for either lifecycle. */
+/**
+ * Run activation and silence fixtures for either lifecycle.
+ */
 export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: AgentlintRule) {
   const fixtures = rule.detector.fixtures;
   const mustReport = fixtures?.mustReport ?? [];

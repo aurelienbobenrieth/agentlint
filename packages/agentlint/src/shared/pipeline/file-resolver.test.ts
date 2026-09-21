@@ -27,7 +27,9 @@ const envLayer = (directory: string) => testEnv(directory).pipe(Layer.provideMer
 const TestEnv = testEnv(cwd);
 const TestLayer = envLayer(cwd);
 
-/** The real file system, except that one entry cannot be inspected. */
+/**
+ * The real file system, except that one entry cannot be inspected.
+ */
 const BrokenStatLayer = Layer.effect(
   FileSystem.FileSystem,
   Effect.map(FileSystem.FileSystem, (real) =>

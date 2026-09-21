@@ -1,4 +1,6 @@
-/** One deterministic next obligation; the complete gate still belongs to check. @module @since 0.2.0 */
+/**
+ * One deterministic next obligation; the complete gate still belongs to check. @module @since 0.2.0
+ */
 import { Effect } from "effect";
 import { checkHandler } from "../check/handler.js";
 import { CheckCommand, CheckResult } from "../check/request.js";

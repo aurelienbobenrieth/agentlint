@@ -18,8 +18,10 @@ export const draftFor = (model: Model, findingId: string): Draft => model.drafts
 export const findingById = (state: ReviewStatePayload, findingId: string): ReviewFindingPayload | undefined =>
   state.findings.find(({ id }) => id === findingId);
 
-/** Selection, drafts and exports all key on the finding id, so a state that repeats one cannot be reviewed
- *  safely: the reviewer would see one finding and export a decision for both. */
+/**
+ * Selection, drafts and exports all key on the finding id, so a state that repeats one cannot be reviewed safely: the
+ * reviewer would see one finding and export a decision for both.
+ */
 export const duplicateFindingId = (state: ReviewStatePayload): string | null => {
   const seen = new Set<string>();
   for (const { id } of state.findings) {
@@ -29,10 +31,14 @@ export const duplicateFindingId = (state: ReviewStatePayload): string | null => 
   return null;
 };
 
-/** Code-unit order, matching the order the package emits. `localeCompare` varies with the browser locale. */
+/**
+ * Code-unit order, matching the order the package emits. `localeCompare` varies with the browser locale.
+ */
 const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
 
-/** Status once local drafts (detached decisions, calibration labels) are applied. */
+/**
+ * Status once local drafts (detached decisions, calibration labels) are applied.
+ */
 export const effectiveFindingStatus = (
   finding: ReviewFindingPayload,
   state: ReviewStatePayload,
@@ -58,37 +64,55 @@ export const facetCount = (facets: Facets): number =>
   facets.statuses.length + facets.authorities.length + facets.lifecycles.length + facets.ruleIds.length;
 
 export interface FindingGroup {
-  /** Unique across grouping modes, so it can key both the DOM and a render memo. */
+  /**
+   * Unique across grouping modes, so it can key both the DOM and a render memo.
+   */
   readonly key: string;
   readonly label: string;
   readonly findings: ReadonlyArray<ReviewFindingPayload>;
 }
 
-/** Everything the review screen reads from findings plus local drafts, computed once per model change. */
+/**
+ * Everything the review screen reads from findings plus local drafts, computed once per model change.
+ */
 export interface ReviewDerivation {
   readonly statusOf: ReadonlyMap<string, FindingStatus>;
-  /** The findings the sidebar lists, in display order. */
+  /**
+   * The findings the sidebar lists, in display order.
+   */
   readonly related: ReadonlyMap<string, string>;
   readonly visible: ReadonlyArray<ReviewFindingPayload>;
-  /** `visible` split into the sidebar's groups, in display order. */
+  /**
+   * `visible` split into the sidebar's groups, in display order.
+   */
   readonly groups: ReadonlyArray<FindingGroup>;
-  /** The finding the detail pane shows: the selected one if listed, else the first listed. */
+  /**
+   * The finding the detail pane shows: the selected one if listed, else the first listed.
+   */
   readonly selected: ReviewFindingPayload | undefined;
-  /** Index of `selected` in `visible`, or -1. */
+  /**
+   * Index of `selected` in `visible`, or -1.
+   */
   readonly selectedIndex: number;
   readonly queueCount: number;
   readonly decisionsCount: number;
-  /** Findings still unresolved. Zero means the gate is open. */
+  /**
+   * Findings still unresolved. Zero means the gate is open.
+   */
   readonly openCount: number;
   readonly undecidedCount: number;
-  /** Facet option counts within the current view, before facets and the query apply. */
+  /**
+   * Facet option counts within the current view, before facets and the query apply.
+   */
   readonly counts: {
     readonly statuses: ReadonlyMap<StatusFacet, number>;
     readonly authorities: ReadonlyMap<AuthorityFacet, number>;
     readonly lifecycles: ReadonlyMap<LifecycleFacet, number>;
     readonly rules: ReadonlyMap<string, number>;
   };
-  /** Every rule in the review as `[ruleId, title]`, sorted by id. */
+  /**
+   * Every rule in the review as `[ruleId, title]`, sorted by id.
+   */
   readonly rules: ReadonlyArray<readonly [string, string]>;
 }
 
@@ -208,9 +232,11 @@ let lastSelection:
   | { readonly derived: Derived; readonly selectedFindingId: string | null; readonly result: ReviewDerivation }
   | undefined;
 
-/** Memoised on the model fields it reads. `evo` keeps untouched fields referentially stable, so most
- *  renders (toasts, resize, hover) hit the cache. The selection is resolved outside that memo so moving
- *  through the list never recomputes statuses, groups or the sort. */
+/**
+ * Memoised on the model fields it reads. `evo` keeps untouched fields referentially stable, so most renders (toasts,
+ * resize, hover) hit the cache. The selection is resolved outside that memo so moving through the list never recomputes
+ * statuses, groups or the sort.
+ */
 export const deriveReview = (state: ReviewStatePayload, model: Model): ReviewDerivation => {
   const inputs: Inputs = [state, model.drafts, model.view, model.facets, model.groupBy, model.query];
   if (last === undefined || !last.inputs.every((input, index) => input === inputs[index])) {

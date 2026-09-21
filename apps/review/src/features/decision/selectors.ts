@@ -3,15 +3,19 @@ import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agen
 import type { Model } from "../../model";
 import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
 
-/** Accepting an agent proposal without a note records the proposal itself as the reason. */
+/**
+ * Accepting an agent proposal without a note records the proposal itself as the reason.
+ */
 export const effectiveReason = (model: Model, finding: ReviewFindingPayload): string => {
   const reason = draftFor(model, finding.id).reason.trim();
   if (reason.length > 0) return reason;
   return finding.proposal === null ? "" : `Accepted the agent proposal: ${finding.proposal.summary}`;
 };
 
-/** Goes through the effective status: in an attached review a stale local draft must not hand the agent
- *  a change request the server no longer holds. */
+/**
+ * Goes through the effective status: in an attached review a stale local draft must not hand the agent a change request
+ * the server no longer holds.
+ */
 const carriesFeedback = (model: Model, state: ReviewStatePayload, finding: ReviewFindingPayload): boolean => {
   const draft = draftFor(model, finding.id);
   return (
@@ -21,7 +25,9 @@ const carriesFeedback = (model: Model, state: ReviewStatePayload, finding: Revie
   );
 };
 
-/** The detector's message is labelled as such, never passed off as the reviewer's instruction. */
+/**
+ * The detector's message is labelled as such, never passed off as the reviewer's instruction.
+ */
 const findingInstruction = (finding: ReviewFindingPayload, model: Model): string => {
   const reason = draftFor(model, finding.id).reason.trim();
   const location = `${finding.ruleId} at ${finding.file}:${finding.line}`;
@@ -30,7 +36,9 @@ const findingInstruction = (finding: ReviewFindingPayload, model: Model): string
     : `- ${location}: the reviewer left no instruction. The detector reported: ${finding.message}`;
 };
 
-/** The handoff a coding agent applies: every change request, note, and calibration label. */
+/**
+ * The handoff a coding agent applies: every change request, note, and calibration label.
+ */
 export const agentInstructions = (model: Model): string => {
   if (model.screen._tag === "Finished") {
     return model.screen.feedback.length > 0 ? model.screen.feedback : "No changes were requested.";
@@ -64,7 +72,9 @@ export interface DetachedOutput {
   readonly acceptanceOutput: string;
 }
 
-/** What a detached review exports: acceptance JSONL with full identity, plus the agent handoff. */
+/**
+ * What a detached review exports: acceptance JSONL with full identity, plus the agent handoff.
+ */
 export const detachedOutput = (model: Model, acceptedAt: string): DetachedOutput => {
   if (model.screen._tag !== "Reviewing") {
     return { summary: "Review complete.", feedback: "", acceptanceOutput: "" };

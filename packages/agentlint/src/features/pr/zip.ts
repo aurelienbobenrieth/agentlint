@@ -1,9 +1,8 @@
 /**
  * Minimal ZIP reader for GitHub Actions artifacts.
  *
- * Walks the central directory, so entries written with data descriptors
- * (sizes absent from the local header) still resolve. Supports the stored
- * and deflate methods, which is all the artifact service produces.
+ * Walks the central directory, so entries written with data descriptors (sizes absent from the local header) still
+ * resolve. Supports the stored and deflate methods, which is all the artifact service produces.
  *
  * @module
  * @since 0.2.0
@@ -12,7 +11,9 @@
 import { inflateRawSync } from "node:zlib";
 import { Schema } from "effect";
 
-/** @since 0.2.0 @category errors */
+/**
+ * @since 0.2.0 @category errors
+ */
 class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
   reason: Schema.Literals(["not_zip", "entry_missing", "unsupported_method"]),
   entry: Schema.String,
@@ -38,7 +39,9 @@ const CENTRAL_HEADER_SIZE = 46;
 const LOCAL_HEADER_SIZE = 30;
 const STORED = 0;
 const DEFLATE = 8;
-/** Review artifacts are a few megabytes. The cap stops a crafted archive from exhausting memory. */
+/**
+ * Review artifacts are a few megabytes. The cap stops a crafted archive from exhausting memory.
+ */
 const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
 
 const findEndRecord = (archive: Buffer): number => {
@@ -51,8 +54,8 @@ const findEndRecord = (archive: Buffer): number => {
 /**
  * Extract one entry by exact name.
  *
- * @throws ZipError when the buffer is not a ZIP archive, the entry is absent, or its method is unsupported.
  * @since 0.2.0
+ * @throws ZipError when the buffer is not a ZIP archive, the entry is absent, or its method is unsupported.
  */
 export function readZipEntry(bytes: Uint8Array, entry: string): Uint8Array {
   const archive = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);

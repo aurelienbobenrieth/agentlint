@@ -128,7 +128,9 @@ const renderFilterPopover = (
   );
 };
 
-/** One slot: the popover renders at a single position. Re-renders only when its inputs change by reference. */
+/**
+ * One slot: the popover renders at a single position. Re-renders only when its inputs change by reference.
+ */
 const filterPopover = createLazy();
 
 export const searchBar = (

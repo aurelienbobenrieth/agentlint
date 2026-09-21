@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * Process execution. Every command is an argv array passed to `execFile`; no
- * string ever reaches a shell, so user-provided reasons and selectors are inert.
+ * Process execution. Every command is an argv array passed to `execFile`; no string ever reaches a shell, so
+ * user-provided reasons and selectors are inert.
  */
 
 import { execFile } from "node:child_process";
@@ -33,7 +33,9 @@ export const CREDENTIAL_VARIABLES = Object.freeze([
  * @returns {NodeJS.ProcessEnv}
  */
 export function childEnv(env) {
-  /** @type {NodeJS.ProcessEnv} */
+  /**
+   * @type {NodeJS.ProcessEnv}
+   */
   const result = {};
   for (const [name, value] of Object.entries(env)) {
     const upper = name.toUpperCase();
@@ -54,7 +56,7 @@ export function childEnv(env) {
  * Callers pass `childEnv(...)` for anything that runs repository-controlled code; the default is already scrubbed.
  *
  * @param {ReadonlyArray<string>} argv
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, timeoutMs?: number, shell?: boolean }} options
+ * @param {{ cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; shell?: boolean }} options
  * @returns {Promise<ExecResult>}
  */
 export function exec(argv, options) {
@@ -91,8 +93,8 @@ export function exec(argv, options) {
  */
 
 /**
- * The agentlint CLI bound to the working directory. `AGENTLINT_ACTION_CLI_STUB`
- * replaces the command with `node <stub>` so tests can script the CLI.
+ * The agentlint CLI bound to the working directory. `AGENTLINT_ACTION_CLI_STUB` replaces the command with `node <stub>`
+ * so tests can script the CLI.
  *
  * `local` is asked on the first run, which is after the install: when the repository installed its own copy of the
  * package, that copy runs instead of `command`, so one Effect runtime is loaded rather than two.
@@ -105,7 +107,9 @@ export function exec(argv, options) {
  */
 export function createCli(command, cwd, env, options = {}) {
   const stub = env["AGENTLINT_ACTION_CLI_STUB"];
-  /** @type {Promise<string[]> | null} */
+  /**
+   * @type {Promise<string[]> | null}
+   */
   let prefix = null;
   const resolvePrefix = async () => (stub ? ["node", stub] : ((await options.local?.()) ?? [...command]));
   return {

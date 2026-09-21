@@ -1,4 +1,6 @@
-/** Pull request review application contracts. @module @since 0.2.0 */
+/**
+ * Pull request review application contracts. @module @since 0.2.0
+ */
 
 import { Schema } from "effect";
 import { ReviewArtifact } from "../review/contract.js";
@@ -11,16 +13,24 @@ export class PrCommand extends Schema.TaggedClass<PrCommand>()("PrCommand", {
 export class PrResult extends Schema.TaggedClass<PrResult>()("PrResult", {
   repo: Schema.String,
   artifactId: Schema.Number,
-  /** Absolute path of the extracted `agentlint-review.json`. */
+  /**
+   * Absolute path of the extracted `agentlint-review.json`.
+   */
   artifactPath: Schema.String,
   artifact: ReviewArtifact,
-  /** Head commit of the pull request when the artifact was chosen. */
+  /**
+   * Head commit of the pull request when the artifact was chosen.
+   */
   pullHead: Schema.String,
-  /** Commit the artifact's workflow run scanned. `undefined` for a command run, which does not report it. */
+  /**
+   * Commit the artifact's workflow run scanned. `undefined` for a command run, which does not report it.
+   */
   artifactHead: Schema.UndefinedOr(Schema.String),
 }) {}
 
-/** @since 0.2.0 @category errors */
+/**
+ * @since 0.2.0 @category errors
+ */
 export class PrError extends Schema.TaggedError<PrError>()("agentlint/PrError", {
   reason: Schema.Literals(["gh_missing", "gh_failed", "no_artifact", "foreign_artifact", "invalid_artifact"]),
   number: Schema.Number,

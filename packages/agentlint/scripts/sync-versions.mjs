@@ -3,9 +3,9 @@
 /**
  * Sync every copy of the package version with package.json:
  *
- * - `library_version` in skills/**\/SKILL.md
- * - the `version` input default in <repo>/action/action.yml and its fallback in action/src/inputs.mjs
- * - the `agentlint/action@v<version>` references and `version` values in the action and package READMEs
+ * - `library_version` in every packaged SKILL.md
+ * - The `version` input default in <repo>/action/action.yml and its fallback in action/src/inputs.mjs
+ * - The `agentlint/action@v<version>` references and `version` values in the action and package READMEs
  *
  * Run automatically after `changeset version` via scripts/version.sh.
  */
@@ -35,7 +35,9 @@ function findSkillFiles(dir) {
   return results;
 }
 
-/** Replace the first `default: "<semver>"` that follows the `version:` input key. */
+/**
+ * Replace the first `default: "<semver>"` that follows the `version:` input key.
+ */
 function syncActionVersion(content) {
   const input = /^\s+version:\s*$/m.exec(content);
   if (!input) return content;
@@ -44,7 +46,9 @@ function syncActionVersion(content) {
   return head + tail.replace(/^(\s+default:\s*")\d+\.\d+\.\d+[^"]*(")/m, `$1${version}$2`);
 }
 
-/** Replace every pinned action reference and documented `version` value. */
+/**
+ * Replace every pinned action reference and documented `version` value.
+ */
 function syncDocumentedVersion(content) {
   return content
     .replace(/(agentlint\/action@v)\d+\.\d+\.\d+[\w.-]*/g, `$1${version}`)

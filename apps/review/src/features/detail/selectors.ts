@@ -20,7 +20,9 @@ const focusedSource = (finding: ReviewFindingPayload, source: string): string =>
     .join("\n");
 };
 
-/** Complete, paste-ready evidence for discussing one finding with another agent. */
+/**
+ * Complete, paste-ready evidence for discussing one finding with another agent.
+ */
 export const findingContext = (finding: ReviewFindingPayload, model: Model): string => {
   const source = model.screen._tag === "Reviewing" ? (model.screen.state.sources[finding.file] ?? "") : "";
   const draft = draftFor(model, finding.id);

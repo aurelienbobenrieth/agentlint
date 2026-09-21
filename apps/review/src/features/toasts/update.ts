@@ -10,8 +10,10 @@ const toastDuration = (tone: ToastTone): number => (tone === "success" ? 4_000 :
 const TOAST_LIMIT = 5;
 type Toasts = Model["toasts"];
 
-/** Over the limit, the oldest toasts that expire on their own go first. A danger toast reports something
- *  the reviewer has to know (a failed save, a rejected decision), so only dismissing it removes it. */
+/**
+ * Over the limit, the oldest toasts that expire on their own go first. A danger toast reports something the reviewer
+ * has to know (a failed save, a rejected decision), so only dismissing it removes it.
+ */
 const capped = (toasts: Toasts): Toasts => {
   let excess = toasts.length - TOAST_LIMIT;
   return toasts.filter((toast) => {
@@ -21,7 +23,9 @@ const capped = (toasts: Toasts): Toasts => {
   });
 };
 
-/** Danger toasts stay until dismissed; the stack keeps the five newest of the others. */
+/**
+ * Danger toasts stay until dismissed; the stack keeps the five newest of the others.
+ */
 export const enqueueToast = (model: Model, message: string, tone: ToastTone = "neutral"): UpdateReturn => {
   const id = model.nextToastId;
   const next = evo(model, {

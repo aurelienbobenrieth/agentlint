@@ -1,4 +1,6 @@
-/** Initialization contracts. @module @since 0.2.0 */
+/**
+ * Initialization contracts. @module @since 0.2.0
+ */
 import { Schema } from "effect";
 
 export class InitCommand extends Schema.TaggedClass<InitCommand>()("InitCommand", {

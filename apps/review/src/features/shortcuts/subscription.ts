@@ -9,7 +9,9 @@ const isEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
-/** Linear-style single-key shortcuts outside inputs; modifier chords inside them. */
+/**
+ * Linear-style single-key shortcuts outside inputs; modifier chords inside them.
+ */
 export const shortcutFor = (event: {
   readonly key: string;
   readonly ctrlKey: boolean;

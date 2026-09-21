@@ -16,8 +16,10 @@ const statusDot = (status: StatusFacet, authority: ReviewFindingPayload["authori
     [],
   );
 
-/** What a row reads besides its finding. Every field is referentially stable across renders that do not
- *  change it, so the group memo below holds through toasts, typing and resizing. */
+/**
+ * What a row reads besides its finding. Every field is referentially stable across renders that do not change it, so
+ * the group memo below holds through toasts, typing and resizing.
+ */
 interface RowContext {
   readonly statusOf: ReviewDerivation["statusOf"];
   readonly view: View;
@@ -91,9 +93,11 @@ const renderGroup = (
     ],
   );
 
-/** One memo slot per group: moving the selection re-renders the group it left and the one it entered,
- *  not the whole queue. Keys are group keys, bounded by the review. Rendering every row is still linear
- *  in the queue on the first paint; virtualising the list is a follow-up. */
+/**
+ * One memo slot per group: moving the selection re-renders the group it left and the one it entered, not the whole
+ * queue. Keys are group keys, bounded by the review. Rendering every row is still linear in the queue on the first
+ * paint; virtualising the list is a follow-up.
+ */
 const lazyGroup = createKeyedLazy();
 
 const renderGroupList = (

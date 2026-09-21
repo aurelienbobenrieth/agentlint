@@ -1,4 +1,6 @@
-/** Safe, allowlisted launch adapters for live review sessions. @module @since 0.2.0 */
+/**
+ * Safe, allowlisted launch adapters for live review sessions. @module @since 0.2.0
+ */
 
 import { execFile, spawn } from "node:child_process";
 import { realpath } from "node:fs/promises";
@@ -16,9 +18,13 @@ type Runner = (invocation: Invocation) => Promise<string>;
 interface ApplicationSpec extends EditorApplication {
   readonly scheme?: string;
   readonly macName?: string;
-  /** Command-line entry point, when the application ships one. */
+  /**
+   * Command-line entry point, when the application ships one.
+   */
   readonly cli?: string;
-  /** Windows-only: how the `.cmd` shim found on PATH maps to the real executable. */
+  /**
+   * Windows-only: how the `.cmd` shim found on PATH maps to the real executable.
+   */
   readonly windowsExecutable?: (shimDirectory: string) => string;
 }
 
@@ -59,8 +65,7 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
 ];
 
 /**
- * `explorer.exe` reports exit code 1 even when it opened the target, so only a
- * failed spawn counts as an error there.
+ * `explorer.exe` reports exit code 1 even when it opened the target, so only a failed spawn counts as an error there.
  */
 const run: Runner = ({ command, args, timeoutMs }) =>
   new Promise((settle, reject) => {
@@ -85,13 +90,14 @@ const launch: Runner = ({ command, args }) =>
     });
   });
 
-/** Command-line launchers confirmed by the last detection, keyed by application. */
+/**
+ * Command-line launchers confirmed by the last detection, keyed by application.
+ */
 const launchers = new Map<EditorApplicationId, string>();
 
 /**
- * `scheme://file/<path>:line:column`. The path separator and the drive letter
- * follow the target platform, never the platform running the server, so the
- * mapping stays deterministic in tests and in a detached review.
+ * `scheme://file/<path>:line:column`. The path separator and the drive letter follow the target platform, never the
+ * platform running the server, so the mapping stays deterministic in tests and in a detached review.
  */
 function editorUri(
   application: Exclude<EditorApplicationId, "explorer">,
@@ -108,7 +114,9 @@ function editorUri(
   return `${application}://file${platform === "win32" ? `/${pathname}` : pathname}:${line}:${column}`;
 }
 
-/** Pure adapter mapping, exported so argument boundaries can be regression-tested. */
+/**
+ * Pure adapter mapping, exported so argument boundaries can be regression-tested.
+ */
 export function editorInvocation(
   application: EditorApplicationId,
   platform: string,
@@ -143,14 +151,16 @@ export function editorInvocation(
 }
 
 /**
- * `where.exe <name>` searches the current directory, which is the reviewed repository, before PATH.
- * The `$PATH:<name>` form searches PATH only.
+ * `where.exe <name>` searches the current directory, which is the reviewed repository, before PATH. The `$PATH:<name>`
+ * form searches PATH only.
  */
 function lookupInvocation(name: string, platform: string): Invocation {
   return platform === "win32" ? { command: "where.exe", args: [`$PATH:${name}`] } : { command: "which", args: [name] };
 }
 
-/** A launcher inside the reviewed repository is content under review, never an installed editor. */
+/**
+ * A launcher inside the reviewed repository is content under review, never an installed editor.
+ */
 async function isOutsideRepository(launcher: string, repository: string): Promise<boolean> {
   try {
     const fromRepository = relative(await realpath(repository), await realpath(launcher));
@@ -175,7 +185,9 @@ function detectionInvocation(application: ApplicationSpec, platform: string): In
       : { command: "xdg-mime", args: ["query", "default", `x-scheme-handler/${application.scheme}`] };
 }
 
-/** Resolve the `where`/`which` output to something `execFile` can spawn without a shell. */
+/**
+ * Resolve the `where`/`which` output to something `execFile` can spawn without a shell.
+ */
 export function launcherFromLookup(
   application: Pick<ApplicationSpec, "windowsExecutable">,
   platform: string,

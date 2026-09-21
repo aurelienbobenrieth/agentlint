@@ -19,7 +19,9 @@ const updateDraft = (model: Model, findingId: string, change: (draft: Draft) => 
     drafts: (drafts) => ({ ...drafts, [findingId]: change(draftFor(model, findingId)) }),
   });
 
-/** Text edits change the model now and persist after a pause. */
+/**
+ * Text edits change the model now and persist after a pause.
+ */
 const editDraft = (model: Model, findingId: string, change: (draft: Draft) => Draft): UpdateReturn =>
   persistLater(updateDraft(model, findingId, change));
 
@@ -61,7 +63,9 @@ const dispositionFor = (kind: DecisionKind, current: Draft["disposition"]): Draf
         ? "none"
         : current;
 
-/** Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation. */
+/**
+ * Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation.
+ */
 export const submit = (model: Model, kind: DecisionKind, findingId: string): UpdateReturn => {
   if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null) return { model };
   const finding = findingById(model.screen.state, findingId);

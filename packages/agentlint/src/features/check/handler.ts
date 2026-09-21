@@ -1,4 +1,6 @@
-/** Check application handler. @module @since 0.2.0 */
+/**
+ * Check application handler. @module @since 0.2.0
+ */
 
 import { Effect, Option } from "effect";
 import { findLineage, lookupAcceptance } from "../../domain/acceptance.js";

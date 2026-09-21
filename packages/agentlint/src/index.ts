@@ -1,8 +1,7 @@
 /**
- * agentlint - deterministic triggers for contextual agent guidance.
+ * Agentlint - deterministic triggers for contextual agent guidance.
  *
- * This is the public API surface for rule and config authors. Testing
- * helpers live in `@aurelienbbn/agentlint/testing`.
+ * This is the public API surface for rule and config authors. Testing helpers live in `@aurelienbbn/agentlint/testing`.
  *
  * @module
  * @since 0.2.0

@@ -11,15 +11,21 @@ import { Schema } from "effect";
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
-/** JSON data accepted by the canonical fingerprint encoder. */
+/**
+ * JSON data accepted by the canonical fingerprint encoder.
+ */
 export type CanonicalValue = null | boolean | number | string | ReadonlyArray<CanonicalValue> | CanonicalObject;
 
-/** A canonical JSON object. */
+/**
+ * A canonical JSON object.
+ */
 export interface CanonicalObject {
   readonly [key: string]: CanonicalValue;
 }
 
-/** The rule components that produced a finding. */
+/**
+ * The rule components that produced a finding.
+ */
 export class FindingSource extends Schema.Class<FindingSource>("FindingSource")({
   standardId: NonEmptyString,
   standardRevision: PositiveInteger,
@@ -29,14 +35,18 @@ export class FindingSource extends Schema.Class<FindingSource>("FindingSource")(
   bindingDigest: NonEmptyString,
 }) {}
 
-/** A versioned digest of material finding evidence. */
+/**
+ * A versioned digest of material finding evidence.
+ */
 export class Fingerprint extends Schema.Class<Fingerprint>("Fingerprint")({
   scheme: NonEmptyString,
   version: PositiveInteger,
   digest: NonEmptyString,
 }) {}
 
-/** A canonicalization failure. */
+/**
+ * A canonicalization failure.
+ */
 class FingerprintError extends Schema.TaggedError<FingerprintError>()("agentlint/FingerprintError", {
   reason: Schema.Literals(["invalid_value", "invalid_path"]),
   detail: Schema.String,
@@ -50,7 +60,9 @@ export interface StateFingerprintEvidence {
   readonly path: string;
   readonly structure: CanonicalValue;
   readonly captures?: CanonicalObject;
-  /** A detector-owned structural position. It must not be a source line. */
+  /**
+   * A detector-owned structural position. It must not be a source line.
+   */
   readonly occurrence: string;
 }
 
@@ -60,7 +72,9 @@ export interface ChangeFingerprintEvidence {
   readonly beforePath: string;
   readonly afterPath: string;
   readonly operation: "add" | "delete" | "modify" | "rename";
-  /** A detector-owned structural position. It must not be a source line. */
+  /**
+   * A detector-owned structural position. It must not be a source line.
+   */
   readonly occurrence: string;
   readonly captures?: CanonicalObject;
 }
@@ -100,17 +114,23 @@ function encode(value: unknown, ancestors: ReadonlySet<object>): string {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${encode(object[key], nextAncestors)}`).join(",")}}`;
 }
 
-/** Encode JSON data with stable object key ordering, preserving exact Unicode values. */
+/**
+ * Encode JSON data with stable object key ordering, preserving exact Unicode values.
+ */
 export function canonicalStringify(value: CanonicalValue): string {
   return encode(value, new Set());
 }
 
-/** Create a full SHA-256 digest for canonical JSON data. */
+/**
+ * Create a full SHA-256 digest for canonical JSON data.
+ */
 export function canonicalDigest(value: CanonicalValue): string {
   return createHash("sha256").update(canonicalStringify(value), "utf8").digest("hex");
 }
 
-/** Normalize a repository-relative path without hiding moves or case changes. */
+/**
+ * Normalize a repository-relative path without hiding moves or case changes.
+ */
 export function normalizeRepositoryPath(input: string): string {
   const value = input.replaceAll("\\", "/");
   if (value.startsWith("/") || /^[A-Za-z]:\//.test(value)) {
@@ -135,7 +155,9 @@ export function normalizeRepositoryPath(input: string): string {
   return parts.join("/");
 }
 
-/** Only top-level routing fields are sets. Arbitrary detector options preserve all array order. */
+/**
+ * Only top-level routing fields are sets. Arbitrary detector options preserve all array order.
+ */
 function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalValue {
   if (materialConfig === null || typeof materialConfig !== "object" || Array.isArray(materialConfig))
     return materialConfig;
@@ -151,17 +173,23 @@ function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalVal
   );
 }
 
-/** Calculate the material digest of a binding configuration. */
+/**
+ * Calculate the material digest of a binding configuration.
+ */
 export function bindingDigest(materialConfig: CanonicalValue): string {
   return canonicalDigest({ kind: "agentlint-binding", materialConfig: canonicalizeBindingConfig(materialConfig) });
 }
 
-/** Create a versioned fingerprint from already normalized evidence. */
+/**
+ * Create a versioned fingerprint from already normalized evidence.
+ */
 function createFingerprint(scheme: string, version: number, evidence: CanonicalValue): Fingerprint {
   return new Fingerprint({ scheme, version, digest: canonicalDigest(evidence) });
 }
 
-/** Fingerprint semantic state evidence. Presentation positions are excluded. */
+/**
+ * Fingerprint semantic state evidence. Presentation positions are excluded.
+ */
 export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprint {
   return createFingerprint("source-structure", 3, {
     path: normalizeRepositoryPath(evidence.path),
@@ -171,7 +199,9 @@ export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprin
   });
 }
 
-/** Fingerprint a semantic comparison without using commit identifiers. */
+/**
+ * Fingerprint a semantic comparison without using commit identifiers.
+ */
 export function fingerprintChange(evidence: ChangeFingerprintEvidence): Fingerprint {
   return createFingerprint("git-change", 2, {
     before: evidence.before,
@@ -184,7 +214,9 @@ export function fingerprintChange(evidence: ChangeFingerprintEvidence): Fingerpr
   });
 }
 
-/** Compare every source compatibility field. */
+/**
+ * Compare every source compatibility field.
+ */
 export function sameFindingSource(left: FindingSource, right: FindingSource): boolean {
   return (
     left.standardId === right.standardId &&
@@ -196,12 +228,16 @@ export function sameFindingSource(left: FindingSource, right: FindingSource): bo
   );
 }
 
-/** Compare the scheme, algorithm version, and digest. */
+/**
+ * Compare the scheme, algorithm version, and digest.
+ */
 export function sameFingerprint(left: Fingerprint, right: Fingerprint): boolean {
   return left.scheme === right.scheme && left.version === right.version && left.digest === right.digest;
 }
 
-/** Check whether the engine knows the canonical evidence contract. */
+/**
+ * Check whether the engine knows the canonical evidence contract.
+ */
 export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
   return (
     (fingerprint.scheme === "source-structure" && fingerprint.version === 3) ||
@@ -209,7 +245,9 @@ export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
   );
 }
 
-/** A deterministic key for one exact finding identity. */
+/**
+ * A deterministic key for one exact finding identity.
+ */
 export function findingIdentityKey(source: FindingSource, fingerprint: Fingerprint): string {
   return canonicalStringify({
     source: {

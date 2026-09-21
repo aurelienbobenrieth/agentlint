@@ -1,4 +1,6 @@
-/** Minimal, non-destructive repository initialization. @module @since 0.2.0 */
+/**
+ * Minimal, non-destructive repository initialization. @module @since 0.2.0
+ */
 
 import { Effect, FileSystem, Path } from "effect";
 import { Env } from "../../config/env.js";

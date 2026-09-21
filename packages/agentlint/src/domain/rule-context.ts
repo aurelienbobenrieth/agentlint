@@ -1,4 +1,6 @@
-/** State detector context and finding construction. @module @since 0.2.0 */
+/**
+ * State detector context and finding construction. @module @since 0.2.0
+ */
 
 import { canonicalDigest, fingerprintState } from "./fingerprint.js";
 import type { CanonicalValue } from "./fingerprint.js";
@@ -7,20 +9,32 @@ import type { AgentlintNode, Position } from "./node.js";
 import type { StateRule } from "./rule.js";
 import { findingSourceForRule } from "./rule-identity.js";
 
-/** What a state detector sees while one file is being walked. */
+/**
+ * What a state detector sees while one file is being walked.
+ */
 export interface RuleContext {
-  /** Absolute filesystem path of the current file. */
+  /**
+   * Absolute filesystem path of the current file.
+   */
   readonly absolutePath: string;
-  /** Repository-relative, forward-slash path of the current file. */
+  /**
+   * Repository-relative, forward-slash path of the current file.
+   */
   readonly path: string;
-  /** Full source text of the current file. */
+  /**
+   * Full source text of the current file.
+   */
   readonly source: string;
-  /** Explicit repository-relative binding dependencies, captured before detection. */
+  /**
+   * Explicit repository-relative binding dependencies, captured before detection.
+   */
   readonly dependencies: Readonly<Record<string, string>>;
   report(options: FindingOptions): void;
 }
 
-/** Offsets of each line start. Node columns count UTF-16 code units, as string indices do. */
+/**
+ * Offsets of each line start. Node columns count UTF-16 code units, as string indices do.
+ */
 function lineStarts(source: string): ReadonlyArray<number> {
   const starts = [0];
   for (let index = source.indexOf("\n"); index !== -1; index = source.indexOf("\n", index + 1)) starts.push(index + 1);
@@ -77,7 +91,9 @@ function sameNode(left: AgentlintNode, right: AgentlintNode): boolean {
   );
 }
 
-/** Index of `child` among source-ordered `siblings`, or -1. Binary search to the first sibling at its start, then scan. */
+/**
+ * Index of `child` among source-ordered `siblings`, or -1. Binary search to the first sibling at its start, then scan.
+ */
 function siblingIndex(siblings: ReadonlyArray<AgentlintNode>, child: AgentlintNode): number {
   let low = 0;
   let high = siblings.length;
@@ -97,25 +113,28 @@ function siblingIndex(siblings: ReadonlyArray<AgentlintNode>, child: AgentlintNo
 
 export class RuleContextImpl implements RuleContext {
   readonly rule: StateRule;
+  readonly dependencies: Readonly<Record<string, string>>;
   readonly findings: FindingRecord[] = [];
 
   #absolutePath = "";
   #file = "";
   #source = "";
   #keys = new Set<string>();
-  /** The first root seen for the current file. Its wrapped children are reused by every later report. */
+  /**
+   * The first root seen for the current file. Its wrapped children are reused by every later report.
+   */
   #root: AgentlintNode | undefined;
   #fileStructure: CanonicalValue | undefined;
-  /** The node the walker is handing to visitors, with its child indices from the file root. */
+  /**
+   * The node the walker is handing to visitors, with its child indices from the file root.
+   */
   #visiting: { readonly node: AgentlintNode; readonly position: ReadonlyArray<number> } | undefined;
   #dependencyDigest: string;
   #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
-  constructor(
-    rule: StateRule,
-    readonly dependencies: Readonly<Record<string, string>> = {},
-  ) {
+  constructor(rule: StateRule, dependencies: Readonly<Record<string, string>> = {}) {
     this.rule = rule;
+    this.dependencies = dependencies;
     this.#sourceIdentity = findingSourceForRule(rule);
     this.#dependencyDigest = canonicalDigest(dependencies);
   }
@@ -180,7 +199,9 @@ export class RuleContextImpl implements RuleContext {
     this.reportAt(options, visiting?.node === options.node ? visiting.position : this.#position(options.node));
   }
 
-  /** Report a node whose child indices from the file root the caller tracked during its own descent. */
+  /**
+   * Report a node whose child indices from the file root the caller tracked during its own descent.
+   */
   reportAt(options: FindingOptions, position: ReadonlyArray<number>): void {
     const line = options.node.startPosition.row + 1;
     const column = options.node.startPosition.column + 1;

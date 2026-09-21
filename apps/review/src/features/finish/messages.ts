@@ -10,6 +10,8 @@ export const fields = {
   FailedFinish: { message: S.String },
   ClickedCopyInstructions: {},
   ClickedDownloadAcceptances: {},
-  /** An output of the finished review reached the clipboard or the disk. */
+  /**
+   * An output of the finished review reached the clipboard or the disk.
+   */
   ExportedOutput: { kind: ExportKind, message: S.String },
 } satisfies Record<string, S.Struct.Fields>;

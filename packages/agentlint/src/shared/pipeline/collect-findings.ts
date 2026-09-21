@@ -1,4 +1,6 @@
-/** Finding collection for state and change rules. @module @since 0.2.0 */
+/**
+ * Finding collection for state and change rules. @module @since 0.2.0
+ */
 
 import { Effect, FileSystem, Path, Schema } from "effect";
 import { DetectionError, UnparseableFilesError } from "./detection-error.js";
@@ -62,7 +64,9 @@ interface StateRuleEntry {
   readonly compiledByGrammar: Map<string, RunnableMatches>;
 }
 
-/** Compile a binding's include and exclude globs into one predicate. */
+/**
+ * Compile a binding's include and exclude globs into one predicate.
+ */
 function scopeMatcher(rule: AgentlintRule): ScopeMatcher {
   const included = compileGlobs(rule.binding.include);
   const excluded = compileGlobs(rule.binding.exclude);
@@ -70,7 +74,9 @@ function scopeMatcher(rule: AgentlintRule): ScopeMatcher {
   return (file) => (included ? included(file) : true) && !(excluded ? excluded(file) : false);
 }
 
-/** Test one file against a binding's scope. Compiles the globs on every call; prefer `scopeMatcher` in loops. */
+/**
+ * Test one file against a binding's scope. Compiles the globs on every call; prefer `scopeMatcher` in loops.
+ */
 export function ruleEnabledForFile(rule: AgentlintRule, file: string): boolean {
   return scopeMatcher(rule)(file);
 }
@@ -94,7 +100,10 @@ function sortFindings(findings: ReadonlyArray<FindingRecord>): FindingRecord[] {
   );
 }
 
-/** What a scan read. `sources` keeps only files with a finding, so a complete scan does not hold the repository in memory. */
+/**
+ * What a scan read. `sources` keeps only files with a finding, so a complete scan does not hold the repository in
+ * memory.
+ */
 export interface ScanCapture {
   readonly scanned: Set<string>;
   readonly sources: Map<string, string>;
@@ -114,7 +123,10 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
   const entries: StateRuleEntry[] = [];
   const unparseable: Array<{ file: string; grammar: string }> = [];
   const root = fixtureSources ? env.cwd : yield* fs.realPath(env.cwd).pipe(Effect.mapError(readError("")));
-  /** Read one repository file for detection: never through a link that leaves the repository, line endings normalized once. */
+  /**
+   * Read one repository file for detection: never through a link that leaves the repository, line endings normalized
+   * once.
+   */
   const readSource = (file: string, label: string) =>
     Effect.gen(function* () {
       if (fixtureSources) {
@@ -154,7 +166,9 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     });
   }
 
-  /** Findings reported so far, drained or not: a file whose walk raises it produced one. */
+  /**
+   * Findings reported so far, drained or not: a file whose walk raises it produced one.
+   */
   const reportedCount = () => entries.reduce((total, entry) => total + entry.context.findings.length, findings.length);
 
   const disposeCompiled = Effect.sync(() => {

@@ -15,7 +15,9 @@ const change = {
   binding: { id: "migrations", authority: "human" },
 } as const;
 
-/** A config written in JavaScript reaches the engine without the compiler's help. */
+/**
+ * A config written in JavaScript reaches the engine without the compiler's help.
+ */
 const untyped = (rule: unknown) => rule as AgentlintRule;
 const definitionError = (rule: unknown): unknown => {
   try {

@@ -1,4 +1,6 @@
-/** Review payload and action application. @module @since 0.2.0 */
+/**
+ * Review payload and action application. @module @since 0.2.0
+ */
 
 import { Clock, Effect, Path } from "effect";
 import type { CheckResult } from "../check/request.js";
@@ -30,8 +32,8 @@ export interface ReviewSessionState {
   readonly calibration: CalibrationFeedback[];
   readonly requested: Set<string>;
   /**
-   * The stored decision last served to this session for each finding, or `null` when none was stored.
-   * A revocation is compared against it, so a decision recorded elsewhere after the page rendered survives.
+   * The stored decision last served to this session for each finding, or `null` when none was stored. A revocation is
+   * compared against it, so a decision recorded elsewhere after the page rendered survives.
    */
   readonly served: Map<string, { readonly acceptedAt: string; readonly reason: string } | null>;
 }
@@ -45,7 +47,9 @@ const browserHref = (value: string): string | null => {
   }
 };
 
-/** True when `target` is `directory` or below it. Both paths must already be absolute. */
+/**
+ * True when `target` is `directory` or below it. Both paths must already be absolute.
+ */
 export function isInsideDirectory(path: Path.Path, directory: string, target: string): boolean {
   const relative = path.relative(directory, target);
   return relative !== ".." && !relative.startsWith("../") && !relative.startsWith("..\\") && !path.isAbsolute(relative);
@@ -238,7 +242,9 @@ export interface ReviewSelection {
   readonly files?: ReadonlyArray<string> | undefined;
 }
 
-/** Scan the reviewed selection and return the finding with this id, without building the review payload. */
+/**
+ * Scan the reviewed selection and return the finding with this id, without building the review payload.
+ */
 export const findReviewFinding = Effect.fn("findReviewFinding")(function* (
   findingId: string,
   selection: ReviewSelection,

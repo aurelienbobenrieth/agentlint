@@ -1,8 +1,7 @@
 // @ts-check
 /**
- * Action inputs and the resolution of the `version` input into the command
- * that runs the agentlint CLI. Composite actions do not expose `INPUT_*`
- * automatically, so `action.yml` maps every input to `INPUT_<NAME>` itself.
+ * Action inputs and the resolution of the `version` input into the command that runs the agentlint CLI. Composite
+ * actions do not expose `INPUT_*` automatically, so `action.yml` maps every input to `INPUT_<NAME>` itself.
  */
 
 import { readFile } from "node:fs/promises";
@@ -31,7 +30,9 @@ function input(env, name, fallback) {
   return value === "" ? fallback : value;
 }
 
-/** @param {string} value */
+/**
+ * @param {string} value
+ */
 function flag(value) {
   return value.toLowerCase() === "true";
 }
@@ -55,7 +56,9 @@ export function readInputs(env) {
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export class InputError extends Error {
-  /** @param {string} detail */
+  /**
+   * @param {string} detail
+   */
   constructor(detail) {
     super(detail);
     this.name = "InputError";
@@ -63,12 +66,11 @@ export class InputError extends Error {
 }
 
 /**
- * The argv prefix that runs the agentlint CLI. Semver runs the published
- * package through `npx`; `file:<path>` runs a built checkout relative to the
- * workspace root.
+ * The argv prefix that runs the agentlint CLI. Semver runs the published package through `npx`; `file:<path>` runs a
+ * built checkout relative to the workspace root.
  *
  * @param {string} version
- * @param {string} workspace absolute path of the checkout root
+ * @param {string} workspace Absolute path of the checkout root
  * @returns {string[]}
  */
 export function resolveCli(version, workspace) {
@@ -83,7 +85,9 @@ export function resolveCli(version, workspace) {
   return [...npx(), "--yes", `@aurelienbbn/agentlint@${version}`];
 }
 
-/** @param {string} version */
+/**
+ * @param {string} version
+ */
 export function isPublishedVersion(version) {
   return SEMVER.test(version);
 }
@@ -92,24 +96,31 @@ export function isPublishedVersion(version) {
  * The copy of `@aurelienbbn/agentlint` that the repository installed, looked up from the working directory up to the
  * workspace root the way Node resolves packages. `null` when there is none.
  *
- * @param {string} workingDirectory absolute
- * @param {string} workspace absolute
- * @returns {Promise<{ argv: string[], version: string } | null>}
+ * @param {string} workingDirectory Absolute
+ * @param {string} workspace Absolute
+ * @returns {Promise<{ argv: string[]; version: string } | null>}
  */
 export async function localCli(workingDirectory, workspace) {
   for (let dir = workingDirectory; ; dir = dirname(dir)) {
     const root = join(dir, "node_modules", "@aurelienbbn", "agentlint");
     const manifest = await readFile(join(root, "package.json"), "utf8").then(
-      (text) => /** @type {unknown} */ (JSON.parse(text)),
+      (text) =>
+        /**
+         * @type {unknown}
+         */ (JSON.parse(text)),
       () => null,
     );
     if (typeof manifest === "object" && manifest !== null) {
-      const { bin, version } = /** @type {{ bin?: unknown, version?: unknown }} */ (manifest);
+      const { bin, version } = /**
+       * @type {{ bin?: unknown; version?: unknown }}
+       */ (manifest);
       const entry =
         typeof bin === "string"
           ? bin
           : typeof bin === "object" && bin !== null
-            ? /** @type {Record<string, unknown>} */ (bin)["agentlint"]
+            ? /**
+               * @type {Record<string, unknown>}
+               */ (bin)["agentlint"]
             : undefined;
       if (typeof entry === "string") {
         return { argv: ["node", resolve(root, entry)], version: typeof version === "string" ? version : "" };
@@ -120,8 +131,8 @@ export async function localCli(workingDirectory, workspace) {
 }
 
 /**
- * On Windows `npx` is a `.cmd` shim, which Node refuses to spawn without a shell. Run the npm CLI that ships next to the
- * Node binary instead, so no argument ever passes through a shell.
+ * On Windows `npx` is a `.cmd` shim, which Node refuses to spawn without a shell. Run the npm CLI that ships next to
+ * the Node binary instead, so no argument ever passes through a shell.
  *
  * @returns {string[]}
  */
@@ -132,10 +143,10 @@ function npx() {
 }
 
 /**
- * Install command from the lockfile present in the working directory, or in
- * the workspace when the working directory has none.
+ * Install command from the lockfile present in the working directory, or in the workspace when the working directory
+ * has none.
  *
- * @param {ReadonlyArray<string>} lockfiles file names present
+ * @param {ReadonlyArray<string>} lockfiles File names present
  * @returns {string[] | null}
  */
 export function installCommand(lockfiles) {

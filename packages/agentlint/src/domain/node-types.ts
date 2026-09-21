@@ -1,6 +1,5 @@
 /**
- * Generated from tree-sitter-typescript's `node-types.json`.
- * Provides autocomplete for visitor keys in {@link Visitors}.
+ * Generated from tree-sitter-typescript's `node-types.json`. Provides autocomplete for visitor keys in {@link Visitors}.
  *
  * @module
  * @since 0.1.0
@@ -10,7 +9,7 @@
  * Named node types from the tree-sitter TypeScript/TSX grammar.
  *
  * @since 0.1.0
- * @category models
+ * @category Models
  */
 export type TreeSitterNodeType =
   | "document"

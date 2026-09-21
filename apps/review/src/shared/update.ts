@@ -6,7 +6,9 @@ import type { Model } from "../model";
 export type UpdateReturn = Update.Return<Model, Message>;
 export type Commands = Update.Commands<Message>;
 
-/** The `Message.match` handlers a feature owns: exactly one per tag in its `fields`. */
+/**
+ * The `Message.match` handlers a feature owns: exactly one per tag in its `fields`.
+ */
 export type Handlers<Tag extends Message["_tag"]> = {
   readonly [T in Tag]: (message: Extract<Message, { readonly _tag: T }>) => UpdateReturn;
 };

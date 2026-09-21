@@ -70,7 +70,9 @@ const renderCodePanel = (
   );
 };
 
-/** One slot per finding: the panel only re-renders when that finding, the code view, or the editor changes. */
+/**
+ * One slot per finding: the panel only re-renders when that finding, the code view, or the editor changes.
+ */
 const codePanel = createKeyedLazy();
 
 const diffBlock = (diff: string, file: string, h: HtmlBuilder<Message>): Html =>

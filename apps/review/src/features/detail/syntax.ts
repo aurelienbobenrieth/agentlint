@@ -22,8 +22,10 @@ const highlight = (source: string, language: Language): string =>
 const LINE_CACHE_LIMIT = 4_000;
 const lineCache = new Map<string, string>();
 
-/** Highlight one source line. highlight.js escapes source text before returning markup.
- *  Cached per language and line text: diffs and examples repeat the same lines across renders. */
+/**
+ * Highlight one source line. highlight.js escapes source text before returning markup. Cached per language and line
+ * text: diffs and examples repeat the same lines across renders.
+ */
 export const highlightedLine = (source: string, file: string): string => {
   const language = languageForFile(file);
   const key = `${language}\u0000${source}`;
@@ -37,8 +39,10 @@ export const highlightedLine = (source: string, file: string): string => {
 
 const SPAN_TOKEN = /<span class="[^"]*">|<\/span>/gu;
 
-/** Split highlighted markup by line, re-opening the spans a multi-line token (comment, template
- *  literal) leaves open so every line is a self-contained fragment. */
+/**
+ * Split highlighted markup by line, re-opening the spans a multi-line token (comment, template literal) leaves open so
+ * every line is a self-contained fragment.
+ */
 const splitHighlighted = (markup: string): ReadonlyArray<string> => {
   const open: string[] = [];
   return markup.split("\n").map((line) => {
@@ -54,9 +58,11 @@ const splitHighlighted = (markup: string): ReadonlyArray<string> => {
 const SNIPPET_CACHE_LIMIT = 64;
 const snippetCache = new Map<string, ReadonlyArray<string>>();
 
-/** Highlight a whole snippet once and split it by line. Whole-snippet highlighting keeps multi-line
- *  tokens correct, and the cache makes the focused/full toggle and re-renders free. Keyed by language
- *  and text so a finding's source and its guidance examples never evict each other. */
+/**
+ * Highlight a whole snippet once and split it by line. Whole-snippet highlighting keeps multi-line tokens correct, and
+ * the cache makes the focused/full toggle and re-renders free. Keyed by language and text so a finding's source and its
+ * guidance examples never evict each other.
+ */
 export const highlightedLines = (source: string, file: string): ReadonlyArray<string> => {
   const language = languageForFile(file);
   const key = `${language} ${source}`;

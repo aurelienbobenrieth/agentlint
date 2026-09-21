@@ -10,7 +10,9 @@ import { fields as shell } from "./features/shell/messages";
 import { fields as shortcuts } from "./features/shortcuts/messages";
 import { fields as toasts } from "./features/toasts/messages";
 
-/** One Message universe. Each feature declares its own tags; the root only assembles them. */
+/**
+ * One Message universe. Each feature declares its own tags; the root only assembles them.
+ */
 export const Message = defineMessageUnion({
   ...session,
   ...list,

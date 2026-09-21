@@ -2,6 +2,7 @@
  * File resolution service.
  *
  * Determines which files to scan by applying the filter pipeline:
+ *
  * 1. Candidate files (positional paths and globs, all files, or Git-changed files)
  * 2. Config ignores and the tool's own cache
  * 3. Files with an extension
@@ -20,7 +21,7 @@ import { compareStrings } from "../../domain/compare.js";
  * Raised when candidate files cannot be enumerated.
  *
  * @since 0.1.0
- * @category errors
+ * @category Errors
  */
 export class FileResolverError extends Schema.TaggedError<FileResolverError>()("agentlint/FileResolverError", {
   reason: Schema.Literal("filesystem"),
@@ -35,26 +36,40 @@ export class FileResolverError extends Schema.TaggedError<FileResolverError>()("
  * Options controlling which files enter the lint pipeline.
  *
  * @since 0.1.0
- * @category models
+ * @category Models
  */
 export const ResolveOptions = Schema.Struct({
-  /** When `true`, scan all files instead of only git-changed files. */
+  /**
+   * When `true`, scan all files instead of only git-changed files.
+   */
   all: Schema.Boolean,
-  /** Git ref to diff against. Defaults to the detected default branch. */
+  /**
+   * Git ref to diff against. Defaults to the detected default branch.
+   */
   baseRef: Schema.optional(Schema.String),
-  /** Global ignore globs from the config file. */
+  /**
+   * Global ignore globs from the config file.
+   */
   configIgnores: Schema.optional(Schema.Array(Schema.String)),
-  /** Explicit file paths passed as CLI positional arguments. */
+  /**
+   * Explicit file paths passed as CLI positional arguments.
+   */
   positionalFiles: Schema.optional(Schema.Array(Schema.String)),
 });
 
-/** @since 0.1.0 */
+/**
+ * @since 0.1.0
+ */
 export type ResolveOptions = Schema.Schema.Type<typeof ResolveOptions>;
 
-/** Directories the walk never enters when Git cannot list the repository. */
+/**
+ * Directories the walk never enters when Git cannot list the repository.
+ */
 const WALK_SKIP_DIRS: ReadonlySet<string> = new Set(["node_modules", ".git"]);
 
-/** agentlint's own disposable cache. `init` gitignores it; it stays out of every scan even without that entry. */
+/**
+ * Agentlint's own disposable cache. `init` gitignores it; it stays out of every scan even without that entry.
+ */
 const OWN_CACHE_PREFIX = ".agentlint/.cache/";
 
 const LIST_CONCURRENCY = 16;
@@ -69,11 +84,11 @@ function hasGlobSyntax(value: string): boolean {
 }
 
 /**
- * Compile globs into one predicate. Dotfiles match like any other path, so `src/**` covers `src/.hidden/x.ts`.
- * Every glob agentlint evaluates goes through here.
+ * Compile globs into one predicate. Dotfiles match like any other path, so `src/**` covers `src/.hidden/x.ts`. Every
+ * glob agentlint evaluates goes through here.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function compileGlobs(patterns: ReadonlyArray<string> | undefined): ((file: string) => boolean) | undefined {
   return patterns?.length ? picomatch([...patterns], { dot: true }) : undefined;
@@ -84,7 +99,7 @@ export function compileGlobs(patterns: ReadonlyArray<string> | undefined): ((fil
  * character and must survive.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function toRepositoryPath(value: string, separator: string): string {
   return separator === "\\" ? value.replace(/\\/g, "/") : value;
@@ -94,7 +109,7 @@ export function toRepositoryPath(value: string, separator: string): string {
  * Whether `candidate` is `root` or lies below it. Both are absolute; resolve links first when that matters.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function isInside(path: Path.Path, root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -112,7 +127,7 @@ function toProjectPath(file: string, cwd: string, path: Path.Path): string {
  * What a repository path is on disk. `linkTarget` is set when the path itself is a symbolic link.
  *
  * @since 0.2.0
- * @category models
+ * @category Models
  */
 export type RepositoryEntry =
   | { readonly _tag: "Missing" }
@@ -120,11 +135,11 @@ export type RepositoryEntry =
   | { readonly _tag: "Inside"; readonly realPath: string; readonly linkTarget: string | undefined };
 
 /**
- * Resolve links before anything reads a repository path. A path whose real location is outside the canonical
- * repository root, or inside `.git`, `Escapes`: a committed `leak.ts -> ../.git/config` is never read as source.
+ * Resolve links before anything reads a repository path. A path whose real location is outside the canonical repository
+ * root, or inside `.git`, `Escapes`: a committed `leak.ts -> ../.git/config` is never read as source.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function inspectRepositoryEntry(
   fs: FileSystem.FileSystem,
@@ -153,11 +168,11 @@ export function inspectRepositoryEntry(
 
 /**
  * Match change-set paths against explicit CLI files with the same meaning the state resolver gives them: a glob is a
- * pattern, a literal is one repository path or a directory prefix. The comparison is lexical because a change can name a
- * deleted file. A typed argument may use either separator on every platform.
+ * pattern, a literal is one repository path or a directory prefix. The comparison is lexical because a change can name
+ * a deleted file. A typed argument may use either separator on every platform.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function explicitPathMatcher(
   files: ReadonlyArray<string>,
@@ -180,7 +195,7 @@ export function explicitPathMatcher(
  * cleanup.
  *
  * @since 0.1.0
- * @category internals
+ * @category Internals
  */
 function listAllFiles(
   dir: string,
@@ -222,26 +237,28 @@ function listAllFiles(
 }
 
 /**
- * The Git queries the resolver needs. `listFiles` is optional so a caller without a repository listing, such as a
- * test double, falls back to the directory walk.
+ * The Git queries the resolver needs. `listFiles` is optional so a caller without a repository listing, such as a test
+ * double, falls back to the directory walk.
  *
  * @since 0.2.0
- * @category models
+ * @category Models
  */
 export interface ResolverGit<E> {
   changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, E>;
-  /** Tracked and unignored untracked paths below the working directory, or `undefined` when Git cannot list them. */
+  /**
+   * Tracked and unignored untracked paths below the working directory, or `undefined` when Git cannot list them.
+   */
   readonly listFiles?: (() => Effect.Effect<ReadonlyArray<string> | undefined, E>) | undefined;
 }
 
 /**
  * Determine the final set of files to lint.
  *
- * Applies the multi-layer filter pipeline described in the module header,
- * then sorts the result by code unit for deterministic output. Git failures pass through unwrapped.
+ * Applies the multi-layer filter pipeline described in the module header, then sorts the result by code unit for
+ * deterministic output. Git failures pass through unwrapped.
  *
  * @since 0.1.0
- * @category constructors
+ * @category Constructors
  */
 export function resolveFiles<E>(
   options: ResolveOptions,
@@ -254,7 +271,9 @@ export function resolveFiles<E>(
     const cwd = yield* fs.realPath(env.cwd).pipe(Effect.mapError(filesystemError));
     const ignoreMatcher = compileGlobs(options.configIgnores);
     const ignored = (file: string) => file.startsWith(OWN_CACHE_PREFIX) || ignoreMatcher?.(file) === true;
-    /** Every file of the repository: what Git tracks or would add, or the walk when Git cannot say. */
+    /**
+     * Every file of the repository: what Git tracks or would add, or the walk when Git cannot say.
+     */
     const listRepository = Effect.gen(function* () {
       const listed = gitService.listFiles ? yield* gitService.listFiles() : undefined;
       return listed ?? (yield* listAllFiles(cwd, cwd, fs, path, ignored));

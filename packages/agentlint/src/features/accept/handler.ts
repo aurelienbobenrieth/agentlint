@@ -1,4 +1,6 @@
-/** Acceptance application handler. @module @since 0.2.0 */
+/**
+ * Acceptance application handler. @module @since 0.2.0
+ */
 
 import { Clock, Effect } from "effect";
 import { Env } from "../../config/env.js";

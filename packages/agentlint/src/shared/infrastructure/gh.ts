@@ -1,8 +1,8 @@
 /**
  * GitHub CLI access.
  *
- * `agentlint pr` reads pull request artifacts through the authenticated
- * `gh` binary so the package never carries a GitHub client or a token.
+ * `agentlint pr` reads pull request artifacts through the authenticated `gh` binary so the package never carries a
+ * GitHub client or a token.
  *
  * @module
  * @since 0.2.0
@@ -12,7 +12,9 @@ import { execFile } from "node:child_process";
 import { Context, Effect, Layer, Schema } from "effect";
 import { Env } from "../../config/env.js";
 
-/** @since 0.2.0 @category errors */
+/**
+ * @since 0.2.0 @category errors
+ */
 export class GhError extends Schema.TaggedError<GhError>()("agentlint/GhError", {
   reason: Schema.Literals(["missing", "failed"]),
   args: Schema.Array(Schema.String),
@@ -25,7 +27,9 @@ export class GhError extends Schema.TaggedError<GhError>()("agentlint/GhError", 
   }
 }
 
-/** An artifact download is the longest call. A stalled `gh` must not hold the command open. */
+/**
+ * An artifact download is the longest call. A stalled `gh` must not hold the command open.
+ */
 const GH_TIMEOUT_MS = 120_000;
 
 const isMissingBinary = (error: { readonly code?: string | number | undefined }): boolean => error.code === "ENOENT";
@@ -55,14 +59,18 @@ const ghCommand = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<Buff
  * Runs `gh` in the working directory.
  *
  * @since 0.2.0
- * @category services
+ * @category Services
  */
 export class Gh extends Context.Service<
   Gh,
   {
-    /** Run `gh` and return its UTF-8 stdout. */
+    /**
+     * Run `gh` and return its UTF-8 stdout.
+     */
     text(args: ReadonlyArray<string>): Effect.Effect<string, GhError>;
-    /** Run `gh` and return its raw stdout, for endpoints that stream a file. */
+    /**
+     * Run `gh` and return its raw stdout, for endpoints that stream a file.
+     */
     binary(args: ReadonlyArray<string>): Effect.Effect<Uint8Array, GhError>;
   }
 >()("agentlint/Gh") {

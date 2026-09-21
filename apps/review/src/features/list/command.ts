@@ -5,7 +5,9 @@ import { Message } from "../../message";
 
 const SETTLE_DELAY_MS = 600;
 
-/** Long enough to swallow a double tap, short enough that a reviewer who read the next finding never waits. */
+/**
+ * Long enough to swallow a double tap, short enough that a reviewer who read the next finding never waits.
+ */
 export const SettleSelection = Command.define("SettleSelection", {
   args: { version: S.Number },
   messages: [Message.SettledSelection],

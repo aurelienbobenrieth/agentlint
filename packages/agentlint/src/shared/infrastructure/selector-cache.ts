@@ -1,8 +1,8 @@
 /**
  * Latest-check selector cache.
  *
- * This cache is an ephemeral convenience index for human-friendly selectors.
- * The cache never changes the gate. The acceptance file is the public durable state.
+ * This cache is an ephemeral convenience index for human-friendly selectors. The cache never changes the gate. The
+ * acceptance file is the public durable state.
  *
  * @module
  * @since 0.2.0

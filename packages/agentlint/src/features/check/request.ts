@@ -1,4 +1,6 @@
-/** Check application contracts. @module @since 0.2.0 */
+/**
+ * Check application contracts. @module @since 0.2.0
+ */
 
 import { Schema } from "effect";
 import { AcceptanceRecord } from "../../domain/acceptance.js";

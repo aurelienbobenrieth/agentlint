@@ -8,8 +8,10 @@ import { fetchState } from "../session/command";
 
 const encodeActionRequest = S.encodeSync(S.fromJsonString(ReviewActionRequest));
 
-/** Attached sessions: post the decision, then refetch the server truth. Once the POST succeeded the
- *  decision is on disk, so a failing refetch is reported as a stale screen, never as a failed decision. */
+/**
+ * Attached sessions: post the decision, then refetch the server truth. Once the POST succeeded the decision is on disk,
+ * so a failing refetch is reported as a stale screen, never as a failed decision.
+ */
 export const SubmitAction = Command.define("SubmitAction", {
   args: { request: ReviewActionRequest },
   messages: [Message.CompletedAction, Message.RecordedActionRefreshFailed, Message.FailedAction],

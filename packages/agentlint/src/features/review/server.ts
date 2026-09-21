@@ -1,4 +1,6 @@
-/** Ephemeral localhost server for the packaged review SPA. @module @since 0.2.0 */
+/**
+ * Ephemeral localhost server for the packaged review SPA. @module @since 0.2.0
+ */
 
 import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -57,7 +59,9 @@ export class ReviewServerError extends Schema.TaggedError<ReviewServerError>()("
 const ActionDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewActionRequest));
 const OpenRequestDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewOpenRequest));
 const MAX_BODY_BYTES = 128 * 1024;
-/** Past the cap the body is drained so the client can read the 413. Past this the connection is dropped. */
+/**
+ * Past the cap the body is drained so the client can read the 413. Past this the connection is dropped.
+ */
 const MAX_DRAINED_BYTES = 8 * MAX_BODY_BYTES;
 const INVALID_SESSION = { ok: false, message: "Invalid review session." };
 const MIME_TYPES: Record<string, string> = {
@@ -109,8 +113,8 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
 }
 
 /**
- * Decode a JSON request body, or answer the request and return `undefined`. The schema failure stays
- * out of the response: it echoes the body and describes internal types.
+ * Decode a JSON request body, or answer the request and return `undefined`. The schema failure stays out of the
+ * response: it echoes the body and describes internal types.
  */
 async function readJson<A>(
   request: IncomingMessage,
@@ -137,8 +141,8 @@ async function readJson<A>(
 }
 
 /**
- * What a request must present on one port. Cookies ignore ports, so the cookie name carries it:
- * concurrent sessions keep separate cookies and a browser never offers this one to another local server.
+ * What a request must present on one port. Cookies ignore ports, so the cookie name carries it: concurrent sessions
+ * keep separate cookies and a browser never offers this one to another local server.
  */
 export interface ReviewSessionGuard {
   readonly cookieName: string;
@@ -171,8 +175,8 @@ function tokenMatches(actual: string | undefined, expected: string): boolean {
 }
 
 /**
- * Another local page can set a same-named cookie on a narrower path, which a browser sends first.
- * Any matching cookie authenticates, so a planted one cannot shadow the real one.
+ * Another local page can set a same-named cookie on a narrower path, which a browser sends first. Any matching cookie
+ * authenticates, so a planted one cannot shadow the real one.
  */
 function hasSessionCookie(request: Pick<IncomingMessage, "headers">, guard: ReviewSessionGuard, token: string) {
   return requestTokens(request, guard.cookieName).some((candidate) => tokenMatches(candidate, token));
@@ -219,19 +223,27 @@ export interface ReviewListenerConfig {
   readonly session: Pick<ReviewSessionOptions, "rules" | "files" | "base" | "mode" | "artifact">;
   readonly assetsRoot: string;
   readonly applications: ReadonlyArray<EditorApplication>;
-  /** Called once the finish response is written and no action is still writing to the repository. */
+  /**
+   * Called once the finish response is written and no action is still writing to the repository.
+   */
   readonly onFinish: (result: ReviewFinishResult) => void;
 }
 
 export interface ReviewListener {
   readonly handle: (request: IncomingMessage, response: ServerResponse) => void;
-  /** Single-use secret for the advertised URL. It is traded for the session cookie and never accepted again. */
+  /**
+   * Single-use secret for the advertised URL. It is traded for the session cookie and never accepted again.
+   */
   readonly bootstrapToken: string;
-  /** Settles when no review action is in flight. */
+  /**
+   * Settles when no review action is in flight.
+   */
   readonly idle: () => Promise<void>;
 }
 
-/** The request listener of one review session, independent of the socket it is mounted on. */
+/**
+ * The request listener of one review session, independent of the socket it is mounted on.
+ */
 export const makeReviewListener = Effect.fn("makeReviewListener")(function* (config: ReviewListenerConfig) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;

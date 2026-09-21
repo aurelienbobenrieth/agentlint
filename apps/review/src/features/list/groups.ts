@@ -1,6 +1,8 @@
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 
-/** Connected components of explicit file relationships. Presentation only; decisions remain individual. */
+/**
+ * Connected components of explicit file relationships. Presentation only; decisions remain individual.
+ */
 export const relatedGroups = (findings: ReadonlyArray<ReviewFindingPayload>): ReadonlyMap<string, string> => {
   const parents = new Map<string, string>();
   const owners = new Map<string, string>();

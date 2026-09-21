@@ -96,7 +96,9 @@ async function mount(session: ReviewListenerConfig["session"] = { mode: "review"
   port = (server.address() as AddressInfo).port;
 }
 
-/** Raw client: unlike `fetch`, it sends the path and the headers exactly as written. */
+/**
+ * Raw client: unlike `fetch`, it sends the path and the headers exactly as written.
+ */
 function send(
   method: string,
   path: string,

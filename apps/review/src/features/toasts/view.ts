@@ -5,8 +5,10 @@ import type { Model } from "../../model";
 import { iconButton } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 
-/** Each toast is its own live region: `alert` interrupts for failures, `status` waits its turn. The
- *  container carries no `aria-live` so a toast is not announced twice. */
+/**
+ * Each toast is its own live region: `alert` interrupts for failures, `status` waits its turn. The container carries no
+ * `aria-live` so a toast is not announced twice.
+ */
 export const toasts = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
     [

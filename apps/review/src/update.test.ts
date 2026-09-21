@@ -497,7 +497,9 @@ describe("calibration report export", () => {
   });
 });
 
-/** A queue of proposed findings: the effective reason is never empty, so `a` submits in one keystroke. */
+/**
+ * A queue of proposed findings: the effective reason is never empty, so `a` submits in one keystroke.
+ */
 const queue = (transport: "attached" | "detached", ids: ReadonlyArray<string>): Model => {
   const payload = state("review");
   const original = payload.findings[0];

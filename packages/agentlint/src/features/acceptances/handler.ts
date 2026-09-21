@@ -1,4 +1,6 @@
-/** Acceptance maintenance handler. @module @since 0.2.0 */
+/**
+ * Acceptance maintenance handler. @module @since 0.2.0
+ */
 
 import { Effect } from "effect";
 import {
@@ -13,9 +15,8 @@ import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { AcceptancesCommand, AcceptancesResult } from "./request.js";
 
 /**
- * Import is all-or-nothing: either every decision identifies a current finding
- * with sufficient authority and all are written, or none are and
- * `rejectedCount` reports how many did not qualify.
+ * Import is all-or-nothing: either every decision identifies a current finding with sufficient authority and all are
+ * written, or none are and `rejectedCount` reports how many did not qualify.
  */
 export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (command: AcceptancesCommand) {
   const store = yield* AcceptanceStore;

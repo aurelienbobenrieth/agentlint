@@ -1,9 +1,8 @@
 /**
  * Git repository comparisons.
  *
- * Change rules compare the merge base of a selected ref and `HEAD` with the
- * current working tree. The current side includes committed, staged,
- * unstaged, and untracked content.
+ * Change rules compare the merge base of a selected ref and `HEAD` with the current working tree. The current side
+ * includes committed, staged, unstaged, and untracked content.
  *
  * @module
  * @since 0.2.0
@@ -19,10 +18,14 @@ import { compareStrings } from "../../domain/compare.js";
 import type { ChangeHunk, ChangeLine, ChangeSet, ChangedFile, FileSnapshot } from "../../domain/rule.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 
-/** Largest Git output and largest working file loaded into a snapshot. */
+/**
+ * Largest Git output and largest working file loaded into a snapshot.
+ */
 const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
-/** @since 0.2.0 @category errors */
+/**
+ * @since 0.2.0 @category errors
+ */
 export class GitError extends Schema.TaggedError<GitError>()("agentlint/GitError", {
   reason: Schema.Literals([
     "command",
@@ -69,16 +72,22 @@ const parseNulSeparated = (output: string): ReadonlyArray<string> =>
 
 const digest = (content: string): string => createHash("sha256").update(content).digest("hex");
 
-/** Line endings are normalized once here, so a CRLF checkout and an LF checkout carry the same evidence. */
+/**
+ * Line endings are normalized once here, so a CRLF checkout and an LF checkout carry the same evidence.
+ */
 const snapshot = (content: string): FileSnapshot => {
   const normalized = normalizeLineEndings(content);
   return { content: normalized, digest: digest(normalized) };
 };
 
-/** A file too large or too binary to load keeps its identity and drops its content. */
+/**
+ * A file too large or too binary to load keeps its identity and drops its content.
+ */
 const unloadedSnapshot = (blob: string): FileSnapshot => ({ digest: `git-blob:${blob}` });
 
-/** Git's own heuristic: a NUL in the first 8000 bytes. */
+/**
+ * Git's own heuristic: a NUL in the first 8000 bytes.
+ */
 const isBinary = (content: string): boolean => content.slice(0, 8000).includes("\0");
 
 interface CommandFailure {
@@ -135,7 +144,9 @@ const gitCommand = (
     catch: (failure) => failure as CommandFailure,
   });
 
-/** Exit status 1 is Git's "no"; every other failure is a real one. */
+/**
+ * Exit status 1 is Git's "no"; every other failure is a real one.
+ */
 const answersNo = (error: GitError): boolean => error.reason === "command" && error.exitCode === 1;
 
 interface StatusEntry {
@@ -144,13 +155,15 @@ interface StatusEntry {
   readonly previousPath?: string | undefined;
   readonly beforeMode: string;
   readonly afterMode: string;
-  /** Blob of the baseline side. All zeros when the baseline has none or Git did not resolve it. */
+  /**
+   * Blob of the baseline side. All zeros when the baseline has none or Git did not resolve it.
+   */
   readonly beforeBlob: string;
 }
 
 /**
- * Parse `git diff --raw -z --abbrev=40`. Git separates with `/` on every platform, so paths pass through verbatim:
- * a backslash is part of a file name.
+ * Parse `git diff --raw -z --abbrev=40`. Git separates with `/` on every platform, so paths pass through verbatim: a
+ * backslash is part of a file name.
  */
 export function parseGitRawStatus(output: string): ReadonlyArray<StatusEntry> {
   const tokens = output.split("\0").filter((token) => token.length > 0);
@@ -205,18 +218,24 @@ export function parseUnifiedHunks(output: string): ReadonlyArray<ChangeHunk> {
   return hunks;
 }
 
-/** One side of a changed file: loaded text, an identity without content, or nothing agentlint may read. */
+/**
+ * One side of a changed file: loaded text, an identity without content, or nothing agentlint may read.
+ */
 type SideContent =
   | { readonly _tag: "Text"; readonly content: string }
   | { readonly _tag: "Unloaded"; readonly blob: string }
   | { readonly _tag: "Skipped" };
 
-/** @since 0.2.0 */
+/**
+ * @since 0.2.0
+ */
 export class Git extends Context.Service<
   Git,
   {
     detectDefaultBranch(): Effect.Effect<string, GitError>;
-    /** Paths that exist in the working tree and differ from the merge base. Deleted paths are excluded. */
+    /**
+     * Paths that exist in the working tree and differ from the merge base. Deleted paths are excluded.
+     */
     changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, GitError>;
     /**
      * The normalized comparison. `include` is applied to the changed paths before any content is read or diffed, so an
@@ -224,8 +243,8 @@ export class Git extends Context.Service<
      */
     changeSet(baseRef?: string, include?: (path: string) => boolean): Effect.Effect<ChangeSet, GitError>;
     /**
-     * Tracked and unignored untracked paths below the working directory. `undefined` when Git cannot list them: no
-     * Git, no work tree, or a working directory the enclosing repository ignores.
+     * Tracked and unignored untracked paths below the working directory. `undefined` when Git cannot list them: no Git,
+     * no work tree, or a working directory the enclosing repository ignores.
      */
     readonly listFiles?: (() => Effect.Effect<ReadonlyArray<string> | undefined, GitError>) | undefined;
   }
@@ -313,7 +332,9 @@ export class Git extends Context.Service<
           return { ref, commit } as const;
         });
 
-      /** The baseline blob of `filePath`, or `undefined` when the baseline has no such path. */
+      /**
+       * The baseline blob of `filePath`, or `undefined` when the baseline has no such path.
+       */
       const baselineBlob = (commit: string, entry: StatusEntry): Effect.Effect<string | undefined, GitError> => {
         if (entry.status === "added") return Effect.succeed(undefined);
         if (!NULL_BLOB.test(entry.beforeBlob)) return Effect.succeed(entry.beforeBlob);
@@ -347,7 +368,9 @@ export class Git extends Context.Service<
           );
         });
 
-      /** Read the working side without following a link: a symbolic link is its target text, as Git stores it. */
+      /**
+       * Read the working side without following a link: a symbolic link is its target text, as Git stores it.
+       */
       const readWorkingFile = (root: string, filePath: string): Effect.Effect<SideContent, GitError> =>
         Effect.gen(function* () {
           const entry = yield* inspectRepositoryEntry(fs, path, root, filePath);

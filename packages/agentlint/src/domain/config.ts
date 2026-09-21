@@ -1,16 +1,26 @@
-/** Repository configuration contracts. @module @since 0.2.0 */
+/**
+ * Repository configuration contracts. @module @since 0.2.0
+ */
 
 import { Schema } from "effect";
 import { defineRule, type AgentlintRule } from "./rule.js";
 
 export interface AgentlintConfig {
-  /** Reusable configuration layers. Earlier layers load first. */
+  /**
+   * Reusable configuration layers. Earlier layers load first.
+   */
   readonly extends?: ReadonlyArray<AgentlintConfig> | undefined;
-  /** Each array entry is one enabled repository binding. */
+  /**
+   * Each array entry is one enabled repository binding.
+   */
   readonly rules?: ReadonlyArray<AgentlintRule> | undefined;
-  /** Repository-wide paths that agentlint never inspects. */
+  /**
+   * Repository-wide paths that agentlint never inspects.
+   */
   readonly ignores?: ReadonlyArray<string> | undefined;
-  /** Default Git comparison ref. CLI `--base` takes precedence. */
+  /**
+   * Default Git comparison ref. CLI `--base` takes precedence.
+   */
   readonly base?: string | undefined;
 }
 
@@ -25,7 +35,7 @@ export interface NormalizedConfig {
  * Raised by `defineConfig` and config normalization when a config is invalid.
  *
  * @since 0.2.0
- * @category errors
+ * @category Errors
  */
 export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
   reason: Schema.Literals(["empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
@@ -62,7 +72,9 @@ function assertConfig(config: AgentlintConfig): void {
   }
 }
 
-/** Define a repository config without widening its rule lifecycle literals. Throws `ConfigError`. */
+/**
+ * Define a repository config without widening its rule lifecycle literals. Throws `ConfigError`.
+ */
 export function defineConfig<const Config extends AgentlintConfig>(config: Config): Config {
   assertConfig(config);
   return config;
@@ -77,7 +89,9 @@ function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active
   output.push(config);
 }
 
-/** Resolve config layers and reject ambiguous binding identities. Internal to the engine. */
+/**
+ * Resolve config layers and reject ambiguous binding identities. Internal to the engine.
+ */
 export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   const layers: AgentlintConfig[] = [];
   flatten(config, layers);

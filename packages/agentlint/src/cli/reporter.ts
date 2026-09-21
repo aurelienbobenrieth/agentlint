@@ -1,12 +1,52 @@
-/** Terminal and machine-readable check output. @module @since 0.2.0 */
+/**
+ * Terminal and machine-readable check output. @module @since 0.2.0
+ */
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { Env } from "../config/env.js";
 import type { NormalizedConfig } from "../domain/config.js";
 import type { FindingRecord } from "../domain/finding.js";
 import { findingKey } from "../domain/finding.js";
+import { Fingerprint, FindingSource } from "../domain/fingerprint.js";
 import { compactStandard } from "../domain/guidance.js";
-import type { CheckLineage } from "../features/check/request.js";
+import { CheckLineage } from "../features/check/request.js";
+
+interface FormatCheckTextOptions {
+  readonly findings: readonly FindingRecord[];
+  readonly config: NormalizedConfig;
+  readonly version: string;
+  readonly lineage?: readonly CheckLineage[];
+}
+
+interface FormatCheckJsonlOptions {
+  readonly findings: readonly FindingRecord[];
+  readonly config: NormalizedConfig;
+  readonly lineage?: readonly CheckLineage[];
+}
+
+const CheckJsonlRecord = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("finding"),
+  selector: Schema.String,
+  identity: Schema.Struct({
+    source: FindingSource,
+    fingerprint: Fingerprint,
+    lineageKey: Schema.NullOr(Schema.String),
+  }),
+  rule: Schema.Struct({
+    id: Schema.String,
+    title: Schema.String,
+    lifecycle: Schema.Literals(["state", "change"]),
+    authority: Schema.Literals(["agent", "human"]),
+  }),
+  location: Schema.Struct({ file: Schema.String, line: Schema.Number, column: Schema.Number }),
+  message: Schema.String,
+  snippet: Schema.String,
+  standard: Schema.String,
+  priorJudgment: Schema.NullOr(CheckLineage),
+  commands: Schema.Struct({ explain: Schema.String, decide: Schema.String }),
+});
+const encodeCheckJsonlRecord = Schema.encodeSync(Schema.fromJsonString(CheckJsonlRecord));
 
 function ansi(noColor: boolean) {
   return {
@@ -17,12 +57,12 @@ function ansi(noColor: boolean) {
   };
 }
 
-export const formatCheckText = Effect.fn("formatCheckText")(function* (
-  findings: ReadonlyArray<FindingRecord>,
-  config: NormalizedConfig,
-  version: string,
-  lineage: ReadonlyArray<CheckLineage> = [],
-) {
+export const formatCheckText = Effect.fn("formatCheckText")(function* ({
+  findings,
+  config,
+  version,
+  lineage = [],
+}: FormatCheckTextOptions) {
   const colors = ansi((yield* Env).noColor);
   if (findings.length === 0) return `${colors.bold("agentlint")} ${colors.dim(`v${version}`)} — gate open.`;
 
@@ -71,16 +111,12 @@ export const formatCheckText = Effect.fn("formatCheckText")(function* (
   return lines.join("\n");
 });
 
-export function formatCheckJsonl(
-  findings: ReadonlyArray<FindingRecord>,
-  config: NormalizedConfig,
-  lineage: ReadonlyArray<CheckLineage> = [],
-): string {
+export function formatCheckJsonl({ findings, config, lineage = [] }: FormatCheckJsonlOptions): string {
   return findings
     .map((finding) => {
       const rule = config.rulesById.get(finding.ruleId);
       const selector = finding.selector ?? findingKey(finding);
-      return JSON.stringify({
+      return encodeCheckJsonlRecord({
         version: 1,
         type: "finding",
         selector,

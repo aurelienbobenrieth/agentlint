@@ -6,6 +6,9 @@
   "trailingComma": "all",
   "tabWidth": 2,
   "arrowParens": "always",
+  "jsdoc": {
+    "commentLineStrategy": "multiline"
+  },
   "sortPackageJson": true,
   "ignorePatterns": [".agents/**", "**/*.wasm", "pnpm-lock.yaml"]
 }

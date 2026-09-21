@@ -8,14 +8,18 @@ import { enqueueToast } from "../toasts/update";
 import { DelayPersist, LoadReview, MarkDirty, PersistReview, reviewStorageKey } from "./command";
 import type { fields } from "./messages";
 
-/** Leaving loses work only when a detached review holds a decision that was not exported yet.
- *  Attached reviews never do: the server persists each decision. */
+/**
+ * Leaving loses work only when a detached review holds a decision that was not exported yet. Attached reviews never do:
+ * the server persists each decision.
+ */
 const hasUnexportedDecisions = (model: Model): boolean =>
   model.screen._tag === "Reviewing" &&
   model.screen.state.transport === "detached" &&
   Object.values(model.drafts).some((draft) => draft.disposition !== "none");
 
-/** Write the review to localStorage now. Discrete actions (clicks, toggles, decisions) use this. */
+/**
+ * Write the review to localStorage now. Discrete actions (clicks, toggles, decisions) use this.
+ */
 export const persist = (model: Model): UpdateReturn => {
   if (model.screen._tag !== "Reviewing") return { model };
   return {
@@ -32,15 +36,19 @@ export const persist = (model: Model): UpdateReturn => {
 
 export const persistChange = (model: Model, change: (model: Model) => Model): UpdateReturn => persist(change(model));
 
-/** Write after the reviewer pauses typing. The model changes immediately; only the write is delayed. */
+/**
+ * Write after the reviewer pauses typing. The model changes immediately; only the write is delayed.
+ */
 export const persistLater = (model: Model): UpdateReturn => {
   if (model.screen._tag !== "Reviewing") return { model };
   const version = model.saveVersion + 1;
   return { model: evo(model, { saveVersion: () => version }), commands: [DelayPersist({ version })] };
 };
 
-/** Selection, drafts and exports key on the finding id. A state that repeats one shows one finding and
- *  would export a decision for both, so it is refused outright. */
+/**
+ * Selection, drafts and exports key on the finding id. A state that repeats one shows one finding and would export a
+ * decision for both, so it is refused outright.
+ */
 export const rejectDuplicateIds = (model: Model, id: string): UpdateReturn => ({
   model: evo(model, {
     screen: () =>

@@ -1,9 +1,8 @@
 /**
  * Configuration file discovery and loading.
  *
- * Searches the current working directory for a config file, imports it
- * via `jiti` (for TypeScript support without pre-compilation), and
- * validates the exported shape.
+ * Searches the current working directory for a config file, imports it via `jiti` (for TypeScript support without
+ * pre-compilation), and validates the exported shape.
  *
  * The config file is loaded from `.agentlint/config.ts`.
  *
@@ -20,13 +19,15 @@ import { normalizeConfig, type AgentlintConfig, type NormalizedConfig } from "..
  * Raised when the config file is missing, malformed, or fails to import.
  *
  * @since 0.1.0
- * @category errors
+ * @category Errors
  */
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agentlint/ConfigLoadError", {
   reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
   path: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
-  /** Nearest ancestor of `path` that has a config, when the working directory has none. */
+  /**
+   * Nearest ancestor of `path` that has a config, when the working directory has none.
+   */
   ancestor: Schema.optional(Schema.String),
 }) {
   override get message(): string {
@@ -47,7 +48,7 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agen
  * Project-relative config file path.
  *
  * @since 0.1.0
- * @category constants
+ * @category Constants
  */
 const CONFIG_PATH = [".agentlint", "config.ts"] as const;
 
@@ -55,14 +56,13 @@ const CONFIG_PATH = [".agentlint", "config.ts"] as const;
  * Package name the consumer config imports the rule API from.
  *
  * @since 0.2.0
- * @category constants
+ * @category Constants
  */
 const SELF_PACKAGE = "@aurelienbbn/agentlint";
 
 /**
- * Public entries of this package, as `[subpath, built file, source file]`.
- * The built files sit next to `bin.mjs`; the source files are relative to
- * this module.
+ * Public entries of this package, as `[subpath, built file, source file]`. The built files sit next to `bin.mjs`; the
+ * source files are relative to this module.
  */
 const SELF_ENTRIES = [
   [SELF_PACKAGE, "index.mjs", "../../index.ts"],
@@ -72,15 +72,13 @@ const SELF_ENTRIES = [
 ] as const;
 
 /**
- * Map `@aurelienbbn/agentlint` and its subpaths to the running copy of the
- * package so `npx @aurelienbbn/agentlint check` works in a repository that
- * never installed it. tsdown bundles this module into `dist/bin.mjs`, next
- * to `index.mjs`; under vitest it runs from `src/shared/infrastructure/`.
- * The consumer's rules are then evaluated by the same version that
- * validates them.
+ * Map `@aurelienbbn/agentlint` and its subpaths to the running copy of the package so `npx @aurelienbbn/agentlint
+ * check` works in a repository that never installed it. tsdown bundles this module into `dist/bin.mjs`, next to
+ * `index.mjs`; under vitest it runs from `src/shared/infrastructure/`. The consumer's rules are then evaluated by the
+ * same version that validates them.
  *
  * @since 0.2.0
- * @category internals
+ * @category Internals
  */
 const selfAliases = (fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<Record<string, string>> =>
   Effect.gen(function* () {
@@ -95,7 +93,7 @@ const selfAliases = (fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<
  * Discover the config file path.
  *
  * @since 0.1.0
- * @category internals
+ * @category Internals
  */
 const discoverConfig = (
   fs: FileSystem.FileSystem,
@@ -119,29 +117,29 @@ const discoverConfig = (
 /**
  * Effect service that discovers and loads the agentlint config file.
  *
- * Uses `jiti` under the hood so TypeScript configs work without a
- * separate compilation step. The config is imported and normalized once per
- * service instance; later `load()` calls return the same result.
- *
- * @example
- * ```ts
- * import { Console, Effect } from "effect"
- * import { ConfigLoader } from "./infrastructure/config-loader.js"
- *
- * const program = Effect.gen(function* () {
- *   const loader = yield* ConfigLoader
- *   const config = yield* loader.load()
- *   yield* Console.log(config.rules.map((rule) => rule.binding.id))
- * })
- * ```
+ * Uses `jiti` under the hood so TypeScript configs work without a separate compilation step. The config is imported and
+ * normalized once per service instance; later `load()` calls return the same result.
  *
  * @since 0.1.0
- * @category services
+ * @category Services
+ * @example
+ *   ```ts
+ *   import { Console, Effect } from "effect";
+ *   import { ConfigLoader } from "./infrastructure/config-loader.js";
+ *
+ *   const program = Effect.gen(function* () {
+ *     const loader = yield* ConfigLoader;
+ *     const config = yield* loader.load();
+ *     yield* Console.log(config.rules.map((rule) => rule.binding.id));
+ *   });
+ *   ```;
  */
 export class ConfigLoader extends Context.Service<
   ConfigLoader,
   {
-    /** Discover, import, and normalize the config file from the working directory. Memoized. */
+    /**
+     * Discover, import, and normalize the config file from the working directory. Memoized.
+     */
     load(): Effect.Effect<NormalizedConfig, ConfigLoadError>;
   }
 >()("agentlint/ConfigLoader") {

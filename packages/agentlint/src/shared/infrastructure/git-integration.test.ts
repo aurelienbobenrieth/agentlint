@@ -16,7 +16,9 @@ interface Repository {
   run<A, E>(use: (git: Git["Service"]) => Effect.Effect<A, E>, layer?: Layer.Layer<FileSystem.FileSystem>): Promise<A>;
 }
 
-/** A throwaway repository with one seed commit on `main`. */
+/**
+ * A throwaway repository with one seed commit on `main`.
+ */
 async function withRepository(seed: Record<string, string>, body: (repository: Repository) => Promise<void>) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "agentlint-git-")));
   const git = (...args: string[]) =>

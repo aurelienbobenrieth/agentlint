@@ -1,8 +1,8 @@
 /**
  * Current acceptance storage.
  *
- * `.agentlint/acceptances.jsonl` contains one sorted current record for each
- * exact finding identity. Git provides history.
+ * `.agentlint/acceptances.jsonl` contains one sorted current record for each exact finding identity. Git provides
+ * history.
  *
  * @module
  * @since 0.2.0
@@ -55,7 +55,9 @@ export interface ReconcileResult extends AcceptanceSnapshot {
 const ACCEPTANCE_PATH = [".agentlint", "acceptances.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
 
-/** Decode a portable decision batch. Conflicting decisions for one identity are rejected. */
+/**
+ * Decode a portable decision batch. Conflicting decisions for one identity are rejected.
+ */
 export function parseDecisions(content: string): AcceptanceDecision[] {
   const decode = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceDecision));
   const seen = new Set<string>();
@@ -73,7 +75,9 @@ export function parseDecisions(content: string): AcceptanceDecision[] {
   });
 }
 
-/** Parse and strictly validate a current-state JSONL file. */
+/**
+ * Parse and strictly validate a current-state JSONL file.
+ */
 export function parseAcceptances(content: string): AcceptanceRecord[] {
   const records: AcceptanceRecord[] = [];
   const seen = new Set<string>();
@@ -108,7 +112,9 @@ export function parseAcceptances(content: string): AcceptanceRecord[] {
   return sortAcceptances(records);
 }
 
-/** Sort records by their complete identity, independently of insertion order. */
+/**
+ * Sort records by their complete identity, independently of insertion order.
+ */
 function sortAcceptances(records: ReadonlyArray<AcceptanceRecord>): AcceptanceRecord[] {
   return sortByKey(records, keyIndex(records));
 }
@@ -125,7 +131,9 @@ function sortByKey(
   return records.toSorted((left, right) => compareStrings(keyOf(left), keyOf(right)));
 }
 
-/** Serialize sorted current state as JSONL. */
+/**
+ * Serialize sorted current state as JSONL.
+ */
 export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): string {
   const sorted = sortAcceptances(records);
   return sorted.length === 0 ? "" : `${sorted.map((record) => JSON.stringify(record)).join("\n")}\n`;
@@ -134,9 +142,8 @@ export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): 
 /**
  * Apply new acceptances and check cleanup rules without performing I/O.
  *
- * A new record replaces only the same exact identity. A
- * partial view never removes other records. A complete view removes records
- * whose exact identities are absent.
+ * A new record replaces only the same exact identity. A partial view never removes other records. A complete view
+ * removes records whose exact identities are absent.
  */
 export function reconcileAcceptanceRecords(
   existing: ReadonlyArray<AcceptanceRecord>,

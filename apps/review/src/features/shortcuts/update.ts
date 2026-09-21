@@ -18,8 +18,10 @@ type Update = (model: Model, message: Message) => UpdateReturn;
 const DETAIL_HEADING = ".detail__head h1";
 const HELP_TRIGGER = "#help-trigger";
 
-/** Keyboard shortcuts resolve against what the reviewer currently sees. Several re-enter the root
- *  `update` with the click Message they stand for, so the root passes itself in. */
+/**
+ * Keyboard shortcuts resolve against what the reviewer currently sees. Several re-enter the root `update` with the
+ * click Message they stand for, so the root passes itself in.
+ */
 const pressedShortcut = (model: Model, action: Shortcut, update: Update): UpdateReturn => {
   if (action === "escape") {
     if (model.helpOpen) return update(model, Message.ClosedHelp());
@@ -80,8 +82,10 @@ const pressedShortcut = (model: Model, action: Shortcut, update: Update): Update
   }
 };
 
-/** Idempotent: Escape reaches us both as a keydown and as the dialog's native `cancel`. The dialog leaves
- *  the DOM on close, so focus returns to its trigger instead of falling to `<body>`. */
+/**
+ * Idempotent: Escape reaches us both as a keydown and as the dialog's native `cancel`. The dialog leaves the DOM on
+ * close, so focus returns to its trigger instead of falling to `<body>`.
+ */
 const closeHelp = (model: Model): UpdateReturn =>
   model.helpOpen
     ? { model: evo(model, { helpOpen: () => false }), commands: [FocusElement({ selector: HELP_TRIGGER })] }

@@ -16,7 +16,9 @@ export const Screen = defineTaggedUnion({
 });
 export type Screen = typeof Screen.Type;
 
-/** Queue holds everything a reviewer still owes a decision. Decisions holds what is already accepted. */
+/**
+ * Queue holds everything a reviewer still owes a decision. Decisions holds what is already accepted.
+ */
 export const View = S.Literals(["queue", "decisions"]);
 export type View = typeof View.Type;
 
@@ -71,7 +73,9 @@ const Toast = S.Struct({
   phase: ToastPhase,
 });
 
-/** What a finished detached review offers for export. Leaving is safe once none are pending. */
+/**
+ * What a finished detached review offers for export. Leaving is safe once none are pending.
+ */
 export const ExportKind = S.Literals(["feedback", "acceptances", "calibration"]);
 export type ExportKind = typeof ExportKind.Type;
 
@@ -120,30 +124,44 @@ export const Model = S.Struct({
   preferredApplication: S.NullOr(EditorApplicationId),
   query: S.String,
   selectedFindingId: S.NullOr(S.String),
-  /** False for a moment after the selection moved without the reviewer navigating (a decision removed the
-   *  selected finding). Decision shortcuts wait for it so a double tap cannot decide the next finding. */
+  /**
+   * False for a moment after the selection moved without the reviewer navigating (a decision removed the selected
+   * finding). Decision shortcuts wait for it so a double tap cannot decide the next finding.
+   */
   selectionSettled: S.Boolean,
-  /** Bumped by every selection change. Only the settle timer carrying the latest version settles. */
+  /**
+   * Bumped by every selection change. Only the settle timer carrying the latest version settles.
+   */
   selectionVersion: S.Number,
   drafts: S.Record(S.String, Draft),
   busyFindingId: S.NullOr(S.String),
   finishing: S.Boolean,
-  /** A decision was recorded but the follow-up state fetch failed; the screen may lag the server. */
+  /**
+   * A decision was recorded but the follow-up state fetch failed; the screen may lag the server.
+   */
   refreshFailed: S.Boolean,
   pendingExports: S.Array(ExportKind),
   helpOpen: S.Boolean,
   independentReview: S.Boolean,
   independentNotes: S.Record(S.String, S.String),
   revealedFindings: S.Array(S.String),
-  /** Modifier glyph for tooltips: ⌘ on Apple platforms, Ctrl elsewhere. */
+  /**
+   * Modifier glyph for tooltips: ⌘ on Apple platforms, Ctrl elsewhere.
+   */
   modKey: S.Literals(["⌘", "Ctrl"]),
-  /** Hovering the toast stack pauses expiry so a reader is never raced by the timer. */
+  /**
+   * Hovering the toast stack pauses expiry so a reader is never raced by the timer.
+   */
   toastsPaused: S.Boolean,
   toasts: S.Array(Toast),
   nextToastId: S.Number,
-  /** Set by a failed local write so the reviewer is told once, not on every keystroke. */
+  /**
+   * Set by a failed local write so the reviewer is told once, not on every keystroke.
+   */
   persistFailed: S.Boolean,
-  /** Bumped by every debounced save request. Only the timer carrying the latest version writes. */
+  /**
+   * Bumped by every debounced save request. Only the timer carrying the latest version writes.
+   */
   saveVersion: S.Number,
 });
 export type Model = typeof Model.Type;

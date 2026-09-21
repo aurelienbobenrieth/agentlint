@@ -1,4 +1,6 @@
-/** Proposal recording handler. @module @since 0.2.0 */
+/**
+ * Proposal recording handler. @module @since 0.2.0
+ */
 
 import { Clock, Effect } from "effect";
 import { Env } from "../../config/env.js";

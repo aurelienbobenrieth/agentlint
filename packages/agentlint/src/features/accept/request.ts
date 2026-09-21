@@ -1,4 +1,6 @@
-/** Acceptance command contracts. @module @since 0.2.0 */
+/**
+ * Acceptance command contracts. @module @since 0.2.0
+ */
 
 import { Schema } from "effect";
 import { Authority } from "../../domain/acceptance.js";

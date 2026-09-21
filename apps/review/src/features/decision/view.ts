@@ -9,7 +9,9 @@ import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 import { statusLabel } from "../../shared/ui/labels";
 
-/** Only the selected finding renders a decision form, so keyboard focus can target `.decision textarea`. */
+/**
+ * Only the selected finding renders a decision form, so keyboard focus can target `.decision textarea`.
+ */
 export const decisionForm = (
   state: ReviewStatePayload,
   finding: ReviewFindingPayload,

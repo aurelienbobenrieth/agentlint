@@ -7,7 +7,9 @@ import { persist, persistLater } from "../session/update";
 import type { fields } from "./messages";
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => {
-  /** A filter can hide the selected finding; the selection then moves to one that is still listed. */
+  /**
+   * A filter can hide the selected finding; the selection then moves to one that is still listed.
+   */
   const refilter = (change: (model: Model) => Model, save: (model: Model) => UpdateReturn = persist): UpdateReturn => {
     const reconciled = reconcileSelection(model, change(model));
     return appendCommands(save(reconciled.model), reconciled.commands ?? []);

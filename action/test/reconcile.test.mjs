@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { planReconciliation } from "../src/reconcile.mjs";
 
-/** @typedef {import("../src/artifact.mjs").Finding} Finding */
-/** @typedef {import("../src/reconcile.mjs").Thread} Thread */
+/**
+ * @typedef {import("../src/artifact.mjs").Finding} Finding
+ */
+/**
+ * @typedef {import("../src/reconcile.mjs").Thread} Thread
+ */
 
 /**
  * @param {Partial<Finding> & { digest: string }} overrides
@@ -30,7 +34,9 @@ function finding(overrides) {
   };
 }
 
-/** @param {Partial<Thread> & { digest: string }} overrides @returns {Thread} */
+/**
+ * @param {Partial<Thread> & { digest: string }} overrides @returns {Thread}
+ */
 function thread(overrides) {
   return { commentId: 1, resolved: false, threadId: "T_1", ...overrides };
 }

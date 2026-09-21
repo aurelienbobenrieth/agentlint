@@ -4,19 +4,16 @@ import { PatternError } from "../../domain/pattern-error.js";
  *
  * Compiles `RuleMatch` definitions into executable matchers:
  *
- * - `pattern` is code-shaped ("pattern by example"): the pattern source is
- *   parsed with the same grammar as the target file and compared
- *   structurally. `$NAME` captures one node, `$_` matches one node without
- *   capturing, `$$$NAME` matches zero or more trailing siblings.
- * - `query` is a raw tree-sitter query, for cases where grammar-level
- *   precision is needed.
+ * - `pattern` is code-shaped ("pattern by example"): the pattern source is parsed with the same grammar as the target
+ *   file and compared structurally. `$NAME` captures one node, `$_` matches one node without capturing, `$$$NAME`
+ *   matches zero or more trailing siblings.
+ * - `query` is a raw tree-sitter query, for cases where grammar-level precision is needed.
  *
- * Rule authors write code shapes, not visitor plumbing — the pattern is
- * validated against the real grammar at compile time, so a typo fails
- * loudly instead of never firing.
+ * Rule authors write code shapes, not visitor plumbing — the pattern is validated against the real grammar at compile
+ * time, so a typo fails loudly instead of never firing.
  *
- * Walks over a target file never recurse: a file's depth must not be able to
- * exhaust the stack. Only the author's own pattern is walked recursively.
+ * Walks over a target file never recurse: a file's depth must not be able to exhaust the stack. Only the author's own
+ * pattern is walked recursively.
  *
  * @module
  * @since 0.2.0
@@ -29,6 +26,7 @@ import { wrapNode } from "../infrastructure/parsed-node.js";
 import type { RuleMatch } from "../../domain/rule.js";
 import type { RuleContextImpl } from "../../domain/rule-context.js";
 import { Parser } from "../infrastructure/parser.js";
+import { walkTree } from "./tree-cursor.js";
 
 const SINGLE_METAVAR = /^\$[A-Z_][A-Z0-9_]*$/;
 const MULTI_METAVAR = /^\$\$\$[A-Z0-9_]*$/;
@@ -41,15 +39,25 @@ type Captures = Map<string, AgentlintNode>;
  */
 interface PatternNode {
   readonly type: string;
-  /** Source text with whitespace runs collapsed. */
+  /**
+   * Source text with whitespace runs collapsed.
+   */
   readonly text: string;
-  /** `$NAME` and `$_` stand for one node, `$$$NAME` for the remaining siblings. */
+  /**
+   * `$NAME` and `$_` stand for one node, `$$$NAME` for the remaining siblings.
+   */
   readonly placeholder: "single" | "multi" | undefined;
-  /** Named children only. */
+  /**
+   * Named children only.
+   */
   readonly children: ReadonlyArray<PatternNode>;
-  /** Index of the sequence placeholder among `children`, or -1. */
+  /**
+   * Index of the sequence placeholder among `children`, or -1.
+   */
   readonly multiIndex: number;
-  /** A sibling list with two sequence placeholders has no single reading and matches nothing. */
+  /**
+   * A sibling list with two sequence placeholders has no single reading and matches nothing.
+   */
   readonly ambiguous: boolean;
 }
 
@@ -75,7 +83,9 @@ function toPatternNode(node: AgentlintNode): PatternNode {
   };
 }
 
-/** Two nodes are the same code when their syntax trees agree. Formatting between tokens is not code. */
+/**
+ * Two nodes are the same code when their syntax trees agree. Formatting between tokens is not code.
+ */
 function sameCode(left: AgentlintNode, right: AgentlintNode): boolean {
   const pending: Array<readonly [AgentlintNode, AgentlintNode]> = [[left, right]];
   for (let pair = pending.pop(); pair !== undefined; pair = pending.pop()) {
@@ -99,7 +109,7 @@ function sameCode(left: AgentlintNode, right: AgentlintNode): boolean {
  * Structural comparison of a pattern node against a target node.
  *
  * @since 0.2.0
- * @category internals
+ * @category Internals
  */
 function matchNode(pattern: PatternNode, target: AgentlintNode, captures: Captures): boolean {
   if (pattern.placeholder === "single") {
@@ -172,9 +182,8 @@ function matchChildren(
 }
 
 /**
- * Parse contexts tried in order when compiling a pattern. Fragments like
- * `limit: $_` are not valid statements, so they are re-parsed inside an
- * expression or object wrapper until one parses cleanly.
+ * Parse contexts tried in order when compiling a pattern. Fragments like `limit: $_` are not valid statements, so they
+ * are re-parsed inside an expression or object wrapper until one parses cleanly.
  */
 const PATTERN_CONTEXTS: ReadonlyArray<(pattern: string) => string> = [
   (pattern) => pattern,
@@ -194,9 +203,8 @@ function hasErrorNode(root: AgentlintNode): boolean {
 }
 
 /**
- * Descend while a node has exactly one named child, stripping parser
- * scaffolding (program, expression_statement, wrappers) down to the node
- * the author actually wrote.
+ * Descend while a node has exactly one named child, stripping parser scaffolding (program, expression_statement,
+ * wrappers) down to the node the author actually wrote.
  */
 function effectivePatternNode(root: AgentlintNode): AgentlintNode {
   let node = root;
@@ -208,7 +216,9 @@ function effectivePatternNode(root: AgentlintNode): AgentlintNode {
   }
 }
 
-/** `where` sub-patterns compiled for the same grammar as their pattern. */
+/**
+ * `where` sub-patterns compiled for the same grammar as their pattern.
+ */
 interface ResolvedWhere {
   readonly has: PatternNode | undefined;
   readonly notHas: PatternNode | undefined;
@@ -231,10 +241,9 @@ interface CompiledQuery {
 type CompiledMatch = CompiledPattern | CompiledQuery;
 
 /**
- * Node types that indicate a fragment was parsed in a misleading context.
- * `limit: $_` parses raw as a labeled statement (and `(limit: $_)` as an
- * expression with a bogus type annotation), but the author almost always
- * means an object property — a later context wins when available.
+ * Node types that indicate a fragment was parsed in a misleading context. `limit: $_` parses raw as a labeled statement
+ * (and `(limit: $_)` as an expression with a bogus type annotation), but the author almost always means an object
+ * property — a later context wins when available.
  */
 const DEPRIORITIZED_TYPES = new Set(["labeled_statement", "parenthesized_expression", "block"]);
 
@@ -242,7 +251,7 @@ const DEPRIORITIZED_TYPES = new Set(["labeled_statement", "parenthesized_express
  * Compile a pattern string to its effective pattern node for `grammar`.
  *
  * @since 0.2.0
- * @category internals
+ * @category Internals
  */
 const compilePatternNode = Effect.fn("compilePatternNode")(function* (
   ruleId: string,
@@ -269,7 +278,9 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
   return yield* new PatternError({ ruleId, reason: "pattern_parse", grammar, detail: pattern });
 });
 
-/** Compile one `match` entry, with its `where` constraints, for one grammar. */
+/**
+ * Compile one `match` entry, with its `where` constraints, for one grammar.
+ */
 const compileMatch = Effect.fn("compileMatch")(function* (ruleId: string, match: RuleMatch, grammar: string) {
   if (match.pattern !== undefined) {
     const patternNode = yield* compilePatternNode(ruleId, match.pattern, grammar);
@@ -307,13 +318,17 @@ const compileMatch = Effect.fn("compileMatch")(function* (ruleId: string, match:
  * A rule's matches compiled for one grammar.
  *
  * @since 0.2.0
- * @category models
+ * @category Models
  */
 export interface RunnableMatches {
   readonly compiled: ReadonlyArray<CompiledMatch>;
-  /** Pattern matches bucketed by the node type they can match, computed once. */
+  /**
+   * Pattern matches bucketed by the node type they can match, computed once.
+   */
   readonly byType: ReadonlyMap<string, ReadonlyArray<CompiledPattern>>;
-  /** Raw tree-sitter query matches, computed once. */
+  /**
+   * Raw tree-sitter query matches, computed once.
+   */
   readonly queries: ReadonlyArray<CompiledQuery>;
 }
 
@@ -321,11 +336,15 @@ interface CompileInput {
   readonly ruleId: string;
   readonly matches: ReadonlyArray<RuleMatch>;
   readonly grammar: string;
-  /** Every grammar among the files the rule applies to in this run. */
+  /**
+   * Every grammar among the files the rule applies to in this run.
+   */
   readonly grammars: ReadonlyArray<string>;
 }
 
-/** Whether `match` is written in a language other than `grammar`, as opposed to being written wrong. */
+/**
+ * Whether `match` is written in a language other than `grammar`, as opposed to being written wrong.
+ */
 function isLanguageMismatch(error: unknown): error is PatternError {
   return error instanceof PatternError && (error.reason === "pattern_parse" || error.reason === "query_invalid");
 }
@@ -338,7 +357,7 @@ function isLanguageMismatch(error: unknown): error is PatternError {
  * grammar in `grammars`. A match that compiles for none of them is a mistake and fails with its first error.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export const compileMatches = Effect.fn("compileMatches")(function* (input: CompileInput) {
   const compiled: CompiledMatch[] = [];
@@ -435,11 +454,10 @@ function disposeCompiled(compiled: ReadonlyArray<CompiledMatch>): void {
 }
 
 /**
- * Release the native tree-sitter queries held by a compiled match set.
- * The set must not be run again afterwards.
+ * Release the native tree-sitter queries held by a compiled match set. The set must not be run again afterwards.
  *
  * @since 0.2.0
- * @category execution
+ * @category Execution
  */
 export function disposeMatches(runnable: RunnableMatches): void {
   disposeCompiled(runnable.compiled);
@@ -451,53 +469,31 @@ const nodeKey = (node: AgentlintNode): string =>
   );
 
 /**
- * Run compiled matches against a parsed file, reporting findings into the
- * rule's context.
+ * Run compiled matches against a parsed file, reporting findings into the rule's context.
  *
  * @since 0.2.0
- * @category execution
+ * @category Execution
  */
 export function runMatches(tree: Tree, runnable: RunnableMatches, context: RuleContextImpl): void {
   const { byType, queries } = runnable;
   const reported = new Set<string>();
 
   if (byType.size > 0) {
-    const cursor = tree.walk();
-    // Child indices from the root to the cursor, so a finding's structural position needs no climb back up.
-    const position: number[] = [];
-    try {
-      for (let reachedEnd = false; !reachedEnd;) {
-        const candidates = byType.get(cursor.nodeType);
-        if (candidates) {
-          const inner = cursor.currentNode;
-          const node = wrapNode(inner);
-          for (const candidate of candidates) {
-            const captures: Captures = new Map();
-            if (matchNode(candidate.patternNode, node, captures) && whereHolds(inner, candidate.where)) {
-              // One node is one finding for a rule. The first declared match that applies names it.
-              reported.add(nodeKey(node));
-              context.reportAt({ node, message: interpolatePattern(candidate.message, captures) }, position);
-              break;
-            }
-          }
-        }
-
-        if (cursor.gotoFirstChild()) {
-          position.push(0);
-          continue;
-        }
-        while (!cursor.gotoNextSibling()) {
-          if (!cursor.gotoParent()) {
-            reachedEnd = true;
+    walkTree(tree, (inner, position) => {
+      const candidates = byType.get(inner.type);
+      if (candidates) {
+        const node = wrapNode(inner);
+        for (const candidate of candidates) {
+          const captures: Captures = new Map();
+          if (matchNode(candidate.patternNode, node, captures) && whereHolds(inner, candidate.where)) {
+            // One node is one finding for a rule. The first declared match that applies names it.
+            reported.add(nodeKey(node));
+            context.reportAt({ node, message: interpolatePattern(candidate.message, captures) }, position);
             break;
           }
-          position.pop();
         }
-        if (!reachedEnd) position[position.length - 1] = (position.at(-1) ?? 0) + 1;
       }
-    } finally {
-      cursor.delete();
-    }
+    });
   }
 
   for (const compiledQuery of queries) {

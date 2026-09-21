@@ -9,7 +9,9 @@ import { gitAuthOptions } from "../src/github.mjs";
 import { localCli } from "../src/inputs.mjs";
 import { isActionComment } from "../src/render.mjs";
 
-/** @type {string[]} */
+/**
+ * @type {string[]}
+ */
 const cleanup = [];
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -28,7 +30,9 @@ describe("childEnv", () => {
       "NODE_AUTH_TOKEN",
       "NPM_TOKEN",
     ]);
-    /** @type {NodeJS.ProcessEnv} */
+    /**
+     * @type {NodeJS.ProcessEnv}
+     */
     const parent = Object.fromEntries(CREDENTIAL_VARIABLES.map((name) => [name, "secret"]));
     Object.assign(parent, {
       "INPUT_GITHUB-TOKEN": "secret",

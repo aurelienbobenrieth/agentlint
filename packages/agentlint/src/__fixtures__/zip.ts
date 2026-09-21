@@ -1,4 +1,6 @@
-/** Tiny ZIP writer for tests: local headers, central directory, end record. */
+/**
+ * Tiny ZIP writer for tests: local headers, central directory, end record.
+ */
 
 import { crc32, deflateRawSync } from "node:zlib";
 

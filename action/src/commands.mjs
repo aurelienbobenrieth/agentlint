@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * `/agentlint ...` commands from issue comments and review comment replies:
- * parsing (pure), the permission check, and the approve / check flows.
+ * `/agentlint ...` commands from issue comments and review comment replies: parsing (pure), the permission check, and
+ * the approve / check flows.
  */
 
 import { isRecord } from "./artifact.mjs";
@@ -20,11 +20,17 @@ import {
 } from "./gate.mjs";
 import { digestFromBody, headFromSummary, isActionComment, renderFailureReply } from "./render.mjs";
 
-/** @typedef {import("./gate.mjs").Context} Context */
-/** @typedef {import("./gate.mjs").PullRequest} PullRequest */
+/**
+ * @typedef {import("./gate.mjs").Context} Context
+ */
+/**
+ * @typedef {import("./gate.mjs").PullRequest} PullRequest
+ */
 
 /**
- * @typedef {{ ok: true, name: "check" } | { ok: true, name: "approve", selector: string, reason: string } | { ok: false, message: string }} Command
+ * @typedef {{ ok: true; name: "check" }
+ *   | { ok: true; name: "approve"; selector: string; reason: string }
+ *   | { ok: false; message: string }} Command
  */
 
 const PREFIX = "/agentlint";
@@ -36,7 +42,9 @@ const USAGE =
   'Usage: `/agentlint approve <digest|path:line> --reason "why this satisfies the standard"`, `/agentlint check`, ' +
   "or reply `/agentlint approve <reason>` on an agentlint inline comment.";
 
-/** @param {string} raw */
+/**
+ * @param {string} raw
+ */
 function cleanReason(raw) {
   const trimmed = raw
     .trim()
@@ -46,15 +54,17 @@ function cleanReason(raw) {
   return unquoted.trim().slice(0, REASON_LIMIT).trim();
 }
 
-/** @param {string} selector */
+/**
+ * @param {string} selector
+ */
 export function isSelector(selector) {
   // A selector is passed to the CLI as an argument: it never looks like an option.
   return !selector.startsWith("-") && (DIGEST.test(selector) || FILE_LINE.test(selector));
 }
 
 /**
- * @param {string} body comment body
- * @param {{ implicitSelector?: string | null }} [options] the digest of the parent inline comment, for replies
+ * @param {string} body Comment body
+ * @param {{ implicitSelector?: string | null }} [options] The digest of the parent inline comment, for replies
  * @returns {Command | null} `null` when the body is not an agentlint command
  */
 export function parseCommand(body, options = {}) {
@@ -194,7 +204,7 @@ async function checkoutHead(ctx, pull) {
  * @param {Context} ctx
  * @param {Surface} surface
  * @param {string} selector
- * @returns {Promise<string | null>} the refusal, or `null` when the selector may be used
+ * @returns {Promise<string | null>} The refusal, or `null` when the selector may be used
  */
 async function staleSelectorRefusal(ctx, surface, selector) {
   if (DIGEST.test(selector)) return null;
@@ -215,7 +225,9 @@ async function staleSelectorRefusal(ctx, surface, selector) {
 
 const PUSH_ATTEMPTS = 3;
 
-/** @param {string} stderr of a failed `git push` */
+/**
+ * @param {string} stderr Of a failed `git push`
+ */
 function headMoved(stderr) {
   return /\[rejected\]|non-fast-forward|fetch first/.test(stderr);
 }
@@ -234,7 +246,7 @@ function commitSubject(message, fallback) {
  * @param {Surface} surface
  * @param {PullRequest} pull
  * @param {string} base
- * @param {{ selector: string, reason: string }} command
+ * @param {{ selector: string; reason: string }} command
  * @returns {Promise<"pushed" | "refused" | "moved" | "failed">} `refused` and `failed` have replied to the commenter
  */
 async function approveOnce(ctx, surface, pull, base, command) {
@@ -295,7 +307,7 @@ async function approveOnce(ctx, surface, pull, base, command) {
  * @param {Surface} surface
  * @param {PullRequest} pull
  * @param {string} base
- * @param {{ selector: string, reason: string }} command
+ * @param {{ selector: string; reason: string }} command
  * @returns {Promise<"pushed" | "refused" | "failed">}
  */
 async function approve(ctx, surface, pull, base, command) {

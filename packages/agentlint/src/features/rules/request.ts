@@ -1,4 +1,6 @@
-/** Rule command contracts. @module @since 0.2.0 */
+/**
+ * Rule command contracts. @module @since 0.2.0
+ */
 
 import { Schema } from "effect";
 import { FindingRecord } from "../../domain/finding.js";

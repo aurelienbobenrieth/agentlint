@@ -73,7 +73,9 @@ const topbar = (
 
 const RESIZE_STEP = 16;
 
-/** The window-splitter keys: arrows step, Home and End jump to the limits. */
+/**
+ * The window-splitter keys: arrows step, Home and End jump to the limits.
+ */
 const resizeTarget = (key: string, width: number): number | null => {
   switch (key) {
     case "ArrowLeft":

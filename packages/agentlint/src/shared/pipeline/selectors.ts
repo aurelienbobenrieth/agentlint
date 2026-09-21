@@ -2,8 +2,9 @@
  * Human-friendly finding selector resolution.
  *
  * Supported selectors:
- * - latest-check ordinals: `1` or `[1]`
- * - full finding hash, or a unique complete identity digest prefix of at least 7 hex characters
+ *
+ * - Latest-check ordinals: `1` or `[1]`
+ * - Full finding hash, or a unique complete identity digest prefix of at least 7 hex characters
  * - `file:line`
  *
  * @module
@@ -17,7 +18,9 @@ export type SelectorResolution =
   | { readonly ok: true; readonly finding: FindingRecord }
   | { readonly ok: false; readonly message: string };
 
-/** A hexadecimal digest prefix long enough to be intentional. */
+/**
+ * A hexadecimal digest prefix long enough to be intentional.
+ */
 const HASH_PREFIX = /^[0-9a-f]{7,}$/;
 
 function normalizeSelector(selector: string): string {

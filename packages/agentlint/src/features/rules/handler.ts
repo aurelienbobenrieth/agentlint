@@ -1,4 +1,6 @@
-/** Rule listing, fixture testing, and calibration handlers. @module @since 0.2.0 */
+/**
+ * Rule listing, fixture testing, and calibration handlers. @module @since 0.2.0
+ */
 
 import { Effect } from "effect";
 import { compareStrings } from "../../domain/compare.js";

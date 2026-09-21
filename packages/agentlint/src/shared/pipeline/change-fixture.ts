@@ -3,13 +3,17 @@ import { fixtureHunks } from "./change-hunks.js";
 import type { ChangeFixture, ChangeSet, ChangedFile } from "../../domain/rule.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 
-/** Same normalization and digest as the Git change source, so fixture snapshots match real evidence. */
+/**
+ * Same normalization and digest as the Git change source, so fixture snapshots match real evidence.
+ */
 function snapshot(source: string): { readonly content: string; readonly digest: string } {
   const content = normalizeLineEndings(source);
   return { content, digest: createHash("sha256").update(content).digest("hex") };
 }
 
-/** Normalize a compact before-and-after fixture to the public change contract. */
+/**
+ * Normalize a compact before-and-after fixture to the public change contract.
+ */
 export function normalizeChangeFixture(fixture: ChangeFixture): ChangeSet {
   if ("change" in fixture) return fixture.change;
   const before = fixture.before ?? {};

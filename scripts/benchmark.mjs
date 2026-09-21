@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-/** Reproducible end-to-end latency probe, including CLI startup and persistence. */
+/**
+ * Reproducible end-to-end latency probe, including CLI startup and persistence.
+ */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

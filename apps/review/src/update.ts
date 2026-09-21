@@ -11,7 +11,9 @@ import { Message } from "./message";
 import type { Model } from "./model";
 import type { UpdateReturn } from "./shared/update";
 
-/** Every feature contributes the handlers for the tags it declared; `match` proves the union is covered. */
+/**
+ * Every feature contributes the handlers for the tags it declared; `match` proves the union is covered.
+ */
 export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ...session.cases(model),

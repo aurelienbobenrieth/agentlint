@@ -3,8 +3,7 @@ import type { FixtureReport } from "./domain/fixture-report.js";
 /**
  * Promise-based testing helpers for rule and plugin authors.
  *
- * These wrap the Effect-based fixture runners with the live parser layers so
- * a vitest suite needs no Effect plumbing:
+ * These wrap the Effect-based fixture runners with the live parser layers so a vitest suite needs no Effect plumbing:
  *
  * ```ts
  * import { testRuleFixtures } from "@aurelienbbn/agentlint/testing";
@@ -36,18 +35,18 @@ const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), L
  * Run a detector's activation and silence fixtures with real parsing.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
   return Effect.runPromise(runRuleFixtures(rule).pipe(Effect.provide(TestingLayer)));
 }
 
 /**
- * Run a state rule against one in-memory snippet with real parsing. `file` is
- * a pseudo-filename whose extension selects the grammar (default `fixture.tsx`).
+ * Run a state rule against one in-memory snippet with real parsing. `file` is a pseudo-filename whose extension selects
+ * the grammar (default `fixture.tsx`).
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function testRuleOnSource(
   rule: StateRule,
@@ -58,18 +57,19 @@ export function testRuleOnSource(
 }
 
 /**
- * Run a change rule against one fixture, either compact before/after
- * repositories or an exact normalized change set. Returns the same
- * `FindingRecord` shape `agentlint check` produces.
+ * Run a change rule against one fixture, either compact before/after repositories or an exact normalized change set.
+ * Returns the same `FindingRecord` shape `agentlint check` produces.
  *
  * @since 0.2.0
- * @category constructors
+ * @category Constructors
  */
 export function testRuleOnChange(rule: ChangeRule, fixture: ChangeFixture): Promise<ReadonlyArray<FindingRecord>> {
   return Promise.resolve(runRuleOnChange(rule, normalizeChangeFixture(fixture)));
 }
 
-/** Run repository-wide detector fixtures without exposing engine infrastructure. */
+/**
+ * Run repository-wide detector fixtures without exposing engine infrastructure.
+ */
 export function testRuleOnSources(
   rule: StateRule,
   sources: ReadonlyArray<readonly [string, string]>,

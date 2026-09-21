@@ -27,9 +27,10 @@ export const FinishReview = Command.define("FinishReview", {
   }).pipe(Effect.catch((error) => Effect.succeed(Message.FailedFinish({ message: errorMessage(error) })))),
 });
 
-/** Detached reviews finish in the browser; the server call only lets a local host shut down. A page that
- *  embeds its state is a standalone artifact: whatever origin serves it is not a review server, so
- *  nothing is posted there. */
+/**
+ * Detached reviews finish in the browser; the server call only lets a local host shut down. A page that embeds its
+ * state is a standalone artifact: whatever origin serves it is not a review server, so nothing is posted there.
+ */
 export const PrepareDetachedFinish = Command.define("PrepareDetachedFinish", {
   messages: [Message.PreparedDetachedFinish],
   execute: Effect.gen(function* () {
@@ -39,7 +40,9 @@ export const PrepareDetachedFinish = Command.define("PrepareDetachedFinish", {
   }),
 });
 
-/** With a `kind`, success is reported as `ExportedOutput` so the finished screen knows what is still owed. */
+/**
+ * With a `kind`, success is reported as `ExportedOutput` so the finished screen knows what is still owed.
+ */
 export const DownloadText = Command.define("DownloadText", {
   args: { content: S.String, filename: S.String, kind: S.optional(ExportKind) },
   messages: [Message.CompletedUtility, Message.ExportedOutput],

@@ -57,7 +57,9 @@ const listedArtifacts = [
 ];
 const listing = JSON.stringify({ artifacts: listedArtifacts });
 
-/** A `Gh` that serves one artifact listing for pull request 42. */
+/**
+ * A `Gh` that serves one artifact listing for pull request 42.
+ */
 const ghWithListing = (artifacts: ReadonlyArray<unknown>, calls: string[][], zip: Uint8Array) =>
   Layer.succeed(
     Gh,
@@ -70,7 +72,9 @@ const ghWithListing = (artifacts: ReadonlyArray<unknown>, calls: string[][], zip
     }),
   );
 
-/** Collects what the handler writes to stderr. */
+/**
+ * Collects what the handler writes to stderr.
+ */
 const captureErrors = (lines: string[]) =>
   Effect.provideService(Console.Console, {
     ...globalThis.console,

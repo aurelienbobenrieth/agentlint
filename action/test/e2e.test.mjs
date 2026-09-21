@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * End-to-end runs of `main.mjs` per event, with `fetch` replaced by a recorder
- * and the agentlint CLI replaced by the fixture stub.
+ * End-to-end runs of `main.mjs` per event, with `fetch` replaced by a recorder and the agentlint CLI replaced by the
+ * fixture stub.
  */
 
 import { readFileSync } from "node:fs";
@@ -23,16 +23,20 @@ const HUMAN_DIGEST = "dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1
 const AGENT_DIGEST = "103d435f608a96c123f5d168f130495fdd20d00eacb575fb67f87e3849f6376a";
 
 /**
- * @typedef {{ method: string, url: string, body: unknown }} Recorded
+ * @typedef {{ method: string; url: string; body: unknown }} Recorded
  */
 
 /**
- * @param {Partial<Record<string, unknown>>} [overrides] keyed by `METHOD path`
+ * @param {Partial<Record<string, unknown>>} [overrides] Keyed by `METHOD path`
  */
 function createFetch(overrides = {}) {
-  /** @type {Recorded[]} */
+  /**
+   * @type {Recorded[]}
+   */
   const requests = [];
-  /** @type {Record<string, unknown>} */
+  /**
+   * @type {Record<string, unknown>}
+   */
   const routes = {
     "GET /repos/aurelienbobenrieth/agentlint/pulls/42/files": JSON.parse(
       readFileSync(join(fixtures, "pulls-files.json"), "utf8"),
@@ -60,7 +64,9 @@ function createFetch(overrides = {}) {
     },
     ...overrides,
   };
-  /** @type {typeof fetch} */
+  /**
+   * @type {typeof fetch}
+   */
   const fetchImpl = async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -74,13 +80,17 @@ function createFetch(overrides = {}) {
   return { requests, fetchImpl };
 }
 
-/** @type {string[]} */
+/**
+ * @type {string[]}
+ */
 const cleanup = [];
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-/** @param {string[]} args @param {string} cwd */
+/**
+ * @param {string[]} args @param {string} cwd
+ */
 async function g(args, cwd) {
   const result = await exec(["git", ...args], {
     cwd,
@@ -103,8 +113,10 @@ async function g(args, cwd) {
  * @returns {Record<string, unknown>}
  */
 function bodyOf(request) {
-  if (!request || typeof request.body !== "object" || request.body === null) throw new Error("request has no body");
-  return /** @type {Record<string, unknown>} */ (request.body);
+  if (!request || typeof request.body !== "object" || request.body === null || Array.isArray(request.body)) {
+    throw new Error("request has no object body");
+  }
+  return Object.fromEntries(Object.entries(request.body));
 }
 
 /**
@@ -119,13 +131,17 @@ function at(value, ...path) {
   for (const key of path) {
     if (Array.isArray(current) && typeof key === "number") current = current[key];
     else if (typeof current === "object" && current !== null && typeof key === "string")
-      current = /** @type {Record<string, unknown>} */ (current)[key];
+      current = /**
+       * @type {Record<string, unknown>}
+       */ (current)[key];
     else throw new Error(`no ${String(key)} in ${JSON.stringify(current)}`);
   }
   return current;
 }
 
-/** @param {string} path */
+/**
+ * @param {string} path
+ */
 const jsonLines = (path) =>
   readFile(path, "utf8")
     .then((text) =>
@@ -175,7 +191,9 @@ async function runAction(event, fixture, extra, routes = {}) {
   const installEnvLog = join(outputDir, "install-env.log");
   await writeFile(outputFile, "");
   const { requests, fetchImpl } = createFetch(routes);
-  /** @type {string[]} */
+  /**
+   * @type {string[]}
+   */
   const logs = [];
   const result = await run({
     env: {
@@ -216,9 +234,13 @@ async function runAction(event, fixture, extra, routes = {}) {
     outputFile: await readFile(outputFile, "utf8"),
     stepSummary: await readFile(join(outputDir, "summary.md"), "utf8").catch(() => ""),
     stubCalls: await jsonLines(stubLog),
-    /** @type {string[][]} names of the environment variables each CLI invocation received */
+    /**
+     * @type {string[][]} names of the environment variables each CLI invocation received
+     */
     stubEnvs: await jsonLines(stubEnvLog),
-    /** @type {string[][]} same for the install lifecycle script */
+    /**
+     * @type {string[][]} same for the install lifecycle script
+     */
     installEnvs: await jsonLines(installEnvLog),
   };
 }
@@ -374,7 +396,13 @@ describe("pull_request", () => {
     expect(requests.every((r) => r.method === "GET" || r.url === "/graphql")).toBe(true);
     const plan = JSON.parse(outputs.get("dry-run-plan") ?? "[]");
     expect(
-      plan.map((/** @type {unknown} */ entry) => `${String(at(entry, "method"))} ${String(at(entry, "url"))}`),
+      plan.map(
+        (
+          /**
+           * @type {unknown}
+           */ entry,
+        ) => `${String(at(entry, "method"))} ${String(at(entry, "url"))}`,
+      ),
     ).toEqual([
       `POST ${API}/repos/${REPO}/check-runs`,
       `POST ${API}/repos/${REPO}/pulls/42/reviews`,
@@ -496,7 +524,11 @@ describe("pull_request_review_comment", () => {
     // dry-run: nothing was sent, the push and the reaction are in the plan
     expect(requests.every((r) => r.method === "GET" || r.url === "/graphql")).toBe(true);
     const plan = JSON.parse(outputs.get("dry-run-plan") ?? "[]").map(
-      (/** @type {unknown} */ entry) => `${String(at(entry, "method"))} ${String(at(entry, "url"))}`,
+      (
+        /**
+         * @type {unknown}
+         */ entry,
+      ) => `${String(at(entry, "method"))} ${String(at(entry, "url"))}`,
     );
     expect(plan).toEqual([
       "GIT git push origin HEAD:refs/heads/feature/gate",
@@ -527,9 +559,15 @@ describe("workflow trust boundary", () => {
     expect(exitCode).toBe(0);
     expect(stubCalls.filter((call) => call.args[0] === "approve")).toEqual([]);
     const plan = JSON.parse(outputs.get("dry-run-plan") ?? "[]");
-    expect(plan.map((/** @type {unknown} */ entry) => String(at(entry, "url")))).toEqual([
-      `${API}/repos/${REPO}/pulls/42/comments/9002/replies`,
-    ]);
+    expect(
+      plan.map(
+        (
+          /**
+           * @type {unknown}
+           */ entry,
+        ) => String(at(entry, "url")),
+      ),
+    ).toEqual([`${API}/repos/${REPO}/pulls/42/comments/9002/replies`]);
   });
 
   it("rejects pull_request_target before executing repository code or calling GitHub", async () => {
@@ -541,7 +579,9 @@ describe("workflow trust boundary", () => {
   });
 });
 
-/** The credentials `runAction` plants in the step environment, plus every action input. */
+/**
+ * The credentials `runAction` plants in the step environment, plus every action input.
+ */
 const PLANTED = new Set([
   "GITHUB_TOKEN",
   "GH_TOKEN",
@@ -551,7 +591,9 @@ const PLANTED = new Set([
   "NPM_TOKEN",
 ]);
 
-/** @param {string} name */
+/**
+ * @param {string} name
+ */
 const bearsCredential = (name) => /^INPUT_/i.test(name) || PLANTED.has(name.toUpperCase());
 
 /**

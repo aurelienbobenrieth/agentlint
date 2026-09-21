@@ -16,7 +16,9 @@ const digestOf = async (source: string, file = "fixture.ts") => {
   return finding.fingerprint.digest;
 };
 
-/** The evidence captured for a whole file, read through a visitor on the grammar's root node. */
+/**
+ * The evidence captured for a whole file, read through a visitor on the grammar's root node.
+ */
 const structureOf = async (source: string, file: string, rootType: string) => {
   let structure: ReadonlyArray<string | number> | undefined;
   const rule = defineRule({

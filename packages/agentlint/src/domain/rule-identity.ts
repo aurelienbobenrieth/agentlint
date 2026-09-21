@@ -1,4 +1,6 @@
-/** Rule composition identity helpers. @module @since 0.2.0 */
+/**
+ * Rule composition identity helpers. @module @since 0.2.0
+ */
 
 import { FindingSource, bindingDigest, type CanonicalValue } from "./fingerprint.js";
 import type { AgentlintRule } from "./rule.js";
@@ -16,7 +18,9 @@ function materialBinding(rule: AgentlintRule): CanonicalValue {
   };
 }
 
-/** Build the exact source identity for all findings from one effective rule. */
+/**
+ * Build the exact source identity for all findings from one effective rule.
+ */
 export function findingSourceForRule(rule: AgentlintRule): FindingSource {
   return new FindingSource({
     standardId: rule.standard.id,

@@ -4,11 +4,11 @@ import type { AgentlintNode, Position } from "../../domain/node.js";
 /**
  * Private implementation of {@link AgentlintNode}.
  *
- * Wraps a tree-sitter `Node` and lazily creates child/parent wrappers
- * on first access. Nodes that are never traversed incur zero allocation.
+ * Wraps a tree-sitter `Node` and lazily creates child/parent wrappers on first access. Nodes that are never traversed
+ * incur zero allocation.
  *
  * @since 0.1.0
- * @category internals
+ * @category Internals
  */
 class AgentlintNodeImpl implements AgentlintNode {
   readonly #inner: TSNode;
@@ -87,12 +87,11 @@ class AgentlintNodeImpl implements AgentlintNode {
 /**
  * Wrap a raw tree-sitter node in the public {@link AgentlintNode} interface.
  *
- * This is the only bridge between the internal tree-sitter dependency
- * and the consumer-facing API. All child/parent nodes are lazily wrapped
- * on access.
+ * This is the only bridge between the internal tree-sitter dependency and the consumer-facing API. All child/parent
+ * nodes are lazily wrapped on access.
  *
  * @since 0.1.0
- * @category constructors
+ * @category Constructors
  */
 export function wrapNode(inner: TSNode): AgentlintNode {
   return new AgentlintNodeImpl(inner);

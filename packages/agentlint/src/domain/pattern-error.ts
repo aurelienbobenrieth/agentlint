@@ -1,11 +1,11 @@
 import { Schema } from "effect";
 
 /**
- * Raised when a `match` definition cannot be compiled for a grammar —
- * a pattern that does not parse, or a malformed tree-sitter query.
+ * Raised when a `match` definition cannot be compiled for a grammar — a pattern that does not parse, or a malformed
+ * tree-sitter query.
  *
  * @since 0.2.0
- * @category errors
+ * @category Errors
  */
 export class PatternError extends Schema.TaggedError<PatternError>()("agentlint/PatternError", {
   ruleId: Schema.String,

@@ -1,8 +1,7 @@
 // @ts-check
 /**
- * Entry point of the composite action. Reads the event and the inputs from the
- * environment, dispatches to the gate or the command flow, writes the step
- * outputs, and exits with the gate code.
+ * Entry point of the composite action. Reads the event and the inputs from the environment, dispatches to the gate or
+ * the command flow, writes the step outputs, and exits with the gate code.
  */
 
 import { randomUUID } from "node:crypto";
@@ -17,7 +16,9 @@ import { runGate } from "./gate.mjs";
 import { createGitHub } from "./github.mjs";
 import { InputError, isPublishedVersion, localCli, readInputs, resolveCli } from "./inputs.mjs";
 
-/** @typedef {import("./gate.mjs").Context} Context */
+/**
+ * @typedef {import("./gate.mjs").Context} Context
+ */
 
 /**
  * @param {(line: string) => void} write
@@ -59,12 +60,14 @@ async function writeOutputs(outputs, path) {
  * @param {NodeJS.ProcessEnv} options.env
  * @param {typeof fetch} [options.fetchImpl]
  * @param {import("./github.mjs").Logger} [options.log]
- * @returns {Promise<{ exitCode: number, outputs: Map<string, string> }>}
+ * @returns {Promise<{ exitCode: number; outputs: Map<string, string> }>}
  */
 export async function run(options) {
   const { env } = options;
   const log = options.log ?? createLogger((line) => process.stdout.write(`${line}\n`));
-  /** @type {Map<string, string>} */
+  /**
+   * @type {Map<string, string>}
+   */
   const outputs = new Map([
     ["gate", ""],
     ["unresolved", ""],
@@ -74,7 +77,9 @@ export async function run(options) {
   ]);
 
   let exitCode = 0;
-  /** @type {Context["github"] | null} */
+  /**
+   * @type {Context["github"] | null}
+   */
   let github = null;
   try {
     const inputs = readInputs(env);
@@ -96,7 +101,9 @@ export async function run(options) {
       fetchImpl: options.fetchImpl ?? fetch,
       log,
     });
-    /** @type {Context} */
+    /**
+     * @type {Context}
+     */
     const ctx = {
       inputs,
       env,
@@ -107,21 +114,26 @@ export async function run(options) {
       workspace,
       workingDirectory,
       github,
-      cli: createCli(resolveCli(inputs.version, workspace), workingDirectory, env, {
-        // A `file:` version names the build to run. A published version yields to the copy the repository installed.
-        local: isPublishedVersion(inputs.version)
-          ? async () => {
-              const local = await localCli(workingDirectory, workspace);
-              if (!local) return null;
-              if (local.version !== inputs.version) {
-                log.warn(
-                  `running the installed @aurelienbbn/agentlint ${local.version}, not the version input ${inputs.version}`,
-                );
-              }
-              return local.argv;
+      cli: createCli(
+        resolveCli(inputs.version, workspace),
+        workingDirectory,
+        env,
+        isPublishedVersion(inputs.version)
+          ? {
+              // A published version yields to the copy the repository installed.
+              local: async () => {
+                const local = await localCli(workingDirectory, workspace);
+                if (!local) return null;
+                if (local.version !== inputs.version) {
+                  log.warn(
+                    `running the installed @aurelienbbn/agentlint ${local.version}, not the version input ${inputs.version}`,
+                  );
+                }
+                return local.argv;
+              },
             }
-          : undefined,
-      }),
+          : {},
+      ),
       log,
       outputs,
     };

@@ -3,11 +3,10 @@
 /**
  * Create or refresh the gitignored reference clones under `.agents/ref-repos/`.
  *
- * Each clone is shallow and always points at the upstream default branch. The
- * list is the source of truth; the clones themselves are never committed.
+ * Each clone is shallow and always points at the upstream default branch. The list is the source of truth; the clones
+ * themselves are never committed.
  *
- *   node scripts/sync-ref-repos.mjs            # sync every repo
- *   node scripts/sync-ref-repos.mjs effect oxc # sync a subset
+ * Node scripts/sync-ref-repos.mjs # sync every repo node scripts/sync-ref-repos.mjs effect oxc # sync a subset
  */
 
 import { spawnSync } from "node:child_process";

@@ -1,6 +1,8 @@
 import { defineConfig, defineRule, type ChangeHunk } from "@aurelienbbn/agentlint";
 
-/** Working-tree line number of the hunk line at `index`. */
+/**
+ * Working-tree line number of the hunk line at `index`.
+ */
 const newLineAt = (hunk: ChangeHunk, index: number): number =>
   hunk.newStart + hunk.lines.slice(0, index).filter((line) => line.kind !== "deletion").length;
 

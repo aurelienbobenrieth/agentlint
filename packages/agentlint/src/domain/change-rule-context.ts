@@ -1,4 +1,6 @@
-/** Change detector context and finding construction. @module @since 0.2.0 */
+/**
+ * Change detector context and finding construction. @module @since 0.2.0
+ */
 
 import { canonicalDigest, fingerprintChange, normalizeRepositoryPath } from "./fingerprint.js";
 import { FindingRecord } from "./finding.js";
@@ -19,15 +21,14 @@ function operation(file: ChangedFile): "add" | "delete" | "modify" | "rename" {
 }
 
 export class ChangeRuleContextImpl implements ChangeRuleContext {
+  readonly rule: ChangeRule;
   readonly change: ChangeSet;
   readonly findings: FindingRecord[] = [];
   #keys = new Set<string>();
   #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
-  constructor(
-    readonly rule: ChangeRule,
-    change: ChangeSet,
-  ) {
+  constructor(rule: ChangeRule, change: ChangeSet) {
+    this.rule = rule;
     this.change = change;
     this.#sourceIdentity = findingSourceForRule(rule);
   }

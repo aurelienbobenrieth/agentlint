@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-/** agentlint command line application. @module @since 0.2.0 */
+/**
+ * Agentlint command line application. @module @since 0.2.0
+ */
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -182,8 +184,13 @@ const check = Command.make(
     const config = yield* (yield* ConfigLoader).load();
     const output =
       format === "jsonl"
-        ? formatCheckJsonl(result.unresolved, config, result.lineage)
-        : yield* formatCheckText(result.unresolved, config, __AGENTLINT_VERSION__, result.lineage);
+        ? formatCheckJsonl({ findings: result.unresolved, config, lineage: result.lineage })
+        : yield* formatCheckText({
+            findings: result.unresolved,
+            config,
+            version: __AGENTLINT_VERSION__,
+            lineage: result.lineage,
+          });
     if (output) yield* Console.log(output);
     if (format === "text")
       yield* Console.log(

@@ -1,11 +1,10 @@
 import { Schema } from "effect";
 
 /**
- * Raised when parsing fails — e.g. missing grammar, corrupt WASM, or
- * tree-sitter returning a null tree.
+ * Raised when parsing fails — e.g. missing grammar, corrupt WASM, or tree-sitter returning a null tree.
  *
  * @since 0.1.0
- * @category errors
+ * @category Errors
  */
 export class ParserError extends Schema.TaggedError<ParserError>()("agentlint/ParserError", {
   reason: Schema.Literals(["wasm_missing", "unknown_grammar", "init_failed", "load_failed", "parse_failed"]),

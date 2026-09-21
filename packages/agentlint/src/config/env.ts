@@ -3,12 +3,11 @@
  *
  * **This is the only module in the codebase that may touch `process.*`.**
  *
- * Every other module that needs the working directory, TTY state, colour
- * preference, or exit-code control must depend on the `Env` service
- * instead of reaching into `process` directly.
+ * Every other module that needs the working directory, TTY state, colour preference, or exit-code control must depend
+ * on the `Env` service instead of reaching into `process` directly.
  *
- * The layer is built once at startup with `Layer.sync` (no external
- * dependencies), so it can be provided before every other service layer.
+ * The layer is built once at startup with `Layer.sync` (no external dependencies), so it can be provided before every
+ * other service layer.
  *
  * @module
  * @since 0.1.0
@@ -21,26 +20,42 @@ import { userInfo } from "node:os";
  * Read-only snapshot of the runtime environment.
  *
  * @since 0.1.0
- * @category services
+ * @category Services
  */
 export class Env extends Context.Service<
   Env,
   {
-    /** Current working directory, captured at startup. */
+    /**
+     * Current working directory, captured at startup.
+     */
     readonly cwd: string;
-    /** CLI arguments excluding node and script path. */
+    /**
+     * CLI arguments excluding node and script path.
+     */
     readonly argv: ReadonlyArray<string>;
-    /** Actor inferred for acceptance records. */
+    /**
+     * Actor inferred for acceptance records.
+     */
     readonly actor: string;
-    /** Captured child-process environment. Infrastructure may narrow or override it per command. */
+    /**
+     * Captured child-process environment. Infrastructure may narrow or override it per command.
+     */
     readonly variables?: Readonly<NodeJS.ProcessEnv>;
-    /** Node `process.platform` value (e.g. `win32`, `darwin`, `linux`). */
+    /**
+     * Node `process.platform` value (e.g. `win32`, `darwin`, `linux`).
+     */
     readonly platform: string;
-    /** `true` when ANSI colour codes should be suppressed (`NO_COLOR` or non-TTY). */
+    /**
+     * `true` when ANSI colour codes should be suppressed (`NO_COLOR` or non-TTY).
+     */
     readonly noColor: boolean;
-    /** `true` when stdout is an interactive terminal. */
+    /**
+     * `true` when stdout is an interactive terminal.
+     */
     readonly isTTY: boolean;
-    /** Set the process exit code (non-zero signals failure to the shell). */
+    /**
+     * Set the process exit code (non-zero signals failure to the shell).
+     */
     setExitCode(code: number): void;
   }
 >()("agentlint/Env") {
@@ -48,10 +63,9 @@ export class Env extends Context.Service<
    * Default layer — reads from `process` globals exactly once.
    *
    * @since 0.1.0
-   * @category layers
+   * @category Layers
    */
   static readonly layer: Layer.Layer<Env> = Layer.sync(Env, () => {
-    /* eslint-disable n/no-process-env -- single authorised access point */
     const isTTY = process.stdout.isTTY ?? false;
     const rawEnv = process.env;
     const username = rawEnv["USER"] ?? rawEnv["USERNAME"] ?? userInfo().username;
@@ -75,6 +89,5 @@ export class Env extends Context.Service<
         process.exitCode = code;
       },
     });
-    /* eslint-enable n/no-process-env */
   });
 }

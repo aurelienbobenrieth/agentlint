@@ -1,8 +1,7 @@
 // @ts-check
 /**
- * Minimal GitHub REST and GraphQL client over the global `fetch`. Reads always
- * go to the API. Every write goes through one writer that, in dry-run, records
- * the call instead of sending it. `git push` is a write too and uses the same
+ * Minimal GitHub REST and GraphQL client over the global `fetch`. Reads always go to the API. Every write goes through
+ * one writer that, in dry-run, records the call instead of sending it. `git push` is a write too and uses the same
  * writer so a dry run never leaves the runner.
  */
 
@@ -43,23 +42,27 @@ class GitHubError extends Error {
  * @typedef {object} GitHub
  * @property {boolean} dryRun
  * @property {PlanEntry[]} plan
- * @property {(path: string) => Promise<unknown>} get resolves `null` when a dry run cannot read
+ * @property {(path: string) => Promise<unknown>} get Resolves `null` when a dry run cannot read
  * @property {(path: string) => Promise<unknown[]>} paginate
  * @property {(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body: unknown) => Promise<unknown>} write
- * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} graphql read-only query
+ * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} graphql Read-only query
  * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} mutate
- * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitFetch authenticated `git fetch`
- * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitWrite authenticated `git push`; a dry run records it and reports success
- * @property {() => Promise<string>} identity login of the account the token acts as
+ * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitFetch
+ *   Authenticated `git fetch`
+ * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitWrite
+ *   Authenticated `git push`; a dry run records it and reports success
+ * @property {() => Promise<string>} identity Login of the account the token acts as
  */
 
-/** The account behind the default `GITHUB_TOKEN`. */
+/**
+ * The account behind the default `GITHUB_TOKEN`.
+ */
 const DEFAULT_IDENTITY = "github-actions[bot]";
 
 /**
- * Git options that authenticate one command against `serverUrl` with the token, the way `actions/checkout` does, but
- * on the command line only: nothing is written to `.git/config`, so the checkout can use `persist-credentials: false`
- * and no later process finds a credential on disk.
+ * Git options that authenticate one command against `serverUrl` with the token, the way `actions/checkout` does, but on
+ * the command line only: nothing is written to `.git/config`, so the checkout can use `persist-credentials: false` and
+ * no later process finds a credential on disk.
  *
  * Git hands `-c` values to its own children through `GIT_CONFIG_PARAMETERS`, and argv is visible to processes of the
  * same user. No repository code runs while a fetch or a push is in flight, but code that ran earlier in the job (an
@@ -117,10 +120,14 @@ function nextLink(headers) {
  */
 export function createGitHub(options) {
   const { token, apiUrl, graphqlUrl, dryRun, fetchImpl, log } = options;
-  /** @type {PlanEntry[]} */
+  /**
+   * @type {PlanEntry[]}
+   */
   const plan = [];
   const authOptions = gitAuthOptions(options.serverUrl ?? "https://github.com", token);
-  /** @type {Promise<string> | null} */
+  /**
+   * @type {Promise<string> | null}
+   */
   let identity = null;
 
   /**
@@ -133,7 +140,11 @@ export function createGitHub(options) {
    */
   async function authenticatedGit(args, cwd) {
     const secrets = [token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")].filter(Boolean);
-    const clean = (/** @type {string} */ text) => secrets.reduce((acc, secret) => acc.replaceAll(secret, "***"), text);
+    const clean = (
+      /**
+       * @type {string}
+       */ text,
+    ) => secrets.reduce((acc, secret) => acc.replaceAll(secret, "***"), text);
     try {
       const result = await git([...authOptions, ...args], cwd);
       return { code: result.code, stdout: clean(result.stdout), stderr: clean(result.stderr) };
@@ -142,14 +153,16 @@ export function createGitHub(options) {
     }
   }
 
-  /** @param {string} path */
+  /**
+   * @param {string} path
+   */
   const url = (path) => (path.startsWith("http") ? path : `${apiUrl}${path}`);
 
   /**
    * @param {string} method
    * @param {string} target
    * @param {unknown} [body]
-   * @returns {Promise<{ data: unknown, headers: Headers }>}
+   * @returns {Promise<{ data: unknown; headers: Headers }>}
    */
   async function send(method, target, body) {
     const response = await fetchImpl(target, {
@@ -161,7 +174,7 @@ export function createGitHub(options) {
         "user-agent": "agentlint-action",
         "x-github-api-version": "2022-11-28",
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(options.requestTimeoutMs ?? 30_000),
     });
     const text = await response.text();
@@ -170,8 +183,8 @@ export function createGitHub(options) {
   }
 
   /**
-   * A dry run only holds read scope on some events; a failed read degrades to
-   * "nothing there" with a warning so the plan can still be printed.
+   * A dry run only holds read scope on some events; a failed read degrades to "nothing there" with a warning so the
+   * plan can still be printed.
    *
    * @template T
    * @param {() => Promise<T>} read
@@ -219,10 +232,14 @@ export function createGitHub(options) {
     get: (path) => tolerate(async () => (await send("GET", url(path))).data, null),
     paginate: (path) =>
       tolerate(async () => {
-        /** @type {unknown[]} */
+        /**
+         * @type {unknown[]}
+         */
         const items = [];
         const separator = path.includes("?") ? "&" : "?";
-        /** @type {string | null} */
+        /**
+         * @type {string | null}
+         */
         let next = url(`${path}${separator}per_page=100`);
         const seen = new Set();
         while (next) {

@@ -1,4 +1,6 @@
-/** Resumable review handoff. @module @since 0.2.0 */
+/**
+ * Resumable review handoff. @module @since 0.2.0
+ */
 import { Schema } from "effect";
 export { NextResult } from "../review/contract.js";
 

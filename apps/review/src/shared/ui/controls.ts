@@ -25,7 +25,9 @@ export const button = (
 export const kbd = (keys: ReadonlyArray<string>, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
   keys.map((key) => h.kbd([h.Class("kbd")], [key]));
 
-/** Linear-style tooltip: label plus the shortcut caps, shown on hover and focus. */
+/**
+ * Linear-style tooltip: label plus the shortcut caps, shown on hover and focus.
+ */
 export const tip = (label: string, keys: ReadonlyArray<string>, trigger: Html, h: HtmlBuilder<Message>): Html =>
   h.span(
     [h.Class("tip")],

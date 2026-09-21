@@ -1,6 +1,8 @@
 # Contributing
 
-Thanks for helping. agentlint is small on purpose. Read [`AGENTS.md`](AGENTS.md) for the boundaries we hold and [`docs/decisions/`](docs/decisions/README.md) for the reasons behind them.
+agentlint is a personal open-source project maintained by Aurelien Bobenrieth. Code contributions and pull requests are not currently accepted. Issues and discussions are welcome for bug reports, questions, and design feedback.
+
+The sections below document the maintainer workflow. Read [`AGENTS.md`](AGENTS.md) for the repository invariants and [`docs/decisions/`](docs/decisions/README.md) for the reasons behind them.
 
 ## Setup
 
@@ -23,7 +25,7 @@ pnpm refs:sync                       # refresh the reference clones under .agent
 
 Configure your editor to use the workspace TypeScript so the Effect language service plugin loads.
 
-## Making a change
+## Maintainer workflow
 
 1. Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI separate. A feature lives in `packages/agentlint/src/features/<name>/` as a `request.ts` and a `handler.ts`.
 2. Prefer Effect services for infrastructure and Effect Schema for anything public or persisted.

@@ -1,9 +1,8 @@
 /**
  * Current proposal storage.
  *
- * `.agentlint/proposals.jsonl` contains one sorted record for each exact
- * finding identity an agent has proposed work for. Proposals are context for
- * a human decision; they never change gate state.
+ * `.agentlint/proposals.jsonl` contains one sorted record for each exact finding identity an agent has proposed work
+ * for. Proposals are context for a human decision; they never change gate state.
  *
  * @module
  * @since 0.2.0
@@ -34,7 +33,9 @@ export class ProposalStoreError extends Schema.TaggedError<ProposalStoreError>()
 const PROPOSAL_PATH = [".agentlint", "proposals.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(ProposalRecord));
 
-/** Parse a JSONL proposal file. Later records for the same identity win. */
+/**
+ * Parse a JSONL proposal file. Later records for the same identity win.
+ */
 function parseProposals(content: string): ProposalRecord[] {
   const byKey = new Map<string, ProposalRecord>();
   for (const [index, rawLine] of content.split(/\r?\n/).entries()) {
@@ -69,9 +70,13 @@ export class ProposalStore extends Context.Service<
   ProposalStore,
   {
     read(): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
-    /** Replace any proposal with the same identity. */
+    /**
+     * Replace any proposal with the same identity.
+     */
     upsert(record: ProposalRecord): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
-    /** Drop proposals whose exact identity is absent from a complete finding view. */
+    /**
+     * Drop proposals whose exact identity is absent from a complete finding view.
+     */
     prune(
       current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>,
     ): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;

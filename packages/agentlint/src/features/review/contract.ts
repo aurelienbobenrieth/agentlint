@@ -1,8 +1,7 @@
 /**
- * Versioned review SPA wire contract, shared with `apps/review` through the
- * `@aurelienbbn/agentlint/contract` subpath. Every value here is an Effect
- * Schema over plain JSON so both sides decode the same shapes. This module
- * must stay browser-safe: it imports nothing but `effect`.
+ * Versioned review SPA wire contract, shared with `apps/review` through the `@aurelienbbn/agentlint/contract` subpath.
+ * Every value here is an Effect Schema over plain JSON so both sides decode the same shapes. This module must stay
+ * browser-safe: it imports nothing but `effect`.
  *
  * @module @since 0.2.0
  */
@@ -40,7 +39,9 @@ export const ReviewGuidance = Schema.Struct({
       kind: Schema.Literals(["policy_url", "policy_file", "guidance_url", "agent_skill"]),
       label: Schema.String,
       target: Schema.String,
-      /** Browser-safe `http(s)` URL, or `null` when the target is a file, a skill, or an unsafe scheme. */
+      /**
+       * Browser-safe `http(s)` URL, or `null` when the target is a file, a skill, or an unsafe scheme.
+       */
       href: Schema.NullOr(Schema.String),
     }),
   ),
@@ -55,7 +56,9 @@ export const ReviewAcceptance = Schema.Struct({
 });
 export type ReviewAcceptance = Schema.Schema.Type<typeof ReviewAcceptance>;
 
-/** Agent work recorded for this exact finding. Context for the decision; never opens the gate. */
+/**
+ * Agent work recorded for this exact finding. Context for the decision; never opens the gate.
+ */
 export const ReviewProposal = Schema.Struct({
   summary: Schema.String,
   diff: Schema.NullOr(Schema.String),
@@ -64,7 +67,9 @@ export const ReviewProposal = Schema.Struct({
 });
 export type ReviewProposal = Schema.Schema.Type<typeof ReviewProposal>;
 
-/** Wire form of `FindingSource` from the domain. */
+/**
+ * Wire form of `FindingSource` from the domain.
+ */
 export const ReviewFindingSource = Schema.Struct({
   standardId: Schema.String,
   standardRevision: Schema.Number,
@@ -75,7 +80,9 @@ export const ReviewFindingSource = Schema.Struct({
 });
 export type ReviewFindingSource = Schema.Schema.Type<typeof ReviewFindingSource>;
 
-/** Wire form of `Fingerprint` from the domain. */
+/**
+ * Wire form of `Fingerprint` from the domain.
+ */
 export const ReviewFingerprint = Schema.Struct({
   scheme: Schema.String,
   version: Schema.Number,
@@ -83,7 +90,9 @@ export const ReviewFingerprint = Schema.Struct({
 });
 export type ReviewFingerprint = Schema.Schema.Type<typeof ReviewFingerprint>;
 
-/** Everything a detached review needs to write an exact acceptance later. */
+/**
+ * Everything a detached review needs to write an exact acceptance later.
+ */
 export const FindingIdentity = Schema.Struct({
   source: ReviewFindingSource,
   fingerprint: ReviewFingerprint,
@@ -104,10 +113,14 @@ export const ReviewFindingPayload = Schema.Struct({
   message: Schema.String,
   relatedFiles: Schema.Array(Schema.String),
   invalidationReasons: Schema.Array(Schema.String),
-  /** Present only when the live localhost session can safely resolve this finding in its repository. */
+  /**
+   * Present only when the live localhost session can safely resolve this finding in its repository.
+   */
   editor: Schema.NullOr(Schema.Struct({ canOpen: Schema.Literal(true) })),
   code: Schema.Struct({
-    /** One-based source range. End coordinates follow the parser's exclusive end position. */
+    /**
+     * One-based source range. End coordinates follow the parser's exclusive end position.
+     */
     focus: Schema.Struct({
       startLine: Schema.Number,
       startColumn: Schema.Number,
@@ -129,7 +142,9 @@ export type CalibrationReason = Schema.Schema.Type<typeof CalibrationReason>;
 export const ReviewCalibration = Schema.Literals(["applies", "does_not_apply", "unsure"]);
 export type ReviewCalibration = Schema.Schema.Type<typeof ReviewCalibration>;
 
-/** Portable observations, separate from acceptance state. Reports never open a gate. */
+/**
+ * Portable observations, separate from acceptance state. Reports never open a gate.
+ */
 export const CalibrationObservation = Schema.Struct({
   findingId: Schema.String,
   identity: FindingIdentity,
@@ -165,7 +180,9 @@ export const ReviewStatePayload = Schema.Struct({
   project: Schema.String,
   base: Schema.String,
   generatedAt: Schema.String,
-  /** Applications detected by the live localhost server. Always empty in detached artifacts. */
+  /**
+   * Applications detected by the live localhost server. Always empty in detached artifacts.
+   */
   applications: Schema.Array(EditorApplication),
   findings: Schema.Array(ReviewFindingPayload),
   calibration: Schema.Array(CalibrationObservation),
@@ -183,7 +200,9 @@ export const ReviewOpenRequest = Schema.Struct({
 });
 export type ReviewOpenRequest = Schema.Schema.Type<typeof ReviewOpenRequest>;
 
-/** `POST /api/action` body. The `type` discriminant selects the fields the server reads. */
+/**
+ * `POST /api/action` body. The `type` discriminant selects the fields the server reads.
+ */
 export const ReviewActionRequest = Schema.Union([
   Schema.Struct({ type: Schema.Literal("accept"), findingId: Schema.String, reason: Schema.String }),
   Schema.Struct({ type: Schema.Literal("request_changes"), findingId: Schema.String, reason: Schema.String }),
@@ -211,14 +230,18 @@ export const ReviewFinishResult = Schema.Struct({
 });
 export type ReviewFinishResult = Schema.Schema.Type<typeof ReviewFinishResult>;
 
-/** Detached artifact format written by `check --review-output` and read by `review --from`. */
+/**
+ * Detached artifact format written by `check --review-output` and read by `review --from`.
+ */
 export const ReviewArtifact = Schema.Struct({
   version: Schema.Literal(3),
   state: ReviewStatePayload,
 });
 export type ReviewArtifact = Schema.Schema.Type<typeof ReviewArtifact>;
 
-/** Server-session bookkeeping. Not sent over the wire. */
+/**
+ * Server-session bookkeeping. Not sent over the wire.
+ */
 export interface ReviewFeedback {
   readonly findingId: string;
   readonly ruleId: string;

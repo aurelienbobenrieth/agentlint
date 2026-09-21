@@ -1,8 +1,7 @@
 // @ts-check
 /**
- * The `pull_request` flow: run `check`, read the artifact, then publish the
- * result as the `agentlint` check run, the sticky summary comment, and inline
- * review comments reconciled with the threads from earlier runs.
+ * The `pull_request` flow: run `check`, read the artifact, then publish the result as the `agentlint` check run, the
+ * sticky summary comment, and inline review comments reconciled with the threads from earlier runs.
  */
 
 import { randomUUID } from "node:crypto";
@@ -29,9 +28,15 @@ import {
   renderWorkflowCommands,
 } from "./render.mjs";
 
-/** @typedef {import("./artifact.mjs").Finding} Finding */
-/** @typedef {import("./render.mjs").Gate} Gate */
-/** @typedef {import("./reconcile.mjs").Thread} ReviewThread */
+/**
+ * @typedef {import("./artifact.mjs").Finding} Finding
+ */
+/**
+ * @typedef {import("./render.mjs").Gate} Gate
+ */
+/**
+ * @typedef {import("./reconcile.mjs").Thread} ReviewThread
+ */
 
 /**
  * @typedef {object} Context
@@ -39,10 +44,10 @@ import {
  * @property {NodeJS.ProcessEnv} env
  * @property {string} eventName
  * @property {Record<string, unknown>} event
- * @property {string} repository owner/name
+ * @property {string} repository Owner/name
  * @property {string} serverUrl
  * @property {string} workspace
- * @property {string} workingDirectory absolute
+ * @property {string} workingDirectory Absolute
  * @property {import("./github.mjs").GitHub} github
  * @property {import("./cli.mjs").Cli} cli
  * @property {import("./github.mjs").Logger} log
@@ -63,18 +68,20 @@ import {
  * @property {string} headSha
  * @property {string} headRef
  * @property {string} baseRef
- * @property {string} headRepo full name
+ * @property {string} headRepo Full name
  */
 
 const ANNOTATION_BATCH = 50;
 
-/** @param {number} code @returns {Gate} */
+/**
+ * @param {number} code @returns {Gate}
+ */
 function gateFromExit(code) {
   return code === 0 ? "open" : code === 1 ? "closed" : "error";
 }
 
 /**
- * @param {unknown} pull raw pull request object from an event or the API
+ * @param {unknown} pull Raw pull request object from an event or the API
  * @returns {PullRequest}
  */
 export function pullRequestFrom(pull) {
@@ -113,7 +120,9 @@ export async function resolveBase(ctx, base) {
   return base;
 }
 
-/** @param {Context} ctx */
+/**
+ * @param {Context} ctx
+ */
 export async function installIfRequested(ctx) {
   if (!ctx.inputs.install) return;
   for (const dir of [ctx.workingDirectory, ctx.workspace]) {
@@ -244,13 +253,17 @@ const RESOLVE_MUTATION = `mutation($threadId: ID!) {
  *
  * @param {Context} ctx
  * @param {number} pullNumber
- * @returns {Promise<Map<number, { threadId: string, resolved: boolean }>>}
+ * @returns {Promise<Map<number, { threadId: string; resolved: boolean }>>}
  */
 async function reviewThreads(ctx, pullNumber) {
   const [owner, name] = ctx.repository.split("/");
-  /** @type {Map<number, { threadId: string, resolved: boolean }>} */
+  /**
+   * @type {Map<number, { threadId: string; resolved: boolean }>}
+   */
   const map = new Map();
-  /** @type {string | null} */
+  /**
+   * @type {string | null}
+   */
   let after = null;
   const seen = new Set();
   for (;;) {
@@ -288,7 +301,9 @@ async function existingThreads(ctx, pullNumber) {
   const comments = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pullNumber}/comments`);
   const threads = await reviewThreads(ctx, pullNumber);
   const identity = await ctx.github.identity();
-  /** @type {ReviewThread[]} */
+  /**
+   * @type {ReviewThread[]}
+   */
   const result = [];
   for (const comment of comments) {
     if (!isRecord(comment) || !isActionComment(comment, identity) || comment["in_reply_to_id"] !== undefined) continue;
@@ -305,16 +320,19 @@ async function existingThreads(ctx, pullNumber) {
  * @param {Context} ctx
  * @param {PullRequest} pull
  * @param {Scan} result
- * @returns {Promise<Set<string>>} digests that have an inline thread after this run
+ * @returns {Promise<Set<string>>} Digests that have an inline thread after this run
  */
 async function publishInline(ctx, pull, result) {
   const files = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pull.number}/files`);
   const commentable = commentableByFile(
-    files.filter(isRecord).map((file) => ({
-      filename: stringField(file, "filename"),
-      patch: typeof file["patch"] === "string" ? file["patch"] : undefined,
-      status: stringField(file, "status"),
-    })),
+    files.filter(isRecord).map((file) => {
+      const patch = typeof file["patch"] === "string" ? file["patch"] : undefined;
+      return {
+        filename: stringField(file, "filename"),
+        ...(patch === undefined ? {} : { patch }),
+        status: stringField(file, "status"),
+      };
+    }),
   );
   const threads = await existingThreads(ctx, pull.number);
   const plan = planReconciliation({ findings: result.findings, threads, commentable });
@@ -354,8 +372,7 @@ async function publishInline(ctx, pull, result) {
 }
 
 /**
- * Publish a scan for a same-repository pull request: check run, sticky
- * summary, inline comments.
+ * Publish a scan for a same-repository pull request: check run, sticky summary, inline comments.
  *
  * @param {Context} ctx
  * @param {PullRequest} pull
@@ -406,7 +423,9 @@ async function appendSummary(ctx, markdown) {
   if (path) await appendFile(path, markdown, "utf8");
 }
 
-/** @param {Context} ctx @param {PullRequest} pull */
+/**
+ * @param {Context} ctx @param {PullRequest} pull
+ */
 export function isFork(ctx, pull) {
   // A deleted head repository reports no name. Treat it as a fork: never push to or comment for an unknown origin.
   return pull.headRepo !== ctx.repository;
@@ -414,7 +433,7 @@ export function isFork(ctx, pull) {
 
 /**
  * @param {Context} ctx
- * @returns {Promise<number>} exit code of the step: the gate code
+ * @returns {Promise<number>} Exit code of the step: the gate code
  */
 export async function runGate(ctx) {
   const action = stringField(ctx.event, "action");

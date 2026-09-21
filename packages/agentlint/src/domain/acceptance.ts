@@ -18,13 +18,17 @@ import {
 } from "./fingerprint.js";
 import { RuleAuthority } from "./rule.js";
 
-/** The authority path that made or is required to make a decision. Same literals as `RuleAuthority`. */
+/**
+ * The authority path that made or is required to make a decision. Same literals as `RuleAuthority`.
+ */
 export const Authority = RuleAuthority;
 export type Authority = RuleAuthority;
 
 const NonEmptyString = Schema.String.check(Schema.isPattern(/\S/));
 
-/** The UTC form `Date#toISOString` writes. Lineage orders records by this string, so no other spelling is accepted. */
+/**
+ * The UTC form `Date#toISOString` writes. Lineage orders records by this string, so no other spelling is accepted.
+ */
 const IsoTimestamp = Schema.String.check(
   Schema.makeFilter((value) => {
     const time = Date.parse(value);
@@ -35,7 +39,9 @@ const IsoTimestamp = Schema.String.check(
   }),
 );
 
-/** The only persisted finding outcome. */
+/**
+ * The only persisted finding outcome.
+ */
 export class AcceptanceRecord extends Schema.Class<AcceptanceRecord>("AcceptanceRecord")({
   schemaVersion: Schema.Literal(1),
   source: FindingSource,
@@ -47,7 +53,9 @@ export class AcceptanceRecord extends Schema.Class<AcceptanceRecord>("Acceptance
   acceptedAt: IsoTimestamp,
 }) {}
 
-/** A detached acceptance carries the exact source the reviewer saw. It is verified at import and never persisted. */
+/**
+ * A detached acceptance carries the exact source the reviewer saw. It is verified at import and never persisted.
+ */
 export class AcceptanceImport extends Schema.Class<AcceptanceImport>("AcceptanceImport")({
   schemaVersion: Schema.Literal(1),
   type: Schema.Literal("accept"),
@@ -61,7 +69,9 @@ export class AcceptanceImport extends Schema.Class<AcceptanceImport>("Acceptance
   reviewedSource: Schema.String,
 }) {}
 
-/** An imported revocation targets both the reviewed source and decision, never a later replacement. */
+/**
+ * An imported revocation targets both the reviewed source and decision, never a later replacement.
+ */
 export class AcceptanceRevocation extends Schema.Class<AcceptanceRevocation>("AcceptanceRevocation")({
   schemaVersion: Schema.Literal(1),
   type: Schema.Literal("revoke"),
@@ -75,7 +85,9 @@ export class AcceptanceRevocation extends Schema.Class<AcceptanceRevocation>("Ac
 export const AcceptanceDecision = Schema.Union([AcceptanceImport, AcceptanceRevocation]);
 export type AcceptanceDecision = Schema.Schema.Type<typeof AcceptanceDecision>;
 
-/** Explain compatibility changes without claiming to reconstruct historical source. */
+/**
+ * Explain compatibility changes without claiming to reconstruct historical source.
+ */
 export function invalidationReasons(prior: AcceptanceRecord, current: FindingRecord): string[] {
   const reasons: string[] = [];
   if (prior.source.standardRevision !== current.source.standardRevision) reasons.push("The standard revision changed.");
@@ -98,17 +110,23 @@ export function invalidationReasons(prior: AcceptanceRecord, current: FindingRec
   return reasons;
 }
 
-/** Exact persisted identity key. */
+/**
+ * Exact persisted identity key.
+ */
 export function acceptanceKey(record: Pick<AcceptanceRecord, "source" | "fingerprint">): string {
   return findingIdentityKey(record.source, record.fingerprint);
 }
 
-/** Human authority satisfies both policies. Agent authority satisfies only agent policy. */
+/**
+ * Human authority satisfies both policies. Agent authority satisfies only agent policy.
+ */
 export function authoritySatisfies(actual: Authority, required: Authority): boolean {
   return actual === "human" || required === "agent";
 }
 
-/** Check exact source, fingerprint, and authority compatibility. */
+/**
+ * Check exact source, fingerprint, and authority compatibility.
+ */
 export function acceptanceSatisfies(
   acceptance: AcceptanceRecord,
   finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
@@ -122,7 +140,9 @@ export function acceptanceSatisfies(
   );
 }
 
-/** Current records with their exact identity index. */
+/**
+ * Current records with their exact identity index.
+ */
 export interface AcceptanceSnapshot {
   readonly records: ReadonlyArray<AcceptanceRecord>;
   readonly byKey: ReadonlyMap<string, AcceptanceRecord>;
@@ -133,8 +153,8 @@ export function acceptanceSnapshot(records: ReadonlyArray<AcceptanceRecord>): Ac
 }
 
 /**
- * Find the acceptance that opens the gate for `finding`, using the exact
- * identity index. Equivalent to scanning `records` with `acceptanceSatisfies`.
+ * Find the acceptance that opens the gate for `finding`, using the exact identity index. Equivalent to scanning
+ * `records` with `acceptanceSatisfies`.
  */
 export function lookupAcceptance(
   acceptances: AcceptanceSnapshot,
@@ -154,7 +174,9 @@ function isRelated(record: AcceptanceRecord, finding: FindingRecord): boolean {
   );
 }
 
-/** Find the latest related reason. This result never opens the gate. */
+/**
+ * Find the latest related reason. This result never opens the gate.
+ */
 export function findLineage(
   records: ReadonlyArray<AcceptanceRecord>,
   finding: FindingRecord,

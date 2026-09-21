@@ -10,14 +10,59 @@
     "node": true
   },
   "ignorePatterns": ["**/*.d.ts", ".agents/**", "**/*.wasm", "**/__fixtures__/**", "examples/**"],
-  "plugins": ["eslint", "typescript", "unicorn", "vitest", "node", "promise"],
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "plugins": ["eslint", "typescript", "unicorn", "node", "promise"],
   "jsPlugins": ["./scripts/oxlint-plugin-agentlint.js"],
   "overrides": [
     {
+      "files": ["**/*.{test,spec}.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/no-importing-vitest-globals": "off",
+        "vitest/prefer-called-with": "error",
+        "vitest/prefer-to-be-falsy": "off",
+        "vitest/prefer-to-be-truthy": "off",
+        "vitest/require-to-throw-message": "error",
+        "vitest/valid-title": [
+          "error",
+          {
+            "mustNotMatch": "(?i)^(?:should )?works?$|(?:^|[^a-z])(?:correctly|properly|as expected)(?:[^a-z]|$)"
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "action/src/artifact.mjs",
+        "action/src/github.mjs",
+        "action/src/inputs.mjs",
+        "action/src/main.mjs",
+        "action/test/**",
+        "packages/agentlint/skills/agentlint/setup/agentlint-gate.mjs"
+      ],
+      "rules": {
+        "agentlint/no-raw-json-parse": "off"
+      }
+    },
+    {
+      "files": [
+        "action/src/cli.mjs",
+        "action/src/gate.mjs",
+        "action/src/inputs.mjs",
+        "action/src/main.mjs",
+        "action/test/**",
+        "packages/agentlint/skills/agentlint/setup/agentlint-gate.mjs"
+      ],
+      "rules": {
+        "agentlint/no-direct-process-access": "off"
+      }
+    },
+    {
       "files": ["action/**", "packages/agentlint/skills/**"],
       "rules": {
-        "agentlint/no-direct-process-access": "off",
-        "agentlint/no-raw-json-parse": "off",
         "eslint/no-await-in-loop": "off"
       }
     },
@@ -36,6 +81,7 @@
     "agentlint/no-raw-json-parse": "error",
     "agentlint/no-stringly-error-message": "error",
     "agentlint/no-direct-process-access": "error",
+    "typescript/ban-ts-comment": ["error", { "ts-ignore": true, "ts-expect-error": "allow-with-description" }],
     "eslint/no-underscore-dangle": ["error", { "allow": ["_tag", "_tree", "__dirname", "__AGENTLINT_VERSION__"] }],
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",

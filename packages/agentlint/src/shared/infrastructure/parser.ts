@@ -2,8 +2,7 @@ import { ParserError } from "../../domain/parser-error.js";
 /**
  * Tree-sitter WASM parser.
  *
- * WASM init is lazy — the first `parse` call triggers initialization.
- * Grammars are cached after first load.
+ * WASM init is lazy — the first `parse` call triggers initialization. Grammars are cached after first load.
  *
  * @module
  * @since 0.1.0
@@ -17,7 +16,7 @@ import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
  * Maps grammar names to their corresponding `.wasm` filenames.
  *
  * @since 0.1.0
- * @category constants
+ * @category Constants
  */
 const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
   ["typescript", "tree-sitter-typescript.wasm"],
@@ -31,30 +30,33 @@ export function resolvePackagedWasmPath(path: Pick<Path.Path, "resolve">, dir: s
 }
 
 /**
- * @example
- * ```ts
- * import { Console, Effect } from "effect"
- * import { Parser } from "./infrastructure/parser.js"
- *
- * const program = Effect.gen(function* () {
- *   const parser = yield* Parser
- *   const tree = yield* parser.parse("const x = 1", "typescript")
- *   yield* Console.log(tree.rootNode.type) // "program"
- * })
- * ```
- *
  * @since 0.1.0
- * @category services
+ * @category Services
+ * @example
+ *   ```ts
+ *   import { Console, Effect } from "effect";
+ *   import { Parser } from "./infrastructure/parser.js";
+ *
+ *   const program = Effect.gen(function* () {
+ *     const parser = yield* Parser;
+ *     const tree = yield* parser.parse("const x = 1", "typescript");
+ *     yield* Console.log(tree.rootNode.type); // "program"
+ *   });
+ *   ```;
  */
 export class Parser extends Context.Service<
   Parser,
   {
     parse(source: string, grammar: string): Effect.Effect<Tree, ParserError>;
-    /** The loaded tree-sitter language used to construct queries. */
+    /**
+     * The loaded tree-sitter language used to construct queries.
+     */
     language(grammar: string): Effect.Effect<Language, ParserError>;
   }
 >()("agentlint/Parser") {
-  /** Default layer — lazily initializes WASM and caches grammars. */
+  /**
+   * Default layer — lazily initializes WASM and caches grammars.
+   */
   static readonly layer: Layer.Layer<Parser, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
     Parser,
     Effect.gen(function* () {

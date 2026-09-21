@@ -13,7 +13,9 @@ import type { fields } from "./messages";
 
 type Finished = Extract<Model["screen"], { readonly _tag: "Finished" }>;
 
-/** The finished screen replaces the whole page, so focus moves to its heading and is announced. */
+/**
+ * The finished screen replaces the whole page, so focus moves to its heading and is announced.
+ */
 const finished = (model: Model, screen: Finished, pendingExports: ReadonlyArray<ExportKind>): UpdateReturn => ({
   model: evo(model, {
     screen: () => screen,
@@ -24,7 +26,9 @@ const finished = (model: Model, screen: Finished, pendingExports: ReadonlyArray<
   commands: [FocusElement({ selector: ".finish h1" })],
 });
 
-/** Only the finished screen tracks what was exported; the same buttons in a running review are plain copies. */
+/**
+ * Only the finished screen tracks what was exported; the same buttons in a running review are plain copies.
+ */
 const exportKind = (model: Model, kind: ExportKind): { readonly kind?: ExportKind } =>
   model.screen._tag === "Finished" ? { kind } : {};
 

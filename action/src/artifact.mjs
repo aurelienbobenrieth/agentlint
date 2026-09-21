@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the
- * action reads. Decoded structurally: the action has no dependency on `effect`.
+ * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the action reads. Decoded structurally: the
+ * action has no dependency on `effect`.
  */
 
 import { readFile } from "node:fs/promises";
@@ -55,7 +55,9 @@ import { createHash } from "node:crypto";
  */
 
 class ArtifactError extends Error {
-  /** @param {string} path @param {string} detail */
+  /**
+   * @param {string} path @param {string} detail
+   */
   constructor(path, detail) {
     super(`Review artifact ${path} is not readable: ${detail}`);
     this.name = "ArtifactError";
@@ -205,12 +207,16 @@ export async function readArtifact(path) {
   }
 }
 
-/** @param {Finding} finding */
+/**
+ * @param {Finding} finding
+ */
 export function shortDigest(finding) {
   return finding.digest.slice(0, 12);
 }
 
-/** @param {ReadonlyArray<Finding>} findings */
+/**
+ * @param {ReadonlyArray<Finding>} findings
+ */
 export function unresolved(findings) {
   return findings.filter((finding) => finding.status === "unresolved");
 }

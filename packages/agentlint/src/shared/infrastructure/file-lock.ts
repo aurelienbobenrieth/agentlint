@@ -14,8 +14,8 @@ const RETRY_MS = 20;
 /**
  * Run `operation` while holding an exclusive lock file.
  *
- * A transaction lasts milliseconds. A lock older than 30 seconds belongs to a process that stopped before releasing it, so
- * the next writer removes it. A more recent lock is never stolen: the wait is bounded and then fails with `fail`.
+ * A transaction lasts milliseconds. A lock older than 30 seconds belongs to a process that stopped before releasing it,
+ * so the next writer removes it. A more recent lock is never stolen: the wait is bounded and then fails with `fail`.
  */
 export const withFileLock =
   <E>(fs: FileSystem.FileSystem, directory: string, lock: string, fail: (detail: unknown) => E) =>
