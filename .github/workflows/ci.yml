@@ -85,3 +85,18 @@ jobs:
         uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
           advanced-security: false
+
+  gate:
+    name: Validate
+    if: always()
+    needs:
+      - validate
+      - workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every validation job
+        env:
+          MATRIX_RESULT: ${{ needs.validate.result }}
+          WORKFLOW_RESULT: ${{ needs.workflows.result }}
+        run: test "$MATRIX_RESULT" = success && test "$WORKFLOW_RESULT" = success
