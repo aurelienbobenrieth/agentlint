@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { defineConfig, normalizeConfig } from "./config.js";
-import { defineRule, RuleDefinitionError, type AgentlintRule } from "./rule.js";
+import { defineRule, RuleDefinitionError } from "./rule.js";
+import type { CanonicalValue } from "./fingerprint.js";
 
 const valid = {
   lifecycle: "state",
@@ -18,12 +20,18 @@ const change = {
 /**
  * A config written in JavaScript reaches the engine without the compiler's help.
  */
-const untyped = (rule: unknown) => rule as AgentlintRule;
-const definitionError = (rule: unknown): unknown => {
+interface RuntimeRuleDefinition {
+  readonly lifecycle?: string;
+  readonly standard?: object | undefined;
+  readonly detector?: object | undefined;
+  readonly binding?: object | undefined;
+}
+
+const definitionError = (rule: RuntimeRuleDefinition): RuleDefinitionError | undefined => {
   try {
-    defineRule(untyped(rule));
+    Reflect.apply(defineRule, undefined, [rule]);
   } catch (error) {
-    return error;
+    return Schema.decodeUnknownSync(RuleDefinitionError)(error);
   }
   return undefined;
 };
@@ -87,26 +95,42 @@ describe("defineRule rejects what the type system cannot see", () => {
   });
 
   it("keeps supporting files exact and limited to state bindings", () => {
-    const withDependencies = (dependencies: ReadonlyArray<string>, base: unknown = valid) =>
-      definitionError({ ...(base as object), binding: { ...(base as typeof valid).binding, dependencies } });
+    const withDependencies = ({
+      dependencies,
+      base = valid,
+    }: {
+      readonly dependencies: ReadonlyArray<string>;
+      readonly base?: typeof valid | typeof change;
+    }) => definitionError({ ...base, binding: { ...base.binding, dependencies } });
 
-    expect(withDependencies(["src/policy.ts"])).toBeUndefined();
+    expect(withDependencies({ dependencies: ["src/policy.ts"] })).toBeUndefined();
     const inexact = ["./src/policy.ts", "src\\policy.ts", "src/*.ts", "src/{a,b}.ts"];
-    expect(inexact.map((dependency) => withDependencies([dependency]))).toEqual(
+    expect(inexact.map((dependency) => withDependencies({ dependencies: [dependency] }))).toEqual(
       inexact.map(() => expect.objectContaining({ reason: "invalid_shape" })),
     );
-    expect(() => defineRule(untyped({ ...valid, binding: { ...valid.binding, dependencies: ["../x.ts"] } }))).toThrow(
-      "escapes",
-    );
-    expect(withDependencies(["src/policy.ts"], change)).toMatchObject({
+    expect(() =>
+      Reflect.apply(defineRule, undefined, [{ ...valid, binding: { ...valid.binding, dependencies: ["../x.ts"] } }]),
+    ).toThrow("escapes");
+    expect(withDependencies({ dependencies: ["src/policy.ts"], base: change })).toMatchObject({
       reason: "invalid_shape",
       field: expect.stringContaining("state bindings"),
     });
   });
 
   it("rejects options that cannot be part of a stable binding digest", () => {
-    const withOptions = (options: unknown) => () =>
-      defineRule(untyped({ ...valid, binding: { ...valid.binding, options } }));
+    const withOptions =
+      (
+        options:
+          | CanonicalValue
+          | Date
+          | RegExp
+          | (() => boolean)
+          | { readonly callback: () => boolean }
+          | { readonly since: Date }
+          | { readonly matcher: RegExp },
+      ) =>
+      () =>
+        Reflect.apply(defineRule, undefined, [{ ...valid, binding: { ...valid.binding, options } }]);
     expect(withOptions({ limit: 5, tags: ["a"], nested: { on: true } })).not.toThrow();
     expect(withOptions({ since: new Date(0) })).toThrow("plain objects");
     expect(withOptions({ matcher: /x/ })).toThrow("plain objects");
@@ -117,7 +141,7 @@ describe("defineRule rejects what the type system cannot see", () => {
   it("names the rule in every message", () => {
     const error = definitionError({ ...valid, detector: { ...valid.detector, version: 0 } });
     expect(error).toBeInstanceOf(RuleDefinitionError);
-    expect((error as RuleDefinitionError).message).toBe("Rule review: detector version must be a positive integer");
+    expect(error?.message).toBe("Rule review: detector version must be a positive integer");
   });
 });
 
@@ -146,7 +170,7 @@ describe("config layers", () => {
   });
 
   it("validates rules that only an inherited layer contains", () => {
-    const broken = { rules: [untyped({ ...valid, detector: { ...valid.detector, version: 0 } })] };
+    const broken = { rules: [{ ...valid, detector: { ...valid.detector, version: 0 } }] };
     expect(() => normalizeConfig({ extends: [broken] })).toThrow("positive integer");
     expect(() => normalizeConfig({ extends: [{ rules: [valid] }], rules: [valid] })).toThrow(
       "Duplicate rule binding id: review",
@@ -154,7 +178,7 @@ describe("config layers", () => {
   });
 
   it("rejects a config whose fields have the wrong type", () => {
-    expect(() => defineConfig({ ignores: "dist/**" } as never)).toThrow("ignores");
-    expect(() => defineConfig({ rules: valid } as never)).toThrow("rules");
+    expect(() => Reflect.apply(defineConfig, undefined, [{ ignores: "dist/**" }])).toThrow("ignores");
+    expect(() => Reflect.apply(defineConfig, undefined, [{ rules: valid }])).toThrow("rules");
   });
 });

@@ -34,7 +34,13 @@ const GH_TIMEOUT_MS = 120_000;
 
 const isMissingBinary = (error: { readonly code?: string | number | undefined }): boolean => error.code === "ENOENT";
 
-const ghCommand = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<Buffer, GhError> =>
+const ghCommand = ({
+  cwd,
+  args,
+}: {
+  readonly cwd: string;
+  readonly args: ReadonlyArray<string>;
+}): Effect.Effect<Buffer, GhError> =>
   Effect.callback<Buffer, GhError>((resume, signal) => {
     execFile(
       "gh",
@@ -79,8 +85,8 @@ export class Gh extends Context.Service<
     Effect.gen(function* () {
       const env = yield* Env;
       return Gh.of({
-        text: (args) => ghCommand(env.cwd, args).pipe(Effect.map((stdout) => stdout.toString("utf8"))),
-        binary: (args) => ghCommand(env.cwd, args),
+        text: (args) => ghCommand({ cwd: env.cwd, args }).pipe(Effect.map((stdout) => stdout.toString("utf8"))),
+        binary: (args) => ghCommand({ cwd: env.cwd, args }),
       });
     }),
   );

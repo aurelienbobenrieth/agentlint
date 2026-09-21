@@ -8,7 +8,7 @@
  * @since 0.2.0
  */
 
-import { Schema } from "effect";
+import { Predicate, Schema } from "effect";
 import { canonicalStringify, normalizeRepositoryPath, type CanonicalValue } from "./fingerprint.js";
 import type { AgentlintNode } from "./node.js";
 import type { TreeSitterNodeType } from "./node-types.js";
@@ -230,7 +230,7 @@ export type Lifecycle = Schema.Schema.Type<typeof Lifecycle>;
 /**
  * Repository-owned policy and material detector configuration.
  */
-export interface RuleBinding<Options = unknown> {
+export interface RuleBinding<Options extends CanonicalValue | undefined = CanonicalValue | undefined> {
   readonly id: string;
   readonly authority: RuleAuthority;
   readonly include?: ReadonlyArray<string> | undefined;
@@ -247,9 +247,11 @@ interface DetectorIdentity {
   readonly version: number;
 }
 
-export interface StateDetector<Options = unknown> extends DetectorIdentity {
+export interface StateDetector<
+  Options extends CanonicalValue | undefined = CanonicalValue | undefined,
+> extends DetectorIdentity {
   readonly match?: RuleMatch | ReadonlyArray<RuleMatch> | undefined;
-  createOnce?(context: RuleContext, options: Options): Visitors;
+  createOnce?(input: { readonly context: RuleContext; readonly options: Options }): Visitors;
   /**
    * Imperative detectors default to repository scans. File-local visitors may opt into changed-file scans.
    */
@@ -257,28 +259,36 @@ export interface StateDetector<Options = unknown> extends DetectorIdentity {
   readonly fixtures?: StateRuleFixtures | undefined;
 }
 
-export interface ChangeDetector<Options = unknown> extends DetectorIdentity {
-  detect(context: ChangeRuleContext, options: Options): void;
+export interface ChangeDetector<
+  Options extends CanonicalValue | undefined = CanonicalValue | undefined,
+> extends DetectorIdentity {
+  detect(input: { readonly context: ChangeRuleContext; readonly options: Options }): void;
   readonly fixtures?: ChangeRuleFixtures | undefined;
 }
 
-interface RuleBase<Options> {
+interface RuleBase<Options extends CanonicalValue | undefined> {
   readonly standard: RuleStandard;
   readonly binding: RuleBinding<Options>;
 }
 
-export interface StateRule<Options = unknown> extends RuleBase<Options> {
+export interface StateRule<
+  Options extends CanonicalValue | undefined = CanonicalValue | undefined,
+> extends RuleBase<Options> {
   readonly lifecycle: "state";
   readonly detector: StateDetector<Options>;
 }
 
-export interface ChangeRule<Options = unknown> extends RuleBase<Options> {
+export interface ChangeRule<
+  Options extends CanonicalValue | undefined = CanonicalValue | undefined,
+> extends RuleBase<Options> {
   readonly binding: Omit<RuleBinding<Options>, "dependencies"> & { readonly dependencies?: never };
   readonly lifecycle: "change";
   readonly detector: ChangeDetector<Options>;
 }
 
-export type AgentlintRule<Options = unknown> = StateRule<Options> | ChangeRule<Options>;
+export type AgentlintRule<Options extends CanonicalValue | undefined = CanonicalValue | undefined> =
+  | StateRule<Options>
+  | ChangeRule<Options>;
 
 /**
  * Raised by `defineRule` when a rule is structurally invalid.
@@ -299,20 +309,14 @@ export class RuleDefinitionError extends Schema.TaggedError<RuleDefinitionError>
   field: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "invalid_shape":
-        return `Rule ${this.ruleId}: invalid rule shape${this.field ? ` (${this.field})` : ""}`;
-      case "empty_field":
-        return `Rule ${this.ruleId}: ${this.field} must not be empty`;
-      case "invalid_detector_version":
-        return `Rule ${this.ruleId}: detector version must be a positive integer`;
-      case "ambiguous_match":
-        return `Rule ${this.ruleId}: each match needs exactly one of "pattern" or "query"`;
-      case "missing_state_implementation":
-        return `Rule ${this.ruleId}: state detector must define "match" or "createOnce"`;
-      case "missing_change_detect":
-        return `Rule ${this.ruleId}: change detector must define "detect"`;
-    }
+    return {
+      invalid_shape: `Rule ${this.ruleId}: invalid rule shape${this.field ? ` (${this.field})` : ""}`,
+      empty_field: `Rule ${this.ruleId}: ${this.field} must not be empty`,
+      invalid_detector_version: `Rule ${this.ruleId}: detector version must be a positive integer`,
+      ambiguous_match: `Rule ${this.ruleId}: each match needs exactly one of "pattern" or "query"`,
+      missing_state_implementation: `Rule ${this.ruleId}: state detector must define "match" or "createOnce"`,
+      missing_change_detect: `Rule ${this.ruleId}: change detector must define "detect"`,
+    }[this.reason];
   }
 }
 
@@ -337,7 +341,15 @@ const RuleShape = Schema.Struct({
   }),
 });
 
-function assertNonEmpty(ruleId: string, value: string, field: string): void {
+function assertNonEmpty({
+  ruleId,
+  value,
+  field,
+}: {
+  readonly ruleId: string;
+  readonly value: string;
+  readonly field: string;
+}): void {
   if (value.trim().length === 0) throw new RuleDefinitionError({ ruleId, reason: "empty_field", field });
 }
 
@@ -345,26 +357,27 @@ function validateCommon(rule: AgentlintRule): void {
   try {
     Schema.decodeUnknownSync(RuleShape)(rule);
   } catch {
-    throw new RuleDefinitionError({ ruleId: rule?.binding?.id ?? "unknown", reason: "invalid_shape" });
+    throw new RuleDefinitionError({ ruleId: "unknown", reason: "invalid_shape" });
   }
   const ruleId = rule.binding.id;
-  if (rule.lifecycle === "change" && rule.binding.dependencies !== undefined)
+  const dependencies = Reflect.get(rule.binding, "dependencies");
+  if (rule.lifecycle === "change" && dependencies !== undefined)
     throw new RuleDefinitionError({
       ruleId,
       reason: "invalid_shape",
       field: "dependencies are for state bindings; change detectors report explicit evidence",
     });
   StandardDecoder(rule.standard);
-  assertNonEmpty(ruleId, ruleId, "binding id");
+  assertNonEmpty({ ruleId, value: ruleId, field: "binding id" });
   AuthorityDecoder(rule.binding.authority);
-  assertNonEmpty(ruleId, rule.detector.id, "detector id");
+  assertNonEmpty({ ruleId, value: rule.detector.id, field: "detector id" });
   if (!Number.isSafeInteger(rule.detector.version) || rule.detector.version < 1) {
     throw new RuleDefinitionError({ ruleId, reason: "invalid_detector_version" });
   }
   for (const pattern of [...(rule.binding.include ?? []), ...(rule.binding.exclude ?? [])]) {
-    assertNonEmpty(ruleId, pattern, "scope pattern");
+    assertNonEmpty({ ruleId, value: pattern, field: "scope pattern" });
   }
-  canonicalStringify((rule.binding.options ?? null) as CanonicalValue);
+  canonicalStringify(rule.binding.options ?? null);
   for (const dependency of rule.binding.dependencies ?? []) {
     if (normalizeRepositoryPath(dependency) !== dependency || /[*?[\]{}]/.test(dependency)) {
       throw new RuleDefinitionError({
@@ -382,8 +395,12 @@ function validateCommon(rule: AgentlintRule): void {
  * This is the only rule constructor. Narrow `rule.lifecycle` to access the corresponding detector and fixture contract.
  * Throws `RuleDefinitionError` for structural mistakes.
  */
-export function defineRule<const Options>(rule: StateRule<Options>): StateRule<Options>;
-export function defineRule<const Options>(rule: ChangeRule<Options>): ChangeRule<Options>;
+export function defineRule<const Options extends CanonicalValue | undefined>(
+  rule: StateRule<Options>,
+): StateRule<Options>;
+export function defineRule<const Options extends CanonicalValue | undefined>(
+  rule: ChangeRule<Options>,
+): ChangeRule<Options>;
 export function defineRule(rule: AgentlintRule): AgentlintRule;
 export function defineRule(rule: AgentlintRule): AgentlintRule {
   validateCommon(rule);
@@ -397,15 +414,13 @@ export function defineRule(rule: AgentlintRule): AgentlintRule {
       }
     }
     if (
-      (rule.detector.createOnce !== undefined && typeof rule.detector.createOnce !== "function") ||
-      (matches.length === 0 && !rule.detector.createOnce)
+      (rule.detector.createOnce !== undefined && !Predicate.isFunction(Reflect.get(rule.detector, "createOnce"))) ||
+      (matches.length === 0 && rule.detector.createOnce === undefined)
     ) {
       throw new RuleDefinitionError({ ruleId, reason: "missing_state_implementation" });
     }
-  } else if (rule.lifecycle === "change") {
-    if (typeof rule.detector.detect !== "function") {
-      throw new RuleDefinitionError({ ruleId, reason: "missing_change_detect" });
-    }
+  } else if (!Predicate.isFunction(Reflect.get(rule.detector, "detect"))) {
+    throw new RuleDefinitionError({ ruleId, reason: "missing_change_detect" });
   }
   return rule;
 }
@@ -416,5 +431,5 @@ export function defineRule(rule: AgentlintRule): AgentlintRule {
 export function ruleMatches(rule: StateRule): ReadonlyArray<RuleMatch> {
   const matches = rule.detector.match;
   if (!matches) return [];
-  return Array.isArray(matches) ? matches : [matches as RuleMatch];
+  return Schema.is(RuleMatch)(matches) ? [matches] : matches;
 }

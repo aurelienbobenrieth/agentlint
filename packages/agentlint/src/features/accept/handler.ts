@@ -33,7 +33,7 @@ export const collectFindingForSelector = Effect.fn("collectFindingForSelector")(
   }
 
   const complete = yield* collectFindings({ all: true, rules: [], base, files: [] });
-  const resolution = resolveFindingSelector(selector, complete.findings, cache);
+  const resolution = resolveFindingSelector({ selector, findings: complete.findings, cache });
   return resolution.ok
     ? ({ finding: resolution.finding, cache } as const)
     : ({ error: resolution.message, cache } as const);
@@ -59,7 +59,7 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
       exitCode: 2,
     });
   }
-  if (!authoritySatisfies(input.authority, finding.authority)) {
+  if (!authoritySatisfies({ actual: input.authority, required: finding.authority })) {
     return new AcceptResult({
       message: `${finding.ruleId} requires human acceptance. Open agentlint review or run agentlint approve as a human.`,
       exitCode: 2,

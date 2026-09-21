@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
+import { Array as A } from "effect";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -43,15 +44,15 @@ async function readEvent(path) {
 }
 
 /**
- * @param {Map<string, string>} outputs
- * @param {string} path
+ * @param {object} input
+ * @param {Map<string, string>} input.outputs
+ * @param {string} input.path
  */
-async function writeOutputs(outputs, path) {
-  let text = "";
-  for (const [name, value] of outputs) {
+async function writeOutputs({ outputs, path }) {
+  const text = A.map([...outputs], ([name, value]) => {
     const delimiter = `ghadelimiter_${randomUUID()}`;
-    text += `${name}<<${delimiter}\n${value}\n${delimiter}\n`;
-  }
+    return `${name}<<${delimiter}\n${value}\n${delimiter}\n`;
+  }).join("");
   await appendFile(path, text, "utf8");
 }
 
@@ -76,88 +77,86 @@ export async function run(options) {
     ["dry-run-plan", "[]"],
   ]);
 
-  let exitCode = 0;
-  /**
-   * @type {Context["github"] | null}
-   */
-  let github = null;
-  try {
-    const inputs = readInputs(env);
-    const workspace = resolve(env["GITHUB_WORKSPACE"] ?? process.cwd());
-    const workingDirectory = resolve(workspace, inputs.workingDirectory);
-    const eventName = env["GITHUB_EVENT_NAME"] ?? "";
-    if (eventName === "pull_request_target") {
-      throw new InputError(
-        "pull_request_target is unsupported: repository configuration executes code. Use pull_request with least-privilege permissions.",
-      );
-    }
-    const event = await readEvent(env["GITHUB_EVENT_PATH"] ?? "");
-    github = createGitHub({
-      token: inputs.githubToken,
-      apiUrl: env["GITHUB_API_URL"] ?? "https://api.github.com",
-      graphqlUrl: env["GITHUB_GRAPHQL_URL"] ?? "https://api.github.com/graphql",
-      serverUrl: env["GITHUB_SERVER_URL"] ?? "https://github.com",
-      dryRun: inputs.dryRun,
-      fetchImpl: options.fetchImpl ?? fetch,
-      log,
-    });
-    /**
-     * @type {Context}
-     */
-    const ctx = {
-      inputs,
-      env,
-      eventName,
-      event,
-      repository: env["GITHUB_REPOSITORY"] ?? "",
-      serverUrl: env["GITHUB_SERVER_URL"] ?? "https://github.com",
-      workspace,
-      workingDirectory,
-      github,
-      cli: createCli(
-        resolveCli(inputs.version, workspace),
-        workingDirectory,
+  const outcome = await (async () => {
+    try {
+      const inputs = readInputs(env);
+      const workspace = resolve(env["GITHUB_WORKSPACE"] ?? process.cwd());
+      const workingDirectory = resolve(workspace, inputs.workingDirectory);
+      const eventName = env["GITHUB_EVENT_NAME"] ?? "";
+      if (eventName === "pull_request_target") {
+        throw new InputError(
+          "pull_request_target is unsupported: repository configuration executes code. Use pull_request with least-privilege permissions.",
+        );
+      }
+      const event = await readEvent(env["GITHUB_EVENT_PATH"] ?? "");
+      const github = createGitHub({
+        token: inputs.githubToken,
+        apiUrl: env["GITHUB_API_URL"] ?? "https://api.github.com",
+        graphqlUrl: env["GITHUB_GRAPHQL_URL"] ?? "https://api.github.com/graphql",
+        serverUrl: env["GITHUB_SERVER_URL"] ?? "https://github.com",
+        dryRun: inputs.dryRun,
+        fetchImpl: options.fetchImpl ?? fetch,
+        log,
+      });
+      /**
+       * @type {Context}
+       */
+      const ctx = {
+        inputs,
         env,
-        isPublishedVersion(inputs.version)
-          ? {
-              // A published version yields to the copy the repository installed.
-              local: async () => {
-                const local = await localCli(workingDirectory, workspace);
-                if (!local) return null;
-                if (local.version !== inputs.version) {
-                  log.warn(
-                    `running the installed @aurelienbbn/agentlint ${local.version}, not the version input ${inputs.version}`,
-                  );
-                }
-                return local.argv;
-              },
-            }
-          : {},
-      ),
-      log,
-      outputs,
-    };
-    if (ctx.repository === "") throw new InputError("GITHUB_REPOSITORY is not set");
-    if (inputs.dryRun) log.info("dry-run: writes are recorded, not sent");
+        eventName,
+        event,
+        repository: env["GITHUB_REPOSITORY"] ?? "",
+        serverUrl: env["GITHUB_SERVER_URL"] ?? "https://github.com",
+        workspace,
+        workingDirectory,
+        github,
+        cli: createCli({
+          command: resolveCli({ version: inputs.version, workspace }),
+          cwd: workingDirectory,
+          env,
+          options: isPublishedVersion(inputs.version)
+            ? {
+                // A published version yields to the copy the repository installed.
+                local: async () => {
+                  const local = await localCli({ workingDirectory, workspace });
+                  if (!local) return null;
+                  if (local.version !== inputs.version) {
+                    log.warn(
+                      `running the installed @aurelienbbn/agentlint ${local.version}, not the version input ${inputs.version}`,
+                    );
+                  }
+                  return local.argv;
+                },
+              }
+            : {},
+        }),
+        log,
+        outputs,
+      };
+      if (ctx.repository === "") throw new InputError("GITHUB_REPOSITORY is not set");
+      if (inputs.dryRun) log.info("dry-run: writes are recorded, not sent");
 
-    if (eventName === "pull_request") {
-      exitCode = await runGate(ctx);
-    } else if (eventName === "issue_comment" || eventName === "pull_request_review_comment") {
-      exitCode = await runCommand(ctx);
-    } else {
-      log.info(`event ${eventName || "(none)"}: nothing to do`);
+      const exitCode =
+        eventName === "pull_request"
+          ? await runGate(ctx)
+          : eventName === "issue_comment" || eventName === "pull_request_review_comment"
+            ? await runCommand(ctx)
+            : (log.info(`event ${eventName || "(none)"}: nothing to do`), 0);
+      return { exitCode, github };
+    } catch (error) {
+      log.error(error instanceof Error ? error.message : String(error));
+      if (outputs.get("gate") === "") outputs.set("gate", "error");
+      return { exitCode: 2, github: null };
     }
-  } catch (error) {
-    log.error(error instanceof Error ? error.message : String(error));
-    if (outputs.get("gate") === "") outputs.set("gate", "error");
-    exitCode = 2;
-  }
+  })();
+  const { exitCode, github } = outcome;
   if (github) {
     outputs.set("dry-run-plan", JSON.stringify(github.plan));
     if (github.dryRun) log.info(`dry-run plan:\n${JSON.stringify(github.plan, null, 2)}`);
   }
   const outputPath = env["GITHUB_OUTPUT"];
-  if (outputPath) await writeOutputs(outputs, outputPath);
+  if (outputPath) await writeOutputs({ outputs, path: outputPath });
   return { exitCode, outputs };
 }
 

@@ -33,10 +33,11 @@ import { buildReviewPayload } from "./features/review/handler.js";
 import { runReviewSession } from "./features/review/server.js";
 import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features/rules/handler.js";
 import { RulesListCommand, RulesScanCommand, RulesTestCommand } from "./features/rules/request.js";
-import { AcceptanceStore, parseDecisions } from "./shared/infrastructure/acceptance-store.js";
+import { AcceptanceStore, AcceptanceStoreError, parseDecisions } from "./shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "./shared/infrastructure/config-loader.js";
 import { Gh } from "./shared/infrastructure/gh.js";
 import { Git } from "./shared/infrastructure/git.js";
+import { encodeJson, encodePrettyJson } from "./shared/infrastructure/json.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { ProposalStore } from "./shared/infrastructure/proposal-store.js";
 import { SelectorCache } from "./shared/infrastructure/selector-cache.js";
@@ -50,7 +51,15 @@ const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage or c
 // Shared flags and arguments
 // ---------------------------------------------------------------------------
 
-const optionalString = (name: string, metavar: string, description: string) =>
+const optionalString = ({
+  name,
+  metavar,
+  description,
+}: {
+  readonly name: string;
+  readonly metavar: string;
+  readonly description: string;
+}) =>
   Flag.String(name).pipe(
     Flag.withMetavar(metavar),
     Flag.withDescription(description),
@@ -58,7 +67,11 @@ const optionalString = (name: string, metavar: string, description: string) =>
     Flag.map(Option.getOrUndefined),
   );
 
-const baseFlag = optionalString("base", "ref", "Git ref used as the change baseline (merge base)");
+const baseFlag = optionalString({
+  name: "base",
+  metavar: "ref",
+  description: "Git ref used as the change baseline (merge base)",
+});
 
 const ruleFlag = Flag.String("rule").pipe(
   Flag.withMetavar("id"),
@@ -124,7 +137,7 @@ const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (
   });
   const artifact: ReviewArtifact = { version: 3, state };
   yield* fs.makeDirectory(path.dirname(absolute), { recursive: true });
-  yield* fs.writeFileString(absolute, `${JSON.stringify(artifact, null, 2)}\n`);
+  yield* fs.writeFileString(absolute, `${encodePrettyJson(artifact)}\n`);
   return absolute;
 });
 
@@ -133,7 +146,13 @@ const readAcceptanceRecords = Effect.fn("readAcceptanceRecords")(function* (file
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const raw = yield* fs.readFileString(path.resolve(env.cwd, file));
-  return yield* Effect.try(() => parseDecisions(raw));
+  return yield* Effect.try({
+    try: () => parseDecisions(raw),
+    catch: (error) =>
+      Schema.is(AcceptanceStoreError)(error)
+        ? error
+        : new AcceptanceStoreError({ reason: "invalid_record", detail: "Decision parsing failed", line: undefined }),
+  });
 });
 
 const setExitCode = (code: number) => Effect.map(Env, (env) => env.setExitCode(code));
@@ -172,14 +191,19 @@ const check = Command.make(
       Flag.withDescription("Output format"),
       Flag.withDefault("text"),
     ),
-    reviewOutput: optionalString("review-output", "path", "Write a detached review artifact to this path"),
+    reviewOutput: optionalString({
+      name: "review-output",
+      metavar: "path",
+      description: "Write a detached review artifact to this path",
+    }),
   },
   Effect.fn("check")(function* ({ files, all, base, rules, format, reviewOutput }) {
     const command = new CheckCommand({ all, rules, base, files: [...files] });
     const result = yield* checkHandler(command);
     if (result.noMatchingRules) {
       yield* Console.error(`No matching rules. Available: ${result.availableRules.join(", ") || "none"}`);
-      return yield* setExitCode(2);
+      yield* setExitCode(2);
+      return;
     }
     const config = yield* (yield* ConfigLoader).load();
     const output =
@@ -218,7 +242,7 @@ const next = Command.make(
   },
   Effect.fn("next")(function* ({ base, rules, format }) {
     const result = yield* nextHandler(new NextCommand({ base, rules }));
-    if (format === "json") yield* Console.log(JSON.stringify(result, null, 2));
+    if (format === "json") yield* Console.log(encodePrettyJson(result));
     else {
       yield* Console.log(
         result.finding
@@ -230,7 +254,7 @@ const next = Command.make(
               `Required authority: ${result.finding.authority}`,
               ...result.actions.map(
                 (action) =>
-                  `${action.purpose}: agentlint argv=${JSON.stringify(action.argv.map((arg) => (arg === result.finding?.id ? (result.selector ?? arg) : arg)))}${action.requiredInput ? ` + ${action.requiredInput}` : ""}`,
+                  `${action.purpose}: agentlint argv=${encodeJson(action.argv.map((arg) => (arg === result.finding?.id ? (result.selector ?? arg) : arg)))}${action.requiredInput ? ` + ${action.requiredInput}` : ""}`,
               ),
             ].join("\n")
           : result.status === "no_matching_rules"
@@ -244,7 +268,15 @@ const next = Command.make(
   Command.withDescription("Return one current obligation with evidence, authority and executable argument arrays"),
 );
 
-const decisionCommand = (name: "accept" | "approve", authority: "agent" | "human", description: string) =>
+const decisionCommand = ({
+  name,
+  authority,
+  description,
+}: {
+  readonly name: "accept" | "approve";
+  readonly authority: "agent" | "human";
+  readonly description: string;
+}) =>
   Command.make(
     name,
     {
@@ -252,22 +284,34 @@ const decisionCommand = (name: "accept" | "approve", authority: "agent" | "human
       reason: Flag.String("reason").pipe(Flag.withDescription("Why this finding satisfies its standard")),
       base: baseFlag,
     },
-    Effect.fn(name)(function* ({ selector, reason, base }) {
+    Effect.fn("decisionCommand.execute")(function* ({ selector, reason, base }) {
       const result = yield* acceptHandler(new AcceptCommand({ selector, reason, authority, base }));
       yield* Console.log(result.message);
       yield* setExitCode(result.exitCode);
     }),
   ).pipe(Command.withDescription(description));
 
-const accept = decisionCommand("accept", "agent", "Record an acceptance with agent authority");
-const approve = decisionCommand("approve", "human", "Record an acceptance with human authority");
+const accept = decisionCommand({
+  name: "accept",
+  authority: "agent",
+  description: "Record an acceptance with agent authority",
+});
+const approve = decisionCommand({
+  name: "approve",
+  authority: "human",
+  description: "Record an acceptance with human authority",
+});
 
 const propose = Command.make(
   "propose",
   {
     selector: selectorArgument,
     summary: Flag.String("summary").pipe(Flag.withDescription("What the agent did or suggests for this finding")),
-    diffFile: optionalString("diff-file", "path", "Attach the unified diff stored in this file"),
+    diffFile: optionalString({
+      name: "diff-file",
+      metavar: "path",
+      description: "Attach the unified diff stored in this file",
+    }),
     base: baseFlag,
   },
   Effect.fn("propose")(function* ({ selector, summary, diffFile, base }) {
@@ -303,7 +347,11 @@ const review = Command.make(
       Flag.withDescription("Review current findings or calibrate rule fixtures"),
       Flag.withDefault("review"),
     ),
-    from: optionalString("from", "artifact.json", "Open a detached review artifact instead of the repository"),
+    from: optionalString({
+      name: "from",
+      metavar: "artifact.json",
+      description: "Open a detached review artifact instead of the repository",
+    }),
     port: portFlag,
     open: openFlag,
   },
@@ -323,7 +371,11 @@ const pr = Command.make(
   "pr",
   {
     number: Argument.Int("number").pipe(Argument.withDescription("Pull request number")),
-    repo: optionalString("repo", "owner/name", "GitHub repository; defaults to the one gh resolves here"),
+    repo: optionalString({
+      name: "repo",
+      metavar: "owner/name",
+      description: "GitHub repository; defaults to the one gh resolves here",
+    }),
     artifactOnly: Flag.Boolean("artifact-only").pipe(
       Flag.withDescription("Download the review artifact and print its path instead of opening it"),
       Flag.withDefault(false),
@@ -333,7 +385,10 @@ const pr = Command.make(
   },
   Effect.fn("pr")(function* ({ number, repo, artifactOnly, port, open }) {
     const result = yield* prHandler(new PrCommand({ number, repo }));
-    if (artifactOnly) return yield* Console.log(result.artifactPath);
+    if (artifactOnly) {
+      yield* Console.log(result.artifactPath);
+      return;
+    }
     yield* openReviewSession({
       port,
       open,
@@ -345,10 +400,19 @@ const pr = Command.make(
 
 const rulesList = Command.make(
   "list",
-  { file: optionalString("files", "path", "Only show the rules whose scope matches this path") },
+  {
+    file: optionalString({
+      name: "files",
+      metavar: "path",
+      description: "Only show the rules whose scope matches this path",
+    }),
+  },
   Effect.fn("rulesList")(function* ({ file }) {
     const result = yield* rulesListHandler(new RulesListCommand({ file }));
-    if (!result.rules.length) return yield* Console.log("No rules configured.");
+    if (!result.rules.length) {
+      yield* Console.log("No rules configured.");
+      return;
+    }
     for (const rule of result.rules) {
       yield* Console.log(
         `${rule.enabled ? "on " : "off"} ${rule.id} [${rule.lifecycle}/${rule.authority}] ${rule.title}\n  ${rule.standardId} · ${rule.detector}`,
@@ -381,7 +445,10 @@ const rulesScan = Command.make(
   Effect.fn("rulesScan")(function* ({ files, rules, base, review: openReview }) {
     const result = yield* rulesScanHandler(new RulesScanCommand({ rules, base, files: [...files] }));
     yield* Console.log(result.fixtureMessage);
-    if (result.exitCode !== 0) return yield* setExitCode(result.exitCode);
+    if (result.exitCode !== 0) {
+      yield* setExitCode(result.exitCode);
+      return;
+    }
     yield* Console.log(`${result.findings.length} calibration candidate${result.findings.length === 1 ? "" : "s"}.`);
     if (openReview)
       yield* openReviewSession({ base, rules, files: [...files], port: 0, open: true, mode: "calibration" });
@@ -398,13 +465,13 @@ const calibration = Command.make(
     const result = yield* calibrationHandler(new CalibrationCommand({ files: [...reports] }));
     yield* Console.log(
       format === "json"
-        ? JSON.stringify(result, null, 2)
+        ? encodePrettyJson(result)
         : result.rules.length === 0
           ? "No calibration observations."
           : result.rules
               .map(
                 (rule) =>
-                  `${rule.project} / ${rule.ruleId} (standard ${rule.standardRevision}, detector ${rule.detectorVersion})\n  ${rule.reviewed} reviewed: ${rule.applies} applies, ${rule.doesNotApply} does not apply, ${rule.unsure} unsure\n  Applicability: ${rule.applicabilityRate === null ? "not measured" : Math.round(rule.applicabilityRate * 100) + "%"}\n  Reasons: ${JSON.stringify(rule.reasons)}\n  ${rule.invalidatedEvidence} distinct invalidated observations; ${rule.repeatedInvalidationLineages} repeatedly invalidated lineages`,
+                  `${rule.project} / ${rule.ruleId} (standard ${rule.standardRevision}, detector ${rule.detectorVersion})\n  ${rule.reviewed} reviewed: ${rule.applies} applies, ${rule.doesNotApply} does not apply, ${rule.unsure} unsure\n  Applicability: ${rule.applicabilityRate === null ? "not measured" : Math.round(rule.applicabilityRate * 100) + "%"}\n  Reasons: ${encodeJson(rule.reasons)}\n  ${rule.invalidatedEvidence} distinct invalidated observations; ${rule.repeatedInvalidationLineages} repeatedly invalidated lineages`,
               )
               .join("\n"),
     );
@@ -452,7 +519,8 @@ const acceptancesImport = Command.make(
       yield* Console.error(
         `Rejected ${result.rejectedCount} decision(s): the finding changed, disappeared, or requires different authority.`,
       );
-      return yield* setExitCode(result.exitCode);
+      yield* setExitCode(result.exitCode);
+      return;
     }
     yield* Console.log(`Imported ${result.importedCount} acceptance(s).`);
     yield* printAcceptances(result);
@@ -496,7 +564,7 @@ const program = Effect.gen(function* () {
     (error) => (CliError.isCliError(error) && error._tag === "ShowHelp" ? Result.succeed(error) : Result.fail(error)),
     (error) => (error.errors.length ? setExitCode(2) : Effect.void),
   ),
-  Effect.catch((error: unknown) =>
+  Effect.catch((error) =>
     Effect.gen(function* () {
       const message = error instanceof Error ? error.message : String(error);
       yield* Console.error(`agentlint: ${message}`);
@@ -507,10 +575,11 @@ const program = Effect.gen(function* () {
 
 const CliOutputLayer = Layer.unwrap(
   Effect.map(Env, (env) =>
-    CliOutput.layer({
-      ...CliOutput.defaultFormatter({ colors: !env.noColor }),
-      formatVersion: (_name, version) => version,
-    }),
+    CliOutput.layer(
+      Object.assign(CliOutput.defaultFormatter({ colors: !env.noColor }), {
+        formatVersion: (...[, version]: [string, string]) => version,
+      }),
+    ),
   ),
 );
 
@@ -523,6 +592,6 @@ const AppLayer = Layer.mergeAll(
   ProposalStore.layer,
   SelectorCache.layer,
   CliOutputLayer,
-).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, Env.layer)));
 
-NodeRuntime.runMain(program.pipe(Effect.provide(AppLayer)) as Effect.Effect<void>);
+NodeRuntime.runMain(program.pipe(Effect.provide(AppLayer)));

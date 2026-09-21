@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { Array as A, Order, Schema } from "effect";
 import { ConfigError, defineConfig, normalizeConfig } from "./config.js";
 import type { ChangeRule, StateRule } from "./rule.js";
 import { defineRule, RuleDefinitionError, ruleMatches } from "./rule.js";
@@ -12,6 +13,15 @@ const standard = {
     checks: ["Confirm that the result size has a safe upper limit."],
   },
 } as const;
+
+const catchError = (operation: () => void): Error | undefined => {
+  try {
+    operation();
+    return undefined;
+  } catch (error) {
+    return Schema.decodeUnknownSync(Schema.instanceOf(Error))(error);
+  }
+};
 
 const stateRule = defineRule({
   lifecycle: "state",
@@ -44,7 +54,13 @@ const changeRule = defineRule({
   detector: {
     id: "sql/drop-column",
     version: 3,
-    detect(context, options) {
+    detect({
+      context,
+      options,
+    }: {
+      readonly context: import("../index.js").ChangeRuleContext;
+      readonly options: { readonly operations: readonly ["DROP COLUMN"] };
+    }) {
       for (const file of context.change.files) {
         const content = file.after?.content ?? "";
         if (options.operations.some((operation) => content.includes(operation))) {
@@ -92,18 +108,23 @@ describe("defineRule", () => {
       detector: {
         id: "comments/no-noise",
         version: 1,
-        createOnce(context, options: { readonly message: string }) {
+        createOnce({
+          context,
+          options,
+        }: {
+          readonly context: import("../index.js").RuleContext;
+          readonly options: { readonly message: string };
+        }) {
           return { comment: (node) => context.report({ node, message: options.message }) };
         },
       },
       binding: { id: "comments/no-noise", authority: "agent", options: { message: "Review comment." } },
     });
-    expect(rule.detector.createOnce).toBeTypeOf("function");
+    expect(A.sort(Object.keys(rule.detector), Order.String)).toEqual(["createOnce", "id", "version"]);
   });
 
   it("rejects invalid trigger combinations", () => {
-    let caught: unknown;
-    try {
+    const caught = catchError(() =>
       defineRule({
         lifecycle: "state",
         standard,
@@ -113,10 +134,8 @@ describe("defineRule", () => {
           match: { pattern: "eval($$$ARGS)", query: "(call_expression)", message: "Review." },
         },
         binding: { id: "invalid/both", authority: "agent" },
-      });
-    } catch (error) {
-      caught = error;
-    }
+      }),
+    );
     expect(caught).toBeInstanceOf(RuleDefinitionError);
     expect(caught).toMatchObject({ ruleId: "invalid/both", reason: "ambiguous_match" });
     expect(() =>
@@ -180,15 +199,11 @@ describe("defineConfig", () => {
   });
 
   it("rejects duplicate binding identities", () => {
-    let caught: unknown;
-    try {
-      normalizeConfig(defineConfig({ rules: [stateRule, stateRule] }));
-    } catch (error) {
-      caught = error;
-    }
+    const caught = catchError(() => normalizeConfig(defineConfig({ rules: [stateRule, stateRule] })));
     expect(caught).toBeInstanceOf(ConfigError);
     expect(caught).toMatchObject({ reason: "duplicate_binding", ruleId: "api/bounded-prisma-query" });
-    expect((caught as ConfigError).message).toBe("Duplicate rule binding id: api/bounded-prisma-query");
+    if (!(caught instanceof ConfigError)) throw new Error("Expected ConfigError");
+    expect(caught.message).toBe("Duplicate rule binding id: api/bounded-prisma-query");
   });
 
   it("rejects empty base and ignore patterns", () => {

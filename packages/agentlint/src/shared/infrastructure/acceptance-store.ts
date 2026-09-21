@@ -8,7 +8,7 @@
  * @since 0.2.0
  */
 
-import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
+import { Context, Effect, FileSystem, Layer, Path, Schema, type PlatformError } from "effect";
 import { Env } from "../../config/env.js";
 import {
   AcceptanceDecision,
@@ -54,6 +54,7 @@ export interface ReconcileResult extends AcceptanceSnapshot {
 
 const ACCEPTANCE_PATH = [".agentlint", "acceptances.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
+const encodeRecord = Schema.encodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
 
 /**
  * Decode a portable decision batch. Conflicting decisions for one identity are rejected.
@@ -86,16 +87,17 @@ export function parseAcceptances(content: string): AcceptanceRecord[] {
     const line = rawLine.trim();
     if (line.length === 0) continue;
 
-    let record: AcceptanceRecord;
-    try {
-      record = decodeRecord(line);
-    } catch (error) {
-      throw new AcceptanceStoreError({
-        reason: "invalid_record",
-        detail: error instanceof Error ? error.message : String(error),
-        line: index + 1,
-      });
-    }
+    const record = (() => {
+      try {
+        return decodeRecord(line);
+      } catch (error) {
+        throw new AcceptanceStoreError({
+          reason: "invalid_record",
+          detail: error instanceof Error ? error.message : String(error),
+          line: index + 1,
+        });
+      }
+    })();
 
     const key = acceptanceKey(record);
     if (seen.has(key)) {
@@ -116,19 +118,22 @@ export function parseAcceptances(content: string): AcceptanceRecord[] {
  * Sort records by their complete identity, independently of insertion order.
  */
 function sortAcceptances(records: ReadonlyArray<AcceptanceRecord>): AcceptanceRecord[] {
-  return sortByKey(records, keyIndex(records));
+  return sortByKey({ records, keys: keyIndex(records) });
 }
 
 function keyIndex(records: ReadonlyArray<AcceptanceRecord>): Map<AcceptanceRecord, string> {
   return new Map(records.map((record) => [record, acceptanceKey(record)]));
 }
 
-function sortByKey(
-  records: ReadonlyArray<AcceptanceRecord>,
-  keys: ReadonlyMap<AcceptanceRecord, string>,
-): AcceptanceRecord[] {
+function sortByKey({
+  records,
+  keys,
+}: {
+  readonly records: ReadonlyArray<AcceptanceRecord>;
+  readonly keys: ReadonlyMap<AcceptanceRecord, string>;
+}): AcceptanceRecord[] {
   const keyOf = (record: AcceptanceRecord) => keys.get(record) ?? acceptanceKey(record);
-  return records.toSorted((left, right) => compareStrings(keyOf(left), keyOf(right)));
+  return records.toSorted((left, right) => compareStrings({ left: keyOf(left), right: keyOf(right) }));
 }
 
 /**
@@ -136,7 +141,7 @@ function sortByKey(
  */
 export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): string {
   const sorted = sortAcceptances(records);
-  return sorted.length === 0 ? "" : `${sorted.map((record) => JSON.stringify(record)).join("\n")}\n`;
+  return sorted.length === 0 ? "" : `${sorted.map((record) => encodeRecord(record)).join("\n")}\n`;
 }
 
 /**
@@ -145,14 +150,19 @@ export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): 
  * A new record replaces only the same exact identity. A partial view never removes other records. A complete view
  * removes records whose exact identities are absent.
  */
-export function reconcileAcceptanceRecords(
-  existing: ReadonlyArray<AcceptanceRecord>,
-  input: ReconcileInput,
-): ReconcileResult {
-  const currentKeys = new Set(input.current.map((finding) => findingIdentityKey(finding.source, finding.fingerprint)));
+export function reconcileAcceptanceRecords({
+  existing,
+  input,
+}: {
+  readonly existing: ReadonlyArray<AcceptanceRecord>;
+  readonly input: ReconcileInput;
+}): ReconcileResult {
+  const currentKeys = new Set(
+    input.current.map((finding) => findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint })),
+  );
   const keys = keyIndex([...existing, ...(input.accepted ?? [])]);
   const keyOf = (record: AcceptanceRecord) => keys.get(record) ?? acceptanceKey(record);
-  let records = [...existing];
+  const state = { records: [...existing] };
 
   for (const record of input.accepted ?? []) {
     const key = keyOf(record);
@@ -163,8 +173,8 @@ export function reconcileAcceptanceRecords(
         line: undefined,
       });
     }
-    records = records.filter((candidate) => keyOf(candidate) !== key);
-    records.push(record);
+    state.records = state.records.filter((candidate) => keyOf(candidate) !== key);
+    state.records.push(record);
   }
 
   for (const revocation of input.revoked ?? []) {
@@ -183,17 +193,19 @@ export function reconcileAcceptanceRecords(
     }
   }
   const revoked = new Set(
-    (input.revoked ?? []).map((finding) => findingIdentityKey(finding.source, finding.fingerprint)),
+    (input.revoked ?? []).map((finding) =>
+      findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint }),
+    ),
   );
-  records = records.filter((record) => !revoked.has(keyOf(record)));
+  state.records = state.records.filter((record) => !revoked.has(keyOf(record)));
 
   if (input.scope === "complete") {
-    records = records.filter((record) => currentKeys.has(keyOf(record)));
+    state.records = state.records.filter((record) => currentKeys.has(keyOf(record)));
   }
 
-  const keptKeys = new Set(records.map(keyOf));
+  const keptKeys = new Set(state.records.map(keyOf));
   const removed = existing.filter((record) => !keptKeys.has(keyOf(record)));
-  const sorted = sortByKey(records, keys);
+  const sorted = sortByKey({ records: state.records, keys });
   return { records: sorted, byKey: new Map(sorted.map((record) => [keyOf(record), record])), removed };
 }
 
@@ -214,9 +226,13 @@ export class AcceptanceStore extends Context.Service<
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(env.cwd, ...ACCEPTANCE_PATH);
       const lock = path.resolve(directory, "acceptances.lock");
-      const ioError = (error: unknown) =>
-        new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined });
-      const locked = withFileLock(fs, directory, lock, ioError);
+      const ioError = (error: PlatformError.PlatformError | string) =>
+        new AcceptanceStoreError({
+          reason: "io",
+          detail: Schema.is(Schema.String)(error) ? error : error.message,
+          line: undefined,
+        });
+      const locked = withFileLock({ fs, directory, lock, fail: ioError });
 
       const readRecords = (): Effect.Effect<AcceptanceRecord[], AcceptanceStoreError> =>
         fs.exists(file).pipe(
@@ -240,38 +256,37 @@ export class AcceptanceStore extends Context.Service<
           }),
         );
 
-      const writeRecords = (
+      const writeRecords = Effect.fn("AcceptanceStore.writeRecords")(function* (
         records: ReadonlyArray<AcceptanceRecord>,
-      ): Effect.Effect<AcceptanceSnapshot, AcceptanceStoreError> =>
-        Effect.gen(function* () {
-          // Decode the serialized representation before replacing project state.
-          const prepared = yield* Effect.try({
-            try: () => {
-              const serialized = serializeAcceptances(records);
-              return { serialized, validated: parseAcceptances(serialized) };
-            },
-            catch: (error) =>
-              error instanceof AcceptanceStoreError
-                ? error
-                : new AcceptanceStoreError({ reason: "invalid_record", detail: String(error), line: undefined }),
-          });
-          yield* fs
-            .makeDirectory(directory, { recursive: true })
-            .pipe(
-              Effect.mapError(
-                (error) => new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined }),
-              ),
-            );
-          const temporary = path.resolve(directory, `acceptances.${randomUUID()}.tmp`);
-          yield* fs
-            .writeFileString(temporary, prepared.serialized, { flag: "wx" })
-            .pipe(
-              Effect.andThen(fs.rename(temporary, file)),
-              Effect.mapError(ioError),
-              Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
-            );
-          return acceptanceSnapshot(prepared.validated);
+      ) {
+        // Decode the serialized representation before replacing project state.
+        const prepared = yield* Effect.try({
+          try: () => {
+            const serialized = serializeAcceptances(records);
+            return { serialized, validated: parseAcceptances(serialized) };
+          },
+          catch: (error) =>
+            error instanceof AcceptanceStoreError
+              ? error
+              : new AcceptanceStoreError({ reason: "invalid_record", detail: String(error), line: undefined }),
         });
+        yield* fs
+          .makeDirectory(directory, { recursive: true })
+          .pipe(
+            Effect.mapError(
+              (error) => new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined }),
+            ),
+          );
+        const temporary = path.resolve(directory, `acceptances.${randomUUID()}.tmp`);
+        yield* fs
+          .writeFileString(temporary, prepared.serialized, { flag: "wx" })
+          .pipe(
+            Effect.andThen(fs.rename(temporary, file)),
+            Effect.mapError(ioError),
+            Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
+          );
+        return acceptanceSnapshot(prepared.validated);
+      });
 
       return AcceptanceStore.of({
         read: () => readRecords().pipe(Effect.map(acceptanceSnapshot)),
@@ -281,7 +296,7 @@ export class AcceptanceStore extends Context.Service<
             Effect.gen(function* () {
               const existing = yield* readRecords();
               const result = yield* Effect.try({
-                try: () => reconcileAcceptanceRecords(existing, input),
+                try: () => reconcileAcceptanceRecords({ existing, input }),
                 catch: (error) =>
                   error instanceof AcceptanceStoreError
                     ? error

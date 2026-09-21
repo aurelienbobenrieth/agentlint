@@ -2,7 +2,7 @@
  * Review payload and action application. @module @since 0.2.0
  */
 
-import { Clock, Effect, Path } from "effect";
+import { Array as A, Clock, Effect, Path } from "effect";
 import type { CheckResult } from "../check/request.js";
 import { acceptanceKey, lookupAcceptance } from "../../domain/acceptance.js";
 import { Env } from "../../config/env.js";
@@ -43,6 +43,7 @@ const browserHref = (value: string): string | null => {
     const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
   } catch {
+    // REASON: invalid guidance URLs are omitted from the browser-safe contract.
     return null;
   }
 };
@@ -50,7 +51,15 @@ const browserHref = (value: string): string | null => {
 /**
  * True when `target` is `directory` or below it. Both paths must already be absolute.
  */
-export function isInsideDirectory(path: Path.Path, directory: string, target: string): boolean {
+export function isInsideDirectory({
+  path,
+  directory,
+  target,
+}: {
+  readonly path: Path.Path;
+  readonly directory: string;
+  readonly target: string;
+}): boolean {
   const relative = path.relative(directory, target);
   return relative !== ".." && !relative.startsWith("../") && !relative.startsWith("..\\") && !path.isAbsolute(relative);
 }
@@ -97,14 +106,14 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
     // Findings come from this configuration. Skipping one would show a clear queue for unreviewed work.
     if (!rule) return yield* Effect.die(new Error(`Finding ${finding.ruleId} has no rule in the loaded configuration`));
     const id = findingKey(finding);
-    const acceptance = lookupAcceptance(snapshot, finding);
+    const acceptance = lookupAcceptance({ acceptances: snapshot, finding });
     const stored = snapshot.byKey.get(id);
     options.session?.served.set(id, stored ? { acceptedAt: stored.acceptedAt, reason: stored.reason } : null);
-    const lineage = findLineage(snapshot.records, finding);
-    const reasons = lineage ? invalidationReasons(lineage, finding) : [];
-    const proposal = findProposal(proposals, finding);
+    const lineage = findLineage({ records: snapshot.records, finding });
+    const reasons = lineage ? invalidationReasons({ prior: lineage, current: finding }) : [];
+    const proposal = findProposal({ records: proposals, finding });
     const absoluteFile = path.resolve(env.cwd, finding.file);
-    const isInsideRepository = isInsideDirectory(path, env.cwd, absoluteFile);
+    const isInsideRepository = isInsideDirectory({ path, directory: env.cwd, target: absoluteFile });
     const guidance = normalizeGuidance(rule.standard.guidance);
     const references: ReviewFindingPayload["guidance"]["references"][number][] = [];
     if (rule.standard.source) {
@@ -209,7 +218,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
     generatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     applications: options.transport === "attached" ? [...(options.applications ?? [])] : [],
     findings,
-    calibration: findings.flatMap((finding) => {
+    calibration: A.flatMap(findings, (finding) => {
       const feedback = options.session?.calibration.find((item) => item.findingId === finding.id);
       return feedback
         ? [
@@ -230,7 +239,13 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
   } satisfies ReviewStatePayload;
 });
 
-function replaceByFindingId<T extends { readonly findingId: string }>(items: T[], next: T): void {
+function replaceByFindingId<T extends { readonly findingId: string }>({
+  items,
+  next,
+}: {
+  readonly items: T[];
+  readonly next: T;
+}): void {
   const index = items.findIndex((item) => item.findingId === next.findingId);
   if (index === -1) items.push(next);
   else items[index] = next;
@@ -280,7 +295,7 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
     if (options.mode !== "review") {
       return { ok: false, message: "Calibration cannot create acceptances." } satisfies ReviewActionResult;
     }
-    if (!action.reason?.trim()) {
+    if (!action.reason.trim()) {
       return { ok: false, message: "An acceptance reason is required." } satisfies ReviewActionResult;
     }
     const result = yield* acceptFinding(finding, {
@@ -301,7 +316,7 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
 
   // Revoke only the stored decision this session was last shown. One recorded since then, by another tab
   // or by `agentlint approve`, was never reviewed here and must survive.
-  const revokeServed = Effect.fn(function* () {
+  const revokeServed = Effect.fn("revokeServed")(function* () {
     const store = yield* AcceptanceStore;
     const served = options.session.served.get(action.findingId);
     if (!served) return !(yield* store.read()).byKey.has(action.findingId);
@@ -309,7 +324,14 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
       .reconcile({
         scope: "partial",
         current: [finding],
-        revoked: [{ ...finding, expectedAcceptedAt: served.acceptedAt, expectedReason: served.reason }],
+        revoked: [
+          {
+            source: finding.source,
+            fingerprint: finding.fingerprint,
+            expectedAcceptedAt: served.acceptedAt,
+            expectedReason: served.reason,
+          },
+        ],
       })
       .pipe(
         Effect.as(true),
@@ -342,13 +364,16 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
     if (!(yield* revokeServed())) return conflict;
     // An empty request still tells the agent exactly which finding to revisit; the
     // finding message and standard carry the instruction.
-    replaceByFindingId(options.session.feedback, {
-      findingId: action.findingId,
-      ruleId: finding.ruleId,
-      file: finding.file,
-      line: finding.line,
-      message: finding.message,
-      comment: action.reason?.trim() || finding.message,
+    replaceByFindingId({
+      items: options.session.feedback,
+      next: {
+        findingId: action.findingId,
+        ruleId: finding.ruleId,
+        file: finding.file,
+        line: finding.line,
+        message: finding.message,
+        comment: action.reason.trim() || finding.message,
+      },
     });
     options.session.requested.add(action.findingId);
     return { ok: true, message: "Change request recorded." } satisfies ReviewActionResult;
@@ -360,18 +385,18 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
       message: "Calibration labels are available only in calibration mode.",
     } satisfies ReviewActionResult;
   }
-  if (!action.calibration) {
-    return { ok: false, message: "Select a calibration result." } satisfies ReviewActionResult;
-  }
   if (action.calibration === "does_not_apply" && action.reason === null)
     return { ok: false, message: "Select why this finding does not apply." } satisfies ReviewActionResult;
-  replaceByFindingId(options.session.calibration, {
-    findingId: action.findingId,
-    ruleId: finding.ruleId,
-    file: finding.file,
-    classification: action.calibration,
-    reason: action.calibration === "does_not_apply" ? action.reason : null,
-    note: action.note?.trim() ?? "",
+  replaceByFindingId({
+    items: options.session.calibration,
+    next: {
+      findingId: action.findingId,
+      ruleId: finding.ruleId,
+      file: finding.file,
+      classification: action.calibration,
+      reason: action.calibration === "does_not_apply" ? action.reason : null,
+      note: action.note.trim(),
+    },
   });
   return { ok: true, message: "Calibration feedback recorded." } satisfies ReviewActionResult;
 });

@@ -19,17 +19,19 @@ const readInput = () => {
   try {
     return JSON.parse(readFileSync(0, "utf8"));
   } catch {
+    // REASON: missing stdin means there is no prior gate payload to merge.
     return {};
   }
 };
 
-const findBin = () => {
-  for (let directory = root; ; directory = dirname(directory)) {
-    const candidate = join(directory, "node_modules/@aurelienbbn/agentlint/dist/bin.mjs");
-    if (existsSync(candidate)) return candidate;
-    if (dirname(directory) === directory) return undefined;
-  }
+const findFrom = (directory) => {
+  const candidate = join(directory, "node_modules/@aurelienbbn/agentlint/dist/bin.mjs");
+  if (existsSync(candidate)) return candidate;
+  if (dirname(directory) === directory) return undefined;
+  return findFrom(dirname(directory));
 };
+
+const findBin = () => findFrom(root);
 
 // A stop that this hook already blocked continues, so a finding the agent cannot
 // close (human authority) interrupts once instead of looping.
@@ -47,7 +49,7 @@ const result = spawnSync(process.execPath, [bin, "check", ...(mode === "stop" ? 
 });
 if (result.status === 0) process.exit(0);
 
-const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+const output = `${result.stdout}${result.stderr}`.trim();
 const instruction =
   result.status === 1
     ? mode === "stop"

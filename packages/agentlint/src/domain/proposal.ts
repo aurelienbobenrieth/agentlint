@@ -37,18 +37,22 @@ export class ProposalRecord extends Schema.Class<ProposalRecord>("ProposalRecord
  * Exact persisted identity key.
  */
 export function proposalKey(record: Pick<ProposalRecord, "source" | "fingerprint">): string {
-  return findingIdentityKey(record.source, record.fingerprint);
+  return findingIdentityKey({ source: record.source, fingerprint: record.fingerprint });
 }
 
 /**
  * Find the proposal recorded for this exact finding.
  */
-export function findProposal(
-  records: ReadonlyArray<ProposalRecord>,
-  finding: Pick<FindingRecord, "source" | "fingerprint">,
-): ProposalRecord | undefined {
+export function findProposal({
+  records,
+  finding,
+}: {
+  readonly records: ReadonlyArray<ProposalRecord>;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint">;
+}): ProposalRecord | undefined {
   return records.find(
     (record) =>
-      sameFindingSource(record.source, finding.source) && sameFingerprint(record.fingerprint, finding.fingerprint),
+      sameFindingSource({ left: record.source, right: finding.source }) &&
+      sameFingerprint({ left: record.fingerprint, right: finding.fingerprint }),
   );
 }

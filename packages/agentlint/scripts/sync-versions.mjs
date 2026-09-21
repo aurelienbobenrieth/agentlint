@@ -70,17 +70,15 @@ const targets = [
   { file: join(root, "README.md"), sync: syncDocumentedVersion },
 ];
 
-let updated = 0;
-for (const { file, sync } of targets) {
-  if (!existsSync(file)) continue;
+const updated = targets.filter(({ file, sync }) => {
+  if (!existsSync(file)) return false;
   const content = readFileSync(file, "utf8");
   const replaced = sync(content);
-  if (replaced !== content) {
-    writeFileSync(file, replaced);
-    updated++;
-    console.log(`✓ ${relative(repoRoot, file)}`);
-  }
-}
+  if (replaced === content) return false;
+  writeFileSync(file, replaced);
+  console.log(`✓ ${relative(repoRoot, file)}`);
+  return true;
+}).length;
 
 if (updated > 0) {
   console.log(`\nSynced version ${version} in ${updated} file(s)`);

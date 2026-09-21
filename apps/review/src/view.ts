@@ -6,13 +6,13 @@ import { reviewView } from "./features/shell/view";
 import type { Message } from "./message";
 import { type Model, Screen } from "./model";
 
-export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
+export const view = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Document => ({
   title: "agentlint · Review",
   body: Screen.match<Html>(model.screen, {
     Loading: () => loadingView(h),
-    LoadFailed: ({ message }) => loadFailedView(message, h),
-    Reviewing: ({ state }) => reviewView(state, model, h),
+    LoadFailed: ({ message }) => loadFailedView({ message, h }),
+    Reviewing: ({ state }) => reviewView({ state, model, h }),
     Finished: ({ summary, feedback, acceptanceOutput, calibrationOutput }) =>
-      finishedView(summary, feedback, acceptanceOutput, calibrationOutput, h),
+      finishedView({ summary, feedback, acceptanceOutput, calibrationOutput, h }),
   }),
 });

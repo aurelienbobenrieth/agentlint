@@ -15,10 +15,10 @@ const encodeActionRequest = S.encodeSync(S.fromJsonString(ReviewActionRequest));
 export const SubmitAction = Command.define("SubmitAction", {
   args: { request: ReviewActionRequest },
   messages: [Message.CompletedAction, Message.RecordedActionRefreshFailed, Message.FailedAction],
-  execute: ({ request }) =>
-    Effect.gen(function* () {
-      const response = yield* postJson("/api/action", encodeActionRequest(request));
-      const message = yield* responseMessage(response, `Action failed (${response.status}).`);
+  execute: Effect.fn("SubmitAction.execute")(function* ({ request }) {
+    return yield* Effect.gen(function* () {
+      const response = yield* postJson({ url: "/api/action", body: encodeActionRequest(request) });
+      const message = yield* responseMessage({ response, fallback: `Action failed (${response.status}).` });
       if (!response.ok)
         return yield* Effect.fail(new BrowserRequestError({ operation: "Decision rejected", detail: message }));
       return yield* fetchState.pipe(
@@ -33,5 +33,6 @@ export const SubmitAction = Command.define("SubmitAction", {
       Effect.catch((error) =>
         Effect.succeed(Message.FailedAction({ findingId: request.findingId, message: errorMessage(error) })),
       ),
-    ),
+    );
+  }),
 });

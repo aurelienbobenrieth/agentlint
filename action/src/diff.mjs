@@ -19,23 +19,29 @@ export function commentableLines(patch) {
    */
   const lines = new Set();
   if (!patch) return lines;
-  let right = 0;
-  let inHunk = false;
-  for (const line of patch.split("\n")) {
+  /**
+   * @param {{ remaining: string[]; right: number; inHunk: boolean }} input
+   */
+  const visit = ({ remaining, right, inHunk }) => {
+    const [line, ...rest] = remaining;
+    if (line === undefined) return;
     const header = HUNK_HEADER.exec(line);
     if (header) {
-      right = Number(header[1]);
-      inHunk = true;
-      continue;
+      visit({ remaining: rest, right: Number(header[1]), inHunk: true });
+      return;
     }
-    if (!inHunk) continue;
-    if (line.startsWith("\\")) continue;
-    if (line.startsWith("-")) continue;
+    if (!inHunk || line.startsWith("\\") || line.startsWith("-")) {
+      visit({ remaining: rest, right, inHunk });
+      return;
+    }
     if (line.startsWith("+") || line.startsWith(" ") || line === "") {
       lines.add(right);
-      right += 1;
+      visit({ remaining: rest, right: right + 1, inHunk });
+      return;
     }
-  }
+    visit({ remaining: rest, right, inHunk });
+  };
+  visit({ remaining: patch.split("\n"), right: 0, inHunk: false });
   return lines;
 }
 
@@ -67,9 +73,10 @@ export function commentableByFile(files) {
 }
 
 /**
- * @param {Map<string, Set<number>>} commentable
- * @param {{ file: string; line: number }} location
+ * @param {object} input
+ * @param {Map<string, Set<number>>} input.commentable
+ * @param {{ file: string; line: number }} input.location
  */
-export function isCommentable(commentable, location) {
+export function isCommentable({ commentable, location }) {
   return commentable.get(location.file)?.has(location.line) ?? false;
 }

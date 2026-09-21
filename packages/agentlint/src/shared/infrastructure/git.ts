@@ -10,7 +10,7 @@
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
+import { Context, Effect, FileSystem, Layer, Match, Path, Schema } from "effect";
 import { textLines } from "../pipeline/change-hunks.js";
 import { inspectRepositoryEntry, toRepositoryPath } from "../pipeline/file-resolver.js";
 import { Env } from "../../config/env.js";
@@ -42,22 +42,15 @@ export class GitError extends Schema.TaggedError<GitError>()("agentlint/GitError
   exitCode: Schema.optional(Schema.Number),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "command":
-        return `Git ${this.operation} failed: ${this.detail}`;
-      case "executable_missing":
-        return `Git ${this.operation} failed: git is not installed or not on PATH`;
-      case "output_too_large":
-        return `Git ${this.operation} failed: the output exceeds ${MAX_BUFFER_BYTES} bytes`;
-      case "unsafe_ref":
-        return `Git reference must not start with "-": ${this.ref}`;
-      case "no_merge_base":
-        return `No merge base for HEAD and ${this.ref}. Pass --base with a ref that shares history with HEAD.`;
-      case "shallow_clone":
-        return `No merge base for HEAD and ${this.ref}: this is a shallow clone. Fetch full history (actions/checkout fetch-depth: 0) or pass --base.`;
-      case "no_default_branch":
-        return `No default branch found (tried ${this.detail}). Pass --base <ref> or set "base" in .agentlint/config.ts.`;
-    }
+    return {
+      command: `Git ${this.operation} failed: ${this.detail}`,
+      executable_missing: `Git ${this.operation} failed: git is not installed or not on PATH`,
+      output_too_large: `Git ${this.operation} failed: the output exceeds ${MAX_BUFFER_BYTES} bytes`,
+      unsafe_ref: `Git reference must not start with "-": ${this.ref}`,
+      no_merge_base: `No merge base for HEAD and ${this.ref}. Pass --base with a ref that shares history with HEAD.`,
+      shallow_clone: `No merge base for HEAD and ${this.ref}: this is a shallow clone. Fetch full history (actions/checkout fetch-depth: 0) or pass --base.`,
+      no_default_branch: `No default branch found (tried ${this.detail}). Pass --base <ref> or set "base" in .agentlint/config.ts.`,
+    }[this.reason];
   }
 }
 
@@ -96,12 +89,25 @@ interface CommandFailure {
   readonly detail: string;
 }
 
-const gitCommand = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-  literalPathspecs: boolean,
-  variables?: Readonly<NodeJS.ProcessEnv>,
-) =>
+const CommandFailureSchema = Schema.Struct({
+  exitCode: Schema.UndefinedOr(Schema.Number),
+  code: Schema.UndefinedOr(Schema.String),
+  detail: Schema.String,
+});
+const isNumber = Schema.is(Schema.Number);
+const isString = Schema.is(Schema.String);
+
+const gitCommand = ({
+  cwd,
+  args,
+  literalPathspecs,
+  variables,
+}: {
+  readonly cwd: string;
+  readonly args: ReadonlyArray<string>;
+  readonly literalPathspecs: boolean;
+  readonly variables?: Readonly<NodeJS.ProcessEnv>;
+}) =>
   Effect.tryPromise({
     try: (signal) =>
       new Promise<string>((resolve, reject) => {
@@ -134,14 +140,14 @@ const gitCommand = (
           (error, stdout, stderr) => {
             if (!error) return resolve(stdout);
             reject({
-              exitCode: typeof error.code === "number" ? error.code : undefined,
-              code: typeof error.code === "string" ? error.code : undefined,
+              exitCode: isNumber(error.code) ? error.code : undefined,
+              code: isString(error.code) ? error.code : undefined,
               detail: stderr.trim() || error.message,
             } satisfies CommandFailure);
           },
         );
       }),
-    catch: (failure) => failure as CommandFailure,
+    catch: (failure) => Schema.decodeUnknownSync(CommandFailureSchema)(failure),
   });
 
 /**
@@ -169,21 +175,26 @@ export function parseGitRawStatus(output: string): ReadonlyArray<StatusEntry> {
   const tokens = output.split("\0").filter((token) => token.length > 0);
   const files: StatusEntry[] = [];
 
-  for (let index = 0; index < tokens.length;) {
-    const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) [0-9a-f]+ ([A-Z])/.exec(tokens[index++] ?? "");
+  const cursor = { index: 0 };
+  while (cursor.index < tokens.length) {
+    const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) [0-9a-f]+ ([A-Z])/.exec(tokens[cursor.index++] ?? "");
     if (!header) continue;
     const [, beforeMode = "", afterMode = "", beforeBlob = "", kind] = header;
     if (kind === "R" || kind === "C") {
-      const previousPath = tokens[index++];
-      const path = tokens[index++];
+      const previousPath = tokens[cursor.index++];
+      const path = tokens[cursor.index++];
       if (previousPath && path)
         files.push({ status: "renamed", previousPath, path, beforeMode, afterMode, beforeBlob });
       continue;
     }
 
-    const path = tokens[index++];
+    const path = tokens[cursor.index++];
     if (!path) continue;
-    const status: ChangedFile["status"] = kind === "A" ? "added" : kind === "D" ? "deleted" : "modified";
+    const status: ChangedFile["status"] = Match.value(kind).pipe(
+      Match.when("A", () => "added" as const),
+      Match.when("D", () => "deleted" as const),
+      Match.orElse(() => "modified" as const),
+    );
     files.push({ status, path, beforeMode, afterMode, beforeBlob });
   }
 
@@ -192,14 +203,15 @@ export function parseGitRawStatus(output: string): ReadonlyArray<StatusEntry> {
 
 export function parseUnifiedHunks(output: string): ReadonlyArray<ChangeHunk> {
   const hunks: ChangeHunk[] = [];
-  let current: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: ChangeLine[] } | null =
-    null;
+  const state: {
+    current: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: ChangeLine[] } | null;
+  } = { current: null };
 
   for (const line of output.split(/\r?\n/)) {
     const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
     if (header) {
-      if (current) hunks.push(current);
-      current = {
+      if (state.current) hunks.push(state.current);
+      state.current = {
         oldStart: Number(header[1]),
         oldLines: Number(header[2] ?? "1"),
         newStart: Number(header[3]),
@@ -208,13 +220,13 @@ export function parseUnifiedHunks(output: string): ReadonlyArray<ChangeHunk> {
       };
       continue;
     }
-    if (!current || line.startsWith("\\ No newline")) continue;
-    if (line.startsWith("+")) current.lines.push({ kind: "addition", content: line.slice(1) });
-    else if (line.startsWith("-")) current.lines.push({ kind: "deletion", content: line.slice(1) });
-    else if (line.startsWith(" ")) current.lines.push({ kind: "context", content: line.slice(1) });
+    if (!state.current || line.startsWith("\\ No newline")) continue;
+    if (line.startsWith("+")) state.current.lines.push({ kind: "addition", content: line.slice(1) });
+    else if (line.startsWith("-")) state.current.lines.push({ kind: "deletion", content: line.slice(1) });
+    else if (line.startsWith(" ")) state.current.lines.push({ kind: "context", content: line.slice(1) });
   }
 
-  if (current) hunks.push(current);
+  if (state.current) hunks.push(state.current);
   return hunks;
 }
 
@@ -241,7 +253,10 @@ export class Git extends Context.Service<
      * The normalized comparison. `include` is applied to the changed paths before any content is read or diffed, so an
      * ignored or out-of-scope file costs nothing. Submodule entries are never part of a change set.
      */
-    changeSet(baseRef?: string, include?: (path: string) => boolean): Effect.Effect<ChangeSet, GitError>;
+    changeSet(input?: {
+      readonly baseRef?: string;
+      readonly include?: (path: string) => boolean;
+    }): Effect.Effect<ChangeSet, GitError>;
     /**
      * Tracked and unignored untracked paths below the working directory. `undefined` when Git cannot list them: no Git,
      * no work tree, or a working directory the enclosing repository ignores.
@@ -255,17 +270,29 @@ export class Git extends Context.Service<
       const env = yield* Env;
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const runRaw = (operation: string, args: ReadonlyArray<string>, literalPathspecs = true) =>
-        gitCommand(env.cwd, args, literalPathspecs, env.variables).pipe(
+      const runRaw = ({
+        operation,
+        args,
+        literalPathspecs = true,
+      }: {
+        readonly operation: string;
+        readonly args: ReadonlyArray<string>;
+        readonly literalPathspecs?: boolean;
+      }) =>
+        gitCommand({
+          cwd: env.cwd,
+          args,
+          literalPathspecs,
+          ...(env.variables ? { variables: env.variables } : {}),
+        }).pipe(
           Effect.mapError(
             (failure) =>
               new GitError({
-                reason:
-                  failure.code === "ENOENT"
-                    ? "executable_missing"
-                    : failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
-                      ? "output_too_large"
-                      : "command",
+                reason: Match.value(failure.code).pipe(
+                  Match.when("ENOENT", () => "executable_missing" as const),
+                  Match.when("ERR_CHILD_PROCESS_STDIO_MAXBUFFER", () => "output_too_large" as const),
+                  Match.orElse(() => "command" as const),
+                ),
                 operation,
                 detail: failure.detail,
                 exitCode: failure.exitCode,
@@ -273,15 +300,22 @@ export class Git extends Context.Service<
           ),
         );
 
-      const run = (operation: string, args: ReadonlyArray<string>, literalPathspecs = true) =>
-        runRaw(operation, args, literalPathspecs).pipe(Effect.map((value) => value.trim()));
+      const run = ({
+        operation,
+        args,
+        literalPathspecs = true,
+      }: {
+        readonly operation: string;
+        readonly args: ReadonlyArray<string>;
+        readonly literalPathspecs?: boolean;
+      }) => runRaw({ operation, args, literalPathspecs }).pipe(Effect.map((value) => value.trim()));
 
-      let repositoryPrefix: string | undefined;
+      const memo: { repositoryPrefix: string | undefined } = { repositoryPrefix: undefined };
       const prefix = () =>
-        repositoryPrefix !== undefined
-          ? Effect.succeed(repositoryPrefix)
-          : run("repository prefix", ["rev-parse", "--show-prefix"]).pipe(
-              Effect.tap((value) => Effect.sync(() => (repositoryPrefix = value))),
+        memo.repositoryPrefix !== undefined
+          ? Effect.succeed(memo.repositoryPrefix)
+          : run({ operation: "repository prefix", args: ["rev-parse", "--show-prefix"] }).pipe(
+              Effect.tap((value) => Effect.sync(() => (memo.repositoryPrefix = value))),
             );
 
       const safeRef = (ref: string) =>
@@ -290,13 +324,16 @@ export class Git extends Context.Service<
           : Effect.succeed(ref);
 
       const existsRef = (ref: string) =>
-        run("reference lookup", ["rev-parse", "--verify", "--quiet", ref]).pipe(
+        run({ operation: "reference lookup", args: ["rev-parse", "--verify", "--quiet", ref] }).pipe(
           Effect.as(true),
           Effect.catchIf(answersNo, () => Effect.succeed(false)),
         );
 
       const detectDefaultBranch = () =>
-        run("default branch detection", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).pipe(
+        run({
+          operation: "default branch detection",
+          args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        }).pipe(
           Effect.catchIf(answersNo, () =>
             Effect.gen(function* () {
               for (const candidate of DEFAULT_BRANCH_CANDIDATES) {
@@ -311,77 +348,105 @@ export class Git extends Context.Service<
           ),
         );
 
-      const resolveBaseline = (baseRef?: string) =>
-        Effect.gen(function* () {
-          const ref = yield* safeRef(baseRef ?? (yield* detectDefaultBranch()));
-          const commit = yield* run("merge-base", ["merge-base", "HEAD", ref]).pipe(
-            Effect.catchIf(
-              (error) => error.reason === "command",
-              (error) =>
-                Effect.gen(function* () {
-                  const shallow = yield* run("shallow clone detection", ["rev-parse", "--is-shallow-repository"]);
-                  if (shallow === "true")
-                    return yield* new GitError({ reason: "shallow_clone", operation: "merge-base", ref });
-                  return yield* answersNo(error)
-                    ? new GitError({ reason: "no_merge_base", operation: "merge-base", ref })
-                    : error;
-                }),
-            ),
-          );
-          if (!commit) return yield* new GitError({ reason: "no_merge_base", operation: "merge-base", ref });
-          return { ref, commit } as const;
-        });
+      const resolveBaseline = Effect.fn("Git.resolveBaseline")(function* (baseRef?: string) {
+        const ref = yield* safeRef(baseRef ?? (yield* detectDefaultBranch()));
+        const commit = yield* run({ operation: "merge-base", args: ["merge-base", "HEAD", ref] }).pipe(
+          Effect.catchIf(
+            (error) => error.reason === "command",
+            (error) =>
+              Effect.gen(function* () {
+                const shallow = yield* run({
+                  operation: "shallow clone detection",
+                  args: ["rev-parse", "--is-shallow-repository"],
+                });
+                if (shallow === "true")
+                  return yield* new GitError({ reason: "shallow_clone", operation: "merge-base", ref });
+                return yield* answersNo(error)
+                  ? new GitError({ reason: "no_merge_base", operation: "merge-base", ref })
+                  : error;
+              }),
+          ),
+        );
+        if (!commit) return yield* new GitError({ reason: "no_merge_base", operation: "merge-base", ref });
+        return { ref, commit } as const;
+      });
 
       /**
        * The baseline blob of `filePath`, or `undefined` when the baseline has no such path.
        */
-      const baselineBlob = (commit: string, entry: StatusEntry): Effect.Effect<string | undefined, GitError> => {
+      const baselineBlob = ({
+        commit,
+        entry,
+      }: {
+        readonly commit: string;
+        readonly entry: StatusEntry;
+      }): Effect.Effect<string | undefined, GitError> => {
         if (entry.status === "added") return Effect.succeed(undefined);
         if (!NULL_BLOB.test(entry.beforeBlob)) return Effect.succeed(entry.beforeBlob);
         // Git leaves the blob unresolved for an unmerged path. Ask by name; the exit status answers, not the message.
         return prefix().pipe(
           Effect.flatMap((projectPrefix) =>
-            run("baseline lookup", [
-              "rev-parse",
-              "--verify",
-              "--quiet",
-              `${commit}:${projectPrefix}${entry.previousPath ?? entry.path}`,
-            ]),
+            run({
+              operation: "baseline lookup",
+              args: [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                `${commit}:${projectPrefix}${entry.previousPath ?? entry.path}`,
+              ],
+            }),
           ),
           Effect.map((blob): string | undefined => blob),
           Effect.catchIf(answersNo, () => Effect.succeed(undefined)),
         );
       };
 
-      const readBaseline = (commit: string, entry: StatusEntry): Effect.Effect<SideContent | undefined, GitError> =>
-        Effect.gen(function* () {
-          const blob = yield* baselineBlob(commit, entry);
-          if (blob === undefined) return undefined;
-          return yield* runRaw("file read", ["cat-file", "blob", blob]).pipe(
-            Effect.map((content): SideContent =>
-              isBinary(content) ? { _tag: "Unloaded", blob } : { _tag: "Text", content },
-            ),
-            Effect.catchIf(
-              (error) => error.reason === "output_too_large",
-              () => Effect.succeed<SideContent>({ _tag: "Unloaded", blob }),
-            ),
-          );
-        });
+      const readBaseline = Effect.fn("Git.readBaseline")(function* ({
+        commit,
+        entry,
+      }: {
+        readonly commit: string;
+        readonly entry: StatusEntry;
+      }) {
+        const blob = yield* baselineBlob({ commit, entry });
+        if (blob === undefined) return undefined;
+        return yield* runRaw({ operation: "file read", args: ["cat-file", "blob", blob] }).pipe(
+          Effect.map((content): SideContent =>
+            isBinary(content) ? { _tag: "Unloaded", blob } : { _tag: "Text", content },
+          ),
+          Effect.catchIf(
+            (error) => error.reason === "output_too_large",
+            () => Effect.succeed<SideContent>({ _tag: "Unloaded", blob }),
+          ),
+        );
+      });
 
       /**
        * Read the working side without following a link: a symbolic link is its target text, as Git stores it.
        */
-      const readWorkingFile = (root: string, filePath: string): Effect.Effect<SideContent, GitError> =>
-        Effect.gen(function* () {
-          const entry = yield* inspectRepositoryEntry(fs, path, root, filePath);
+      const readWorkingFile = Effect.fn("Git.readWorkingFile")(function* ({
+        root,
+        filePath,
+      }: {
+        readonly root: string;
+        readonly filePath: string;
+      }) {
+        return yield* Effect.gen(function* () {
+          const entry = yield* inspectRepositoryEntry({ fs, path, canonicalRoot: root, file: filePath });
           if (entry._tag !== "Missing" && entry.linkTarget !== undefined)
-            return { _tag: "Text", content: toRepositoryPath(entry.linkTarget, path.sep) } as const;
+            return {
+              _tag: "Text",
+              content: toRepositoryPath({ value: entry.linkTarget, separator: path.sep }),
+            } as const;
           if (entry._tag !== "Inside") return { _tag: "Skipped" } as const;
           const info = yield* fs.stat(entry.realPath);
           if (info.type !== "File") return { _tag: "Skipped" } as const;
           const content = Number(info.size) > MAX_BUFFER_BYTES ? undefined : yield* fs.readFileString(entry.realPath);
           if (content !== undefined && !isBinary(content)) return { _tag: "Text", content } as const;
-          return { _tag: "Unloaded", blob: yield* run("file hash", ["hash-object", "--", filePath]) } as const;
+          return {
+            _tag: "Unloaded",
+            blob: yield* run({ operation: "file hash", args: ["hash-object", "--", filePath] }),
+          } as const;
         }).pipe(
           Effect.mapError((error) =>
             error instanceof GitError
@@ -389,10 +454,11 @@ export class Git extends Context.Service<
               : new GitError({
                   reason: "command",
                   operation: "working file read",
-                  detail: `${filePath}: ${error.message}`,
+                  detail: `${filePath}: ${String(error)}`,
                 }),
           ),
         );
+      });
 
       const toSnapshot = (side: SideContent | undefined): FileSnapshot | null =>
         side === undefined || side._tag === "Skipped"
@@ -401,74 +467,75 @@ export class Git extends Context.Service<
             ? snapshot(side.content)
             : unloadedSnapshot(side.blob);
 
-      const collectStatus = (baseCommit: string) =>
-        Effect.gen(function* () {
-          const tracked = parseGitRawStatus(
-            yield* runRaw("changed file collection", [
-              "diff",
-              "--relative",
-              "--raw",
-              "--abbrev=40",
-              "-z",
-              "--find-renames",
-              baseCommit,
-              "--",
-            ]),
-            // A submodule is a commit pointer, not a file: it has no content to snapshot or scan.
-          ).filter((entry) => entry.beforeMode !== GITLINK_MODE && entry.afterMode !== GITLINK_MODE);
-          const trackedPaths = new Set(tracked.map((entry) => entry.path));
-          const untracked = parseNulSeparated(
-            yield* runRaw("untracked file collection", ["ls-files", "--others", "--exclude-standard", "-z"]),
-          );
-          return {
-            untracked: new Set(untracked),
-            entries: [
-              ...tracked,
-              ...untracked
-                // Git reports an untracked nested repository as a directory.
-                .filter((file) => !trackedPaths.has(file) && !file.endsWith("/"))
-                .map((file): StatusEntry => ({
-                  status: "added",
-                  path: file,
-                  beforeMode: "000000",
-                  afterMode: "100644",
-                  beforeBlob: "0",
-                })),
-            ].toSorted((left, right) => compareStrings(left.path, right.path)),
-          };
-        });
+      const collectStatus = Effect.fn("Git.collectStatus")(function* (baseCommit: string) {
+        const tracked = parseGitRawStatus(
+          yield* runRaw({
+            operation: "changed file collection",
+            args: ["diff", "--relative", "--raw", "--abbrev=40", "-z", "--find-renames", baseCommit, "--"],
+          }),
+          // A submodule is a commit pointer, not a file: it has no content to snapshot or scan.
+        ).filter((entry) => entry.beforeMode !== GITLINK_MODE && entry.afterMode !== GITLINK_MODE);
+        const trackedPaths = new Set(tracked.map((entry) => entry.path));
+        const untracked = parseNulSeparated(
+          yield* runRaw({
+            operation: "untracked file collection",
+            args: ["ls-files", "--others", "--exclude-standard", "-z"],
+          }),
+        );
+        return {
+          untracked: new Set(untracked),
+          entries: [
+            ...tracked,
+            ...untracked
+              // Git reports an untracked nested repository as a directory.
+              .filter((file) => !trackedPaths.has(file) && !file.endsWith("/"))
+              .map((file): StatusEntry => ({
+                status: "added",
+                path: file,
+                beforeMode: "000000",
+                afterMode: "100644",
+                beforeBlob: "0",
+              })),
+          ].toSorted((left, right) => compareStrings({ left: left.path, right: right.path })),
+        };
+      });
 
-      const changeSet = (baseRef?: string, include?: (path: string) => boolean) =>
-        Effect.gen(function* () {
-          const baseline = yield* resolveBaseline(baseRef);
-          const root = yield* fs
-            .realPath(env.cwd)
-            .pipe(
-              Effect.mapError(
-                (error) =>
-                  new GitError({ reason: "command", operation: "working directory lookup", detail: error.message }),
-              ),
-            );
-          const { entries, untracked } = yield* collectStatus(baseline.commit);
-          const selected = include
-            ? entries.filter(
-                (entry) => include(entry.path) || (entry.previousPath !== undefined && include(entry.previousPath)),
-              )
-            : entries;
-          const files = yield* Effect.forEach(
-            selected,
-            (entry) =>
-              Effect.gen(function* () {
-                const before = yield* readBaseline(baseline.commit, entry);
-                const after = entry.status === "deleted" ? undefined : yield* readWorkingFile(root, entry.path);
-                if (after?._tag === "Skipped") return undefined;
-                const loaded = before?._tag !== "Unloaded" && after?._tag !== "Unloaded";
-                // An untracked file has no diff, and an unloaded side has none worth its size.
-                const parsedHunks =
-                  untracked.has(entry.path) || !loaded
-                    ? []
-                    : parseUnifiedHunks(
-                        yield* runRaw("diff generation", [
+      const changeSet = Effect.fn("Git.changeSet")(function* ({
+        baseRef,
+        include,
+      }: { readonly baseRef?: string; readonly include?: (path: string) => boolean } = {}) {
+        const baseline = yield* resolveBaseline(baseRef);
+        const root = yield* fs
+          .realPath(env.cwd)
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new GitError({ reason: "command", operation: "working directory lookup", detail: error.message }),
+            ),
+          );
+        const { entries, untracked } = yield* collectStatus(baseline.commit);
+        const selected = include
+          ? entries.filter(
+              (entry) => include(entry.path) || (entry.previousPath !== undefined && include(entry.previousPath)),
+            )
+          : entries;
+        const files = yield* Effect.forEach(
+          selected,
+          (entry) =>
+            Effect.gen(function* () {
+              const before = yield* readBaseline({ commit: baseline.commit, entry });
+              const after =
+                entry.status === "deleted" ? undefined : yield* readWorkingFile({ root, filePath: entry.path });
+              if (after?._tag === "Skipped") return undefined;
+              const loaded = before?._tag !== "Unloaded" && after?._tag !== "Unloaded";
+              // An untracked file has no diff, and an unloaded side has none worth its size.
+              const parsedHunks =
+                untracked.has(entry.path) || !loaded
+                  ? []
+                  : parseUnifiedHunks(
+                      yield* runRaw({
+                        operation: "diff generation",
+                        args: [
                           "diff",
                           "--relative",
                           "--no-ext-diff",
@@ -479,54 +546,57 @@ export class Git extends Context.Service<
                           "--",
                           entry.previousPath ?? entry.path,
                           ...(entry.previousPath ? [entry.path] : []),
-                        ]).pipe(
-                          Effect.catchIf(
-                            (error) => error.reason === "output_too_large",
-                            () => Effect.succeed(""),
-                          ),
+                        ],
+                      }).pipe(
+                        Effect.catchIf(
+                          (error) => error.reason === "output_too_large",
+                          () => Effect.succeed(""),
                         ),
-                      );
-                const hunks =
-                  parsedHunks.length === 0 && entry.status === "added" && after?._tag === "Text"
-                    ? [
-                        {
-                          oldStart: 0,
-                          oldLines: 0,
-                          newStart: 1,
-                          newLines: textLines(after.content).length,
-                          lines: textLines(after.content).map((content) => ({ kind: "addition" as const, content })),
-                        },
-                      ]
-                    : parsedHunks;
+                      ),
+                    );
+              const hunks =
+                parsedHunks.length === 0 && entry.status === "added" && after?._tag === "Text"
+                  ? [
+                      {
+                        oldStart: 0,
+                        oldLines: 0,
+                        newStart: 1,
+                        newLines: textLines(after.content).length,
+                        lines: textLines(after.content).map((content) => ({ kind: "addition" as const, content })),
+                      },
+                    ]
+                  : parsedHunks;
 
-                return {
-                  status: entry.status,
-                  path: entry.path,
-                  ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
-                  before: toSnapshot(before),
-                  after: toSnapshot(after),
-                  hunks: [...hunks],
-                } satisfies ChangedFile;
-              }),
-            { concurrency: 4 },
-          );
+              return {
+                status: entry.status,
+                path: entry.path,
+                ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
+                before: toSnapshot(before),
+                after: toSnapshot(after),
+                hunks: [...hunks],
+              } satisfies ChangedFile;
+            }),
+          { concurrency: 4 },
+        );
 
-          return {
-            baseline: { kind: "git" as const, ref: baseline.ref, commit: baseline.commit },
-            files: files.filter((file) => file !== undefined),
-          };
-        });
+        return {
+          baseline: { kind: "git" as const, ref: baseline.ref, commit: baseline.commit },
+          files: files.filter((file) => file !== undefined),
+        };
+      });
 
-      const changedFiles = (baseRef?: string) =>
-        Effect.gen(function* () {
-          const baseline = yield* resolveBaseline(baseRef);
-          const { entries } = yield* collectStatus(baseline.commit);
-          return entries.filter((entry) => entry.status !== "deleted").map((entry) => entry.path);
-        });
+      const changedFiles = Effect.fn("Git.changedFiles")(function* (baseRef?: string) {
+        const baseline = yield* resolveBaseline(baseRef);
+        const { entries } = yield* collectStatus(baseline.commit);
+        return entries.filter((entry) => entry.status !== "deleted").map((entry) => entry.path);
+      });
 
       const listFiles = () =>
         Effect.gen(function* () {
-          const inside = yield* run("work tree detection", ["rev-parse", "--is-inside-work-tree"]).pipe(
+          const inside = yield* run({
+            operation: "work tree detection",
+            args: ["rev-parse", "--is-inside-work-tree"],
+          }).pipe(
             Effect.catchIf(
               (error) => error.reason === "command" || error.reason === "executable_missing",
               () => Effect.succeed("false"),
@@ -535,13 +605,20 @@ export class Git extends Context.Service<
           if (inside !== "true") return undefined;
           // Below an ignored directory (a project inside a dotfiles repository) Git lists nothing at all.
           // `check-ignore` rejects literal pathspecs, and `.` has nothing to escape.
-          const ignored = yield* run("ignore lookup", ["check-ignore", "--quiet", "."], false).pipe(
+          const ignored = yield* run({
+            operation: "ignore lookup",
+            args: ["check-ignore", "--quiet", "."],
+            literalPathspecs: false,
+          }).pipe(
             Effect.as(true),
             Effect.catchIf(answersNo, () => Effect.succeed(false)),
           );
           if (ignored) return undefined;
           return parseNulSeparated(
-            yield* runRaw("file listing", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]),
+            yield* runRaw({
+              operation: "file listing",
+              args: ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            }),
           );
         });
 

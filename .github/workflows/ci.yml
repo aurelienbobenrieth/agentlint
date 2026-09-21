@@ -47,22 +47,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm run build
-
-      - name: Run validation suite
-        run: pnpm run check
-
-      - name: Pack release artifact
+      - name: Validate and pack
         id: package
-        run: |
-          pnpm --filter @aurelienbbn/agentlint pack --pack-destination "$RUNNER_TEMP"
-          echo "path=$(find "$RUNNER_TEMP" -name 'aurelienbbn-agentlint-*.tgz' -print -quit)" >> "$GITHUB_OUTPUT"
-
-      - name: Smoke-test packed artifact
-        env:
-          PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: node scripts/smoke-package.mjs "$PACKAGE_PATH"
+        uses: ./.github/actions/validate
 
   workflows:
     name: Lint workflows

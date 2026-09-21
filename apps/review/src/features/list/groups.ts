@@ -7,15 +7,11 @@ export const relatedGroups = (findings: ReadonlyArray<ReviewFindingPayload>): Re
   const parents = new Map<string, string>();
   const owners = new Map<string, string>();
   const root = (id: string): string => {
-    let current = id;
-    while (parents.has(current) && parents.get(current) !== current) current = parents.get(current) ?? current;
-    let child = id;
-    while (parents.has(child) && parents.get(child) !== current) {
-      const next = parents.get(child) ?? current;
-      parents.set(child, current);
-      child = next;
-    }
-    return current;
+    const parent = parents.get(id);
+    if (parent === undefined || parent === id) return id;
+    const resolved = root(parent);
+    parents.set(id, resolved);
+    return resolved;
   };
   for (const finding of findings) {
     parents.set(finding.id, finding.id);

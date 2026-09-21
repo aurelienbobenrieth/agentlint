@@ -5,7 +5,7 @@
  * @since 0.2.0
  */
 
-import { Clock, Effect, type FileSystem } from "effect";
+import { Clock, Effect, type FileSystem, type PlatformError } from "effect";
 
 const STALE_LOCK_MS = 30_000;
 const ATTEMPTS = 100;
@@ -18,14 +18,25 @@ const RETRY_MS = 20;
  * so the next writer removes it. A more recent lock is never stolen: the wait is bounded and then fails with `fail`.
  */
 export const withFileLock =
-  <E>(fs: FileSystem.FileSystem, directory: string, lock: string, fail: (detail: unknown) => E) =>
+  <E>({
+    fs,
+    directory,
+    lock,
+    fail,
+  }: {
+    readonly fs: FileSystem.FileSystem;
+    readonly directory: string;
+    readonly lock: string;
+    readonly fail: (detail: PlatformError.PlatformError | string) => E;
+  }) =>
   <A, E2, R>(operation: Effect.Effect<A, E2, R>): Effect.Effect<A, E | E2, R> => {
     const acquire = Effect.gen(function* () {
       yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(fail));
-      for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      const retry = { attempt: 0 };
+      for (; retry.attempt < ATTEMPTS; retry.attempt += 1) {
         const now = yield* Clock.currentTimeMillis;
         const result = yield* fs.writeFileString(lock, `${now}\n`, { flag: "wx" }).pipe(Effect.result);
-        if (result._tag === "Success") return;
+        if (result._tag === "Success") return undefined;
         if (result.failure.reason._tag !== "AlreadyExists") return yield* Effect.fail(fail(result.failure));
         const lockedAt = Number((yield* fs.readFileString(lock).pipe(Effect.orElseSucceed(() => ""))).trim());
         if (lockedAt > 0 && now - lockedAt > STALE_LOCK_MS) {
@@ -33,7 +44,7 @@ export const withFileLock =
           const abandoned = `${lock}.${now}.stale`;
           yield* fs.rename(lock, abandoned).pipe(
             Effect.flatMap(() => fs.remove(abandoned)),
-            Effect.ignore,
+            Effect.ignore({ log: true }),
           );
           continue;
         }
@@ -48,6 +59,6 @@ export const withFileLock =
     return Effect.acquireUseRelease(
       acquire,
       () => operation,
-      () => fs.remove(lock).pipe(Effect.orDie),
+      () => fs.remove(lock).pipe(Effect.ignore({ log: true })),
     );
   };

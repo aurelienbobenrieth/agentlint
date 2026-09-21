@@ -8,13 +8,14 @@ const PackageJson = Schema.Struct({
   version: Schema.String,
 });
 const PackageJsonFromString = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson));
+const encodeString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.String));
 const pkg = PackageJsonFromString(
   readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf-8"),
 );
 
 export default defineConfig({
   define: {
-    __AGENTLINT_VERSION__: JSON.stringify(pkg.version),
+    __AGENTLINT_VERSION__: encodeString(pkg.version),
   },
   test: {
     globals: true,

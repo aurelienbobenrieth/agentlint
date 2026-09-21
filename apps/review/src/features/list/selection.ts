@@ -8,7 +8,13 @@ import { SettleSelection } from "./command";
 /**
  * The reviewer chose this finding themselves, so decision shortcuts may act on it at once.
  */
-export const selectFinding = (model: Model, findingId: string | null): Model =>
+export const selectFinding = ({
+  model,
+  findingId,
+}: {
+  readonly model: Model;
+  readonly findingId: string | null;
+}): Model =>
   evo(model, {
     selectedFindingId: () => findingId,
     selectionSettled: () => true,
@@ -20,12 +26,19 @@ export const selectFinding = (model: Model, findingId: string | null): Model =>
  * list, its next listed neighbour takes over (else the previous one, else nothing), and decision shortcuts pause until
  * `SettledSelection`: the reviewer has not looked at that finding yet.
  */
-export const reconcileSelection = (before: Model, after: Model): UpdateReturn => {
+export const reconcileSelection = ({
+  before,
+  after,
+}: {
+  readonly before: Model;
+  readonly after: Model;
+}): UpdateReturn => {
   if (after.screen._tag !== "Reviewing") return { model: after };
-  const listed = deriveReview(after.screen.state, after).visible;
+  const listed = deriveReview({ state: after.screen.state, model: after }).visible;
   if (listed.some(({ id }) => id === after.selectedFindingId)) return { model: after };
   const remaining = new Set(listed.map(({ id }) => id));
-  const previous = before.screen._tag === "Reviewing" ? deriveReview(before.screen.state, before).visible : [];
+  const previous =
+    before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }).visible : [];
   const index = previous.findIndex(({ id }) => id === before.selectedFindingId);
   const neighbour =
     index < 0

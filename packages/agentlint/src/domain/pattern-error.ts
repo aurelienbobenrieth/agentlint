@@ -14,15 +14,11 @@ export class PatternError extends Schema.TaggedError<PatternError>()("agentlint/
   detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "pattern_parse":
-        return `Rule ${this.ruleId}: pattern does not parse as ${this.grammar}: ${this.detail}`;
-      case "query_invalid":
-        return `Rule ${this.ruleId}: invalid tree-sitter query: ${this.detail}`;
-      case "unsupported_frontend":
-        return `Rule ${this.ruleId}: "query" matches are not supported for the ${this.grammar} frontend`;
-      case "unknown_fixture_grammar":
-        return `Rule ${this.ruleId}: no grammar registered for fixture file "${this.detail}"`;
-    }
+    return {
+      pattern_parse: `Rule ${this.ruleId}: pattern does not parse as ${this.grammar}: ${this.detail}`,
+      query_invalid: `Rule ${this.ruleId}: invalid tree-sitter query: ${this.detail}`,
+      unsupported_frontend: `Rule ${this.ruleId}: "query" matches are not supported for the ${this.grammar} frontend`,
+      unknown_fixture_grammar: `Rule ${this.ruleId}: no grammar registered for fixture file "${this.detail}"`,
+    }[this.reason];
   }
 }

@@ -11,7 +11,7 @@ const noNoiseComments = defineRule({
   detector: {
     id: "typescript/non-empty-comments",
     version: 1,
-    createOnce(context) {
+    createOnce({ context }) {
       return {
         comment(node) {
           const text = node.text.replace(/^\/\/\s*/, "").trim();

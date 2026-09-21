@@ -1,7 +1,7 @@
 import type { ReviewMode } from "@aurelienbbn/agentlint/contract";
 import type { AuthorityFacet, LifecycleFacet, StatusFacet } from "../../model";
 
-export const statusLabel = (status: StatusFacet, mode: ReviewMode): string =>
+export const statusLabel = ({ status, mode }: { readonly status: StatusFacet; readonly mode: ReviewMode }): string =>
   status === "accepted"
     ? mode === "calibration"
       ? "Labeled"
@@ -16,7 +16,7 @@ export const lifecycleLabel = (lifecycle: LifecycleFacet): string =>
 export const authorityLabel = (authority: AuthorityFacet): string =>
   authority === "human" ? "Human decision" : "Agent may decide";
 
-export const relativeTime = (iso: string, nowIso: string): string => {
+export const relativeTime = ({ iso, nowIso }: { readonly iso: string; readonly nowIso: string }): string => {
   const then = Date.parse(iso);
   const now = Date.parse(nowIso);
   if (Number.isNaN(then) || Number.isNaN(now)) return iso;
@@ -36,6 +36,7 @@ export const safeExternalHref = (href: string | null): string | null => {
     const url = new URL(href);
     return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
   } catch {
+    // REASON: invalid external references are rendered as plain text instead of links.
     return null;
   }
 };

@@ -52,7 +52,7 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
  * Return the exact compatibility key of a finding.
  */
 export function findingKey(finding: Pick<FindingRecord, "source" | "fingerprint">): string {
-  return findingIdentityKey(finding.source, finding.fingerprint);
+  return findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint });
 }
 
 /**
@@ -65,6 +65,27 @@ export function findingId(finding: Pick<FindingRecord, "source" | "fingerprint">
 /**
  * Add a run-local display selector without changing finding identity.
  */
-export function withSelector(finding: FindingRecord, selector: string): FindingRecord {
-  return new FindingRecord({ ...finding, selector });
+export function withSelector({
+  finding,
+  selector,
+}: {
+  readonly finding: FindingRecord;
+  readonly selector: string;
+}): FindingRecord {
+  return new FindingRecord({
+    selector,
+    ruleId: finding.ruleId,
+    lifecycle: finding.lifecycle,
+    authority: finding.authority,
+    source: finding.source,
+    fingerprint: finding.fingerprint,
+    lineageKey: finding.lineageKey,
+    file: finding.file,
+    line: finding.line,
+    column: finding.column,
+    endLine: finding.endLine,
+    endColumn: finding.endColumn,
+    message: finding.message,
+    sourceSnippet: finding.sourceSnippet,
+  });
 }

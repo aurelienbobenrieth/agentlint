@@ -30,7 +30,7 @@ export function normalizeChangeFixture(fixture: ChangeFixture): ChangeSet {
       path: path.replace(/\\/g, "/"),
       before: oldContent === undefined ? null : snapshot(oldContent),
       after: newContent === undefined ? null : snapshot(newContent),
-      hunks: fixtureHunks(oldContent, newContent),
+      hunks: fixtureHunks({ before: oldContent, after: newContent }),
     });
   }
   return { baseline: { kind: "git", ref: "fixture" }, files };

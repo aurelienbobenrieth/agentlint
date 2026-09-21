@@ -29,7 +29,7 @@ export const fetchState = Effect.gen(function* () {
     return yield* decodeState(embedded);
   }
 
-  const response = yield* fetchReview("/api/state");
+  const response = yield* fetchReview({ url: "/api/state" });
   if (!response.ok) {
     return yield* Effect.fail(
       new BrowserRequestError({ operation: "Load rejected", detail: `HTTP ${response.status}` }),
@@ -55,6 +55,7 @@ export const decodeSavedReview = (value: string | null): SavedReview => {
   try {
     return { saved: S.decodeUnknownSync(S.fromJsonString(PersistedReview))(value), unreadable: false };
   } catch {
+    // REASON: corrupt browser state is reported through the unreadable flag and never restored.
     return { saved: null, unreadable: true };
   }
 };
@@ -63,15 +64,18 @@ export const decodeSavedReview = (value: string | null): SavedReview => {
  * An unreadable blob moves to `<key>:bak` so the next save cannot overwrite decisions nobody exported.
  */
 const readSavedReview = (state: ReviewStatePayload) =>
-  browserOperation("Load saved review", () => {
-    const key = reviewStorageKey(state);
-    const value = localStorage.getItem(key);
-    const result = decodeSavedReview(value);
-    if (value !== null && result.unreadable) {
-      localStorage.setItem(`${key}:bak`, value);
-      localStorage.removeItem(key);
-    }
-    return result;
+  browserOperation({
+    operation: "Load saved review",
+    execute: () => {
+      const key = reviewStorageKey(state);
+      const value = localStorage.getItem(key);
+      const result = decodeSavedReview(value);
+      if (value !== null && result.unreadable) {
+        localStorage.setItem(`${key}:bak`, value);
+        localStorage.removeItem(key);
+      }
+      return result;
+    },
   });
 
 export const LoadReview = Command.define("LoadReview", {
@@ -93,10 +97,13 @@ export const PersistReview = Command.define("PersistReview", {
   args: { key: S.String, content: S.String, dirty: S.Boolean },
   messages: [Message.CompletedPersistence, Message.FailedPersistence],
   execute: ({ key, content, dirty }) =>
-    browserOperation("Save review locally", () => {
-      markDirty(dirty);
-      localStorage.setItem(key, content);
-      return Message.CompletedPersistence();
+    browserOperation({
+      operation: "Save review locally",
+      execute: () => {
+        markDirty(dirty);
+        localStorage.setItem(key, content);
+        return Message.CompletedPersistence();
+      },
     }).pipe(Effect.catch((error) => Effect.succeed(Message.FailedPersistence({ message: errorMessage(error) })))),
 });
 

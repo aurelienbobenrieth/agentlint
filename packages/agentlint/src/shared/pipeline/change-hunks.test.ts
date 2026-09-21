@@ -15,18 +15,23 @@ describe("normalized fixture evidence", () => {
     ]);
   });
   it("uses correct line counts for additions, deletions and empty files", () => {
-    expect(fixtureHunks(undefined, "hello\n")).toEqual([
+    expect(fixtureHunks({ before: undefined, after: "hello\n" })).toEqual([
       { oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: [{ kind: "addition", content: "hello" }] },
     ]);
-    expect(fixtureHunks("hello\n", undefined)[0]).toMatchObject({ oldStart: 1, oldLines: 1, newStart: 0, newLines: 0 });
-    expect(fixtureHunks(undefined, "")).toEqual([]);
+    expect(fixtureHunks({ before: "hello\n", after: undefined })[0]).toMatchObject({
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 0,
+      newLines: 0,
+    });
+    expect(fixtureHunks({ before: undefined, after: "" })).toEqual([]);
   });
   it("splits distant edits into separate three-context-line hunks", () => {
     const before = Array.from({ length: 30 }, (_, index) => String(index));
     const after = [...before];
     after[2] = "changed";
     after[27] = "also changed";
-    const hunks = fixtureHunks(before.join("\n"), after.join("\n"));
+    const hunks = fixtureHunks({ before: before.join("\n"), after: after.join("\n") });
     expect(hunks).toHaveLength(2);
     expect(hunks.map((hunk) => hunk.newStart)).toEqual([1, 25]);
   });

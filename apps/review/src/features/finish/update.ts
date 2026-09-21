@@ -16,7 +16,15 @@ type Finished = Extract<Model["screen"], { readonly _tag: "Finished" }>;
 /**
  * The finished screen replaces the whole page, so focus moves to its heading and is announced.
  */
-const finished = (model: Model, screen: Finished, pendingExports: ReadonlyArray<ExportKind>): UpdateReturn => ({
+const finished = ({
+  model,
+  screen,
+  pendingExports,
+}: {
+  readonly model: Model;
+  readonly screen: Finished;
+  readonly pendingExports: ReadonlyArray<ExportKind>;
+}): UpdateReturn => ({
   model: evo(model, {
     screen: () => screen,
     toasts: () => [],
@@ -29,8 +37,13 @@ const finished = (model: Model, screen: Finished, pendingExports: ReadonlyArray<
 /**
  * Only the finished screen tracks what was exported; the same buttons in a running review are plain copies.
  */
-const exportKind = (model: Model, kind: ExportKind): { readonly kind?: ExportKind } =>
-  model.screen._tag === "Finished" ? { kind } : {};
+const exportKind = ({
+  model,
+  kind,
+}: {
+  readonly model: Model;
+  readonly kind: ExportKind;
+}): { readonly kind?: ExportKind } => (model.screen._tag === "Finished" ? { kind } : {});
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   ClickedFinish: () => {
@@ -42,33 +55,41 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   },
   // The leave prompt stays armed until every prepared output was downloaded or copied.
   PreparedDetachedFinish: ({ acceptedAt }) => {
-    const output = { ...detachedOutput(model, acceptedAt), calibrationOutput: calibrationOutput(model) };
+    const output = { ...detachedOutput({ model, acceptedAt }), calibrationOutput: calibrationOutput(model) };
     const pending: ReadonlyArray<ExportKind> = [
       ...(output.feedback.length > 0 ? (["feedback"] as const) : []),
       ...(output.acceptanceOutput.length > 0 ? (["acceptances"] as const) : []),
       ...(output.calibrationOutput.length > 0 ? (["calibration"] as const) : []),
     ];
-    return appendCommands(finished(model, Screen.Finished(output), pending), [
-      MarkDirty({ dirty: pending.length > 0 }),
-    ]);
+    return appendCommands({
+      result: finished({ model, screen: Screen.Finished(output), pendingExports: pending }),
+      commands: [MarkDirty({ dirty: pending.length > 0 })],
+    });
   },
   CompletedFinish: ({ summary, feedback, acceptanceOutput }) =>
-    finished(
+    finished({
       model,
-      Screen.Finished({ summary, feedback, acceptanceOutput, calibrationOutput: calibrationOutput(model) }),
-      [],
-    ),
-  FailedFinish: ({ message }) => enqueueToast(evo(model, { finishing: () => false }), message, "danger"),
+      screen: Screen.Finished({ summary, feedback, acceptanceOutput, calibrationOutput: calibrationOutput(model) }),
+      pendingExports: [],
+    }),
+  FailedFinish: ({ message }) =>
+    enqueueToast({ model: evo(model, { finishing: () => false }), message, tone: "danger" }),
   ClickedCopyInstructions: () => ({
     model,
-    commands: [CopyText({ content: agentInstructions(model), ...exportKind(model, "feedback") })],
+    commands: [CopyText({ content: agentInstructions(model), ...exportKind({ model, kind: "feedback" }) })],
   }),
   ClickedDownloadCalibration: () => {
     const content = model.screen._tag === "Finished" ? model.screen.calibrationOutput : calibrationOutput(model);
     return {
       model,
       commands: content
-        ? [DownloadText({ content, filename: "agentlint-calibration.json", ...exportKind(model, "calibration") })]
+        ? [
+            DownloadText({
+              content,
+              filename: "agentlint-calibration.json",
+              ...exportKind({ model, kind: "calibration" }),
+            }),
+          ]
         : [],
     };
   },
@@ -77,13 +98,20 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     return {
       model,
       commands: [
-        DownloadText({ content, filename: "agentlint-acceptances.jsonl", ...exportKind(model, "acceptances") }),
+        DownloadText({
+          content,
+          filename: "agentlint-acceptances.jsonl",
+          ...exportKind({ model, kind: "acceptances" }),
+        }),
       ],
     };
   },
   ExportedOutput: ({ kind, message }) => {
     const pending = model.pendingExports.filter((candidate) => candidate !== kind);
     const settled = pending.length === 0 && model.pendingExports.length > 0 ? [MarkDirty({ dirty: false })] : [];
-    return appendCommands(enqueueToast(evo(model, { pendingExports: () => pending }), message, "success"), settled);
+    return appendCommands({
+      result: enqueueToast({ model: evo(model, { pendingExports: () => pending }), message, tone: "success" }),
+      commands: settled,
+    });
   },
 });

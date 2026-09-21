@@ -3,6 +3,7 @@
  */
 
 import { canonicalDigest, fingerprintState } from "./fingerprint.js";
+import { Schema } from "effect";
 import type { CanonicalValue } from "./fingerprint.js";
 import { type FindingOptions, FindingRecord } from "./finding.js";
 import type { AgentlintNode, Position } from "./node.js";
@@ -36,9 +37,7 @@ export interface RuleContext {
  * Offsets of each line start. Node columns count UTF-16 code units, as string indices do.
  */
 function lineStarts(source: string): ReadonlyArray<number> {
-  const starts = [0];
-  for (let index = source.indexOf("\n"); index !== -1; index = source.indexOf("\n", index + 1)) starts.push(index + 1);
-  return starts;
+  return [0, ...Array.from(source.matchAll(/\n/gu), (match) => match.index + 1)];
 }
 
 /**
@@ -49,64 +48,83 @@ function lineStarts(source: string): ReadonlyArray<number> {
  * template literal type), so a gap that holds anything but whitespace is evidence, kept verbatim. A whitespace-only gap
  * is formatting and contributes `""`. The list is flat and built without recursion so that depth costs no stack.
  */
-export function semanticStructure(root: AgentlintNode, source: string): ReadonlyArray<string | number> {
+export function semanticStructure({
+  root,
+  source,
+}: {
+  readonly root: AgentlintNode;
+  readonly source: string;
+}): ReadonlyArray<string | number> {
   const starts = lineStarts(source);
   const offset = (position: Position): number => (starts[position.row] ?? source.length) + position.column;
   const structure: Array<string | number> = [];
   const pending: Array<AgentlintNode | string> = [root];
 
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    if (typeof next === "string") {
+  const traversal = { next: pending.pop() };
+  while (traversal.next !== undefined) {
+    const next = traversal.next;
+    if (Schema.is(Schema.String)(next)) {
       structure.push(/\S/.test(next) ? next : "");
+      traversal.next = pending.pop();
       continue;
     }
     const children = next.children;
     structure.push(next.type, children.length);
     if (children.length === 0) {
       structure.push(source.slice(offset(next.startPosition), offset(next.endPosition)));
+      traversal.next = pending.pop();
       continue;
     }
     const entries: Array<AgentlintNode | string> = [];
-    let end = offset(next.startPosition);
+    const span = { end: offset(next.startPosition) };
     for (const child of children) {
-      entries.push(source.slice(end, offset(child.startPosition)), child);
-      end = offset(child.endPosition);
+      entries.push(source.slice(span.end, offset(child.startPosition)), child);
+      span.end = offset(child.endPosition);
     }
-    entries.push(source.slice(end, offset(next.endPosition)));
+    entries.push(source.slice(span.end, offset(next.endPosition)));
     // Reversed so that gaps and children pop in source order.
-    for (let index = entries.length - 1; index >= 0; index--) pending.push(entries[index] ?? "");
+    for (const entry of entries.toReversed()) pending.push(entry);
+    traversal.next = pending.pop();
   }
   return structure;
 }
 
-function comparePositions(left: Position, right: Position): number {
+function comparePositions({ left, right }: { readonly left: Position; readonly right: Position }): number {
   return left.row - right.row || left.column - right.column;
 }
 
-function sameNode(left: AgentlintNode, right: AgentlintNode): boolean {
+function sameNode({ left, right }: { readonly left: AgentlintNode; readonly right: AgentlintNode }): boolean {
   return (
     left.type === right.type &&
-    comparePositions(left.startPosition, right.startPosition) === 0 &&
-    comparePositions(left.endPosition, right.endPosition) === 0
+    comparePositions({ left: left.startPosition, right: right.startPosition }) === 0 &&
+    comparePositions({ left: left.endPosition, right: right.endPosition }) === 0
   );
 }
 
 /**
  * Index of `child` among source-ordered `siblings`, or -1. Binary search to the first sibling at its start, then scan.
  */
-function siblingIndex(siblings: ReadonlyArray<AgentlintNode>, child: AgentlintNode): number {
-  let low = 0;
-  let high = siblings.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
+function siblingIndex({
+  siblings,
+  child,
+}: {
+  readonly siblings: ReadonlyArray<AgentlintNode>;
+  readonly child: AgentlintNode;
+}): number {
+  const bounds = { low: 0, high: siblings.length };
+  while (bounds.low < bounds.high) {
+    const middle = (bounds.low + bounds.high) >>> 1;
     const sibling = siblings[middle];
-    if (sibling !== undefined && comparePositions(sibling.startPosition, child.startPosition) < 0) low = middle + 1;
-    else high = middle;
+    if (sibling !== undefined && comparePositions({ left: sibling.startPosition, right: child.startPosition }) < 0)
+      bounds.low = middle + 1;
+    else bounds.high = middle;
   }
-  for (let index = low; index < siblings.length; index++) {
+  for (const index of siblings.keys()) {
+    if (index < bounds.low) continue;
     const sibling = siblings[index];
-    if (sibling === undefined || comparePositions(sibling.startPosition, child.startPosition) !== 0) break;
-    if (sameNode(sibling, child)) return index;
+    if (sibling === undefined || comparePositions({ left: sibling.startPosition, right: child.startPosition }) !== 0)
+      break;
+    if (sameNode({ left: sibling, right: child })) return index;
   }
   return -1;
 }
@@ -132,14 +150,28 @@ export class RuleContextImpl implements RuleContext {
   #dependencyDigest: string;
   #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
-  constructor(rule: StateRule, dependencies: Readonly<Record<string, string>> = {}) {
+  constructor({
+    rule,
+    dependencies = {},
+  }: {
+    readonly rule: StateRule;
+    readonly dependencies?: Readonly<Record<string, string>>;
+  }) {
     this.rule = rule;
     this.dependencies = dependencies;
     this.#sourceIdentity = findingSourceForRule(rule);
     this.#dependencyDigest = canonicalDigest(dependencies);
   }
 
-  setFile(absolutePath: string, file: string, source: string): void {
+  setFile({
+    absolutePath,
+    file,
+    source,
+  }: {
+    readonly absolutePath: string;
+    readonly file: string;
+    readonly source: string;
+  }): void {
     this.#absolutePath = absolutePath;
     this.#file = file.replace(/\\/g, "/");
     this.#source = source;
@@ -171,17 +203,22 @@ export class RuleContextImpl implements RuleContext {
    */
   #position(node: AgentlintNode): ReadonlyArray<number> {
     const ancestors = [node];
-    for (let parent = node.parent; parent; parent = parent.parent) ancestors.push(parent);
+    const lineage = { parent: node.parent };
+    while (lineage.parent) {
+      ancestors.push(lineage.parent);
+      lineage.parent = lineage.parent.parent;
+    }
     this.#root ??= ancestors.at(-1) ?? node;
 
     const position: number[] = [];
-    let current = this.#root;
-    for (let depth = ancestors.length - 2; depth >= 0; depth--) {
+    const descent = { current: this.#root };
+    for (const depth of Array.from(ancestors.keys()).toReversed()) {
+      if (depth >= ancestors.length - 1) continue;
       const ancestor = ancestors[depth];
       if (ancestor === undefined) break;
-      const index = siblingIndex(current.children, ancestor);
+      const index = siblingIndex({ siblings: descent.current.children, child: ancestor });
       position.push(index);
-      current = current.children[index] ?? ancestor;
+      descent.current = descent.current.children[index] ?? ancestor;
     }
     return position;
   }
@@ -190,19 +227,28 @@ export class RuleContextImpl implements RuleContext {
    * Called by the walker before it dispatches `node`, so that reporting the visited node needs no climb. The position
    * is copied: a visitor may keep the node and report it after the walker has moved on.
    */
-  visit(node: AgentlintNode, position: ReadonlyArray<number>): void {
+  visit({ node, position }: { readonly node: AgentlintNode; readonly position: ReadonlyArray<number> }): void {
     this.#visiting = { node, position: [...position] };
   }
 
   report(options: FindingOptions): void {
     const visiting = this.#visiting;
-    this.reportAt(options, visiting?.node === options.node ? visiting.position : this.#position(options.node));
+    this.reportAt({
+      options,
+      position: visiting?.node === options.node ? visiting.position : this.#position(options.node),
+    });
   }
 
   /**
    * Report a node whose child indices from the file root the caller tracked during its own descent.
    */
-  reportAt(options: FindingOptions, position: ReadonlyArray<number>): void {
+  reportAt({
+    options,
+    position,
+  }: {
+    readonly options: FindingOptions;
+    readonly position: ReadonlyArray<number>;
+  }): void {
     const line = options.node.startPosition.row + 1;
     const column = options.node.startPosition.column + 1;
     const endLine = options.node.endPosition.row + 1;
@@ -211,10 +257,10 @@ export class RuleContextImpl implements RuleContext {
     const rawSnippet = nodeSnippet;
     const sourceSnippet = rawSnippet.length > 160 ? `${rawSnippet.slice(0, 157)}...` : rawSnippet;
     if (this.#fileStructure === undefined) {
-      let root = this.#root ?? options.node;
-      for (let parent = root.parent; parent; parent = parent.parent) root = parent;
-      this.#root = root;
-      this.#fileStructure = canonicalDigest(semanticStructure(root, this.#source));
+      const root = { node: this.#root ?? options.node };
+      while (root.node.parent) root.node = root.node.parent;
+      this.#root = root.node;
+      this.#fileStructure = canonicalDigest(semanticStructure({ root: root.node, source: this.#source }));
     }
     const occurrenceKey = options.key ?? `${options.node.type}:${position.join("/")}`;
     if (!occurrenceKey.trim() || this.#keys.has(occurrenceKey)) {

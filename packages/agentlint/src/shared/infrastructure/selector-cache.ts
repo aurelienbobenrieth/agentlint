@@ -10,6 +10,7 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
+import { encodePrettyJson } from "./json.js";
 
 export const SelectorCacheEntry = Schema.Struct({
   selector: Schema.String,
@@ -62,13 +63,14 @@ export class SelectorCache extends Context.Service<
             }),
           ),
 
-        write: (entries) =>
-          Effect.gen(function* () {
+        write: Effect.fn("SelectorCache.write")(function* (entries) {
+          return yield* Effect.gen(function* () {
             const payload: SelectorCachePayload = { version: 1, findings: [...entries] };
             PayloadDecoder(payload);
             yield* fs.makeDirectory(cacheDir, { recursive: true });
-            yield* fs.writeFileString(cachePath, JSON.stringify(payload, null, 2) + "\n");
-          }).pipe(Effect.orElseSucceed(() => undefined)),
+            yield* fs.writeFileString(cachePath, `${encodePrettyJson(payload)}\n`);
+          }).pipe(Effect.orElseSucceed(() => undefined));
+        }),
       });
     }),
   );

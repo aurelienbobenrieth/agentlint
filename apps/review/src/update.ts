@@ -14,14 +14,14 @@ import type { UpdateReturn } from "./shared/update";
 /**
  * Every feature contributes the handlers for the tags it declared; `match` proves the union is covered.
  */
-export const update = (model: Model, message: Message): UpdateReturn =>
+export const update = ({ model, message }: { readonly model: Model; readonly message: Message }): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ...session.cases(model),
     ...list.cases(model),
     ...filters.cases(model),
     ...detail.cases(model),
     ...decision.cases(model),
-    ...shortcuts.cases(model, update),
+    ...shortcuts.cases({ model, update }),
     ...toasts.cases(model),
     ...finish.cases(model),
     ...shell.cases(model),

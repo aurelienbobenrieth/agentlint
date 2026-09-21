@@ -12,6 +12,9 @@ catalogs:
     '@effect/platform-node-shared':
       specifier: 4.0.0-rc.115
       version: 4.0.0-rc.115
+    '@effect/vitest':
+      specifier: 4.0.0-rc.115
+      version: 4.0.0-rc.115
     '@tanstack/intent':
       specifier: 0.4.0
       version: 0.4.0
@@ -38,6 +41,9 @@ importers:
       '@tanstack/intent':
         specifier: 'catalog:'
         version: 0.4.0
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115
       knip:
         specifier: 6.37.0
         version: 6.37.0
@@ -49,9 +55,13 @@ importers:
         version: 0.68.0
       oxlint:
         specifier: 1.83.0
-        version: 1.83.0
+        version: 1.83.0(oxlint-tsgolint@7.0.2002)
 
   action:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115
     devDependencies:
       '@types/node':
         specifier: 26.6.1
@@ -84,6 +94,9 @@ importers:
       '@aurelienbbn/agentlint':
         specifier: workspace:*
         version: link:../../packages/agentlint
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1)
       '@foldkit/vite-plugin':
         specifier: 0.23.0
         version: 0.23.0(effect@4.0.0-rc.115)(foldkit@0.162.0(@effect/platform-browser@4.0.0-rc.115(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(vite@8.3.0(@types/node@26.6.1)(esbuild@0.27.4)(jiti@2.7.0)(yaml@2.9.1))
@@ -133,6 +146,9 @@ importers:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1)
       '@tanstack/intent':
         specifier: 'catalog:'
         version: 0.4.0
@@ -279,6 +295,12 @@ packages:
     peerDependencies:
       effect: ^4.0.0-rc.115
       redis: '>=5.0.0 <7.0.0'
+
+  '@effect/vitest@4.0.0-rc.115':
+    resolution: {integrity: sha512-DJR0hfdr3HNXAkzW8AzfvUz6VmrNFLrKk9tZGDURi33faMyxkc7ZewxELMMZwGpOTGN4mfqYVbX2CXgI+ZJBeQ==}
+    peerDependencies:
+      effect: ^4.0.0-rc.115
+      vitest: '>=5.0.0 <6.0.0'
 
   '@emnapi/core@1.11.2':
     resolution: {integrity: sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA==}
@@ -816,6 +838,36 @@ packages:
   '@oxfmt/binding-win32-x64-msvc@0.68.0':
     resolution: {integrity: sha512-gPe+dJLXaPuWPWqlpklDAJp0k+K9KhQPYiQLHfb+i2rmFuUGfJ/5Qlj6tr1mO6of5g0DiLjG/XCFHIaPhotqqA==}
     engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [win32]
+
+  '@oxlint-tsgolint/darwin-arm64@7.0.2002':
+    resolution: {integrity: sha512-E3yYb/tI+5M3SqGgKwrwUD0nmjA2FMGD1xFbma46qi8Y7+nPTlGY6bZk/hqxijc9Vda/tdtUxQ2d5zGIEX9qlg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oxlint-tsgolint/darwin-x64@7.0.2002':
+    resolution: {integrity: sha512-qEaMySdvzs8faaJwMO4dFtPFCa+degFCz+HbkFQ0REcIJqJ16KmC0smt30FAI9TeEHCoAtz6sU/6acJvi4uaxg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oxlint-tsgolint/linux-arm64@7.0.2002':
+    resolution: {integrity: sha512-bqPObCNIR6tDQSc0Xn9Nu7EfWRXFB+qFzADRl/q6YA8zT9YUg3pGUbmicV2hV91uLpiot74so9ocGjx35SaX6w==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxlint-tsgolint/linux-x64@7.0.2002':
+    resolution: {integrity: sha512-E5CcRALAYdiQMbdYjEqlLOiYuEdt21RtXiyxIoD8bfypdfkpWppacijKOR4i0DtLXFRVwCGQggZBWk5bOIpU1A==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxlint-tsgolint/win32-arm64@7.0.2002':
+    resolution: {integrity: sha512-L+ul0ZFDiz/ZmTwCQ1J/qS7S6s45ktiaFqb+ZIzx+1sSdtdRxm8/H0+p4VDQYrCKBFzKNb6VjUlm48bNEe3BUg==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@oxlint-tsgolint/win32-x64@7.0.2002':
+    resolution: {integrity: sha512-zkZeJfo4UmYiCzj77u85eCDpdxOiQiSAsV6j9Pvj5e7Vu5+MvwLtK1xmVutE77tJmUJ3eBOSXHR6WgY4AwHHGQ==}
     cpu: [x64]
     os: [win32]
 
@@ -1792,6 +1844,10 @@ packages:
       vite-plus:
         optional: true
 
+  oxlint-tsgolint@7.0.2002:
+    resolution: {integrity: sha512-rQAj2RAQM57nCwTd3PhtnAkREGW2StqI47tzudNlJF8WwGommM7rVpeP4O1O8/ZiuDZ9f2GnTESzLHGTluwkvQ==}
+    hasBin: true
+
   oxlint@1.83.0:
     resolution: {integrity: sha512-cyDzSzaw3uzP0TeCeq3lLRPPoaUxkbB4ZOXj+kn+5r+BX9V+4bNVGk9lxer+WrgcpebH4JxLlJ3KQjveVztOLQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2303,6 +2359,11 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@effect/vitest@4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.1)':
+    dependencies:
+      effect: 4.0.0-rc.115
+      vitest: 5.0.1(@types/node@26.6.1)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@26.6.1)(esbuild@0.27.4)(jiti@2.7.0)(yaml@2.9.1))
+
   '@emnapi/core@1.11.2':
     dependencies:
       '@emnapi/wasi-threads': 1.2.2
@@ -2623,6 +2684,24 @@ snapshots:
     optional: true
 
   '@oxfmt/binding-win32-x64-msvc@0.68.0':
+    optional: true
+
+  '@oxlint-tsgolint/darwin-arm64@7.0.2002':
+    optional: true
+
+  '@oxlint-tsgolint/darwin-x64@7.0.2002':
+    optional: true
+
+  '@oxlint-tsgolint/linux-arm64@7.0.2002':
+    optional: true
+
+  '@oxlint-tsgolint/linux-x64@7.0.2002':
+    optional: true
+
+  '@oxlint-tsgolint/win32-arm64@7.0.2002':
+    optional: true
+
+  '@oxlint-tsgolint/win32-x64@7.0.2002':
     optional: true
 
   '@oxlint/binding-android-arm-eabi@1.83.0':
@@ -3288,7 +3367,17 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.68.0
       '@oxfmt/binding-win32-x64-msvc': 0.68.0
 
-  oxlint@1.83.0:
+  oxlint-tsgolint@7.0.2002:
+    optionalDependencies:
+      '@oxlint-tsgolint/darwin-arm64': 7.0.2002
+      '@oxlint-tsgolint/darwin-x64': 7.0.2002
+      '@oxlint-tsgolint/linux-arm64': 7.0.2002
+      '@oxlint-tsgolint/linux-x64': 7.0.2002
+      '@oxlint-tsgolint/win32-arm64': 7.0.2002
+      '@oxlint-tsgolint/win32-x64': 7.0.2002
+    optional: true
+
+  oxlint@1.83.0(oxlint-tsgolint@7.0.2002):
     optionalDependencies:
       '@oxlint/binding-android-arm-eabi': 1.83.0
       '@oxlint/binding-android-arm64': 1.83.0
@@ -3309,6 +3398,7 @@ snapshots:
       '@oxlint/binding-win32-arm64-msvc': 1.83.0
       '@oxlint/binding-win32-ia32-msvc': 1.83.0
       '@oxlint/binding-win32-x64-msvc': 1.83.0
+      oxlint-tsgolint: 7.0.2002
 
   package-manager-detector@1.8.0: {}
 

@@ -5,6 +5,6 @@
 /**
  * Compare by UTF-16 code unit, so the order never depends on the host's ICU locale.
  */
-export function compareStrings(left: string, right: string): number {
+export function compareStrings({ left, right }: { readonly left: string; readonly right: string }): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }

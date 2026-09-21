@@ -106,7 +106,7 @@ export const prHandler = Effect.fn("prHandler")(function* (command: PrCommand) {
   const live = listing.artifacts.filter((artifact) => artifact.name === name && !artifact.expired);
   const newestFirst = live
     .filter((artifact) => fromPullHead(artifact.workflow_run) || fromCommandRun(artifact.workflow_run))
-    .toSorted((left, right) => compareStrings(right.created_at, left.created_at));
+    .toSorted((left, right) => compareStrings({ left: right.created_at, right: left.created_at }));
   // The scan of the current head wins. Otherwise the newest candidate is opened, and the reader is told that what it
   // shows may not be the head: an older push, or a command run, whose scanned commit the listing does not report.
   const exact = newestFirst.find(
@@ -134,7 +134,7 @@ export const prHandler = Effect.fn("prHandler")(function* (command: PrCommand) {
 
   const invalid = (detail: string) => new PrError({ reason: "invalid_artifact", number, repo, detail });
   const json = yield* Effect.try({
-    try: () => readZipEntry(zip, ARTIFACT_ENTRY),
+    try: () => readZipEntry({ bytes: zip, entry: ARTIFACT_ENTRY }),
     catch: (error) => invalid(error instanceof Error ? error.message : String(error)),
   });
   const artifactPath = path.join(cacheDir, ARTIFACT_ENTRY);

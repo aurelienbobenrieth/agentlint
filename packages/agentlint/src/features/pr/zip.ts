@@ -20,14 +20,11 @@ class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
   method: Schema.optional(Schema.Number),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "not_zip":
-        return "The downloaded file is not a ZIP archive";
-      case "entry_missing":
-        return `The archive has no ${this.entry} entry`;
-      case "unsupported_method":
-        return `${this.entry} uses unsupported compression method ${this.method}`;
-    }
+    return {
+      not_zip: "The downloaded file is not a ZIP archive",
+      entry_missing: `The archive has no ${this.entry} entry`,
+      unsupported_method: `${this.entry} uses unsupported compression method ${this.method}`,
+    }[this.reason];
   }
 }
 
@@ -45,8 +42,10 @@ const DEFLATE = 8;
 const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
 
 const findEndRecord = (archive: Buffer): number => {
-  for (let offset = archive.length - END_RECORD_SIZE; offset >= 0; offset--) {
-    if (archive.readUInt32LE(offset) === END_OF_CENTRAL_DIRECTORY) return offset;
+  const cursor = { offset: archive.length - END_RECORD_SIZE };
+  while (cursor.offset >= 0) {
+    if (archive.readUInt32LE(cursor.offset) === END_OF_CENTRAL_DIRECTORY) return cursor.offset;
+    cursor.offset -= 1;
   }
   return -1;
 };
@@ -57,26 +56,34 @@ const findEndRecord = (archive: Buffer): number => {
  * @since 0.2.0
  * @throws ZipError when the buffer is not a ZIP archive, the entry is absent, or its method is unsupported.
  */
-export function readZipEntry(bytes: Uint8Array, entry: string): Uint8Array {
+export function readZipEntry({ bytes, entry }: { readonly bytes: Uint8Array; readonly entry: string }): Uint8Array {
   const archive = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const endRecord = findEndRecord(archive);
   if (endRecord < 0) throw new ZipError({ reason: "not_zip", entry });
 
   const entryCount = archive.readUInt16LE(endRecord + 10);
-  let offset = archive.readUInt32LE(endRecord + 16);
+  const cursor = { index: 0, offset: archive.readUInt32LE(endRecord + 16) };
 
-  for (let index = 0; index < entryCount; index++) {
-    if (offset + CENTRAL_HEADER_SIZE > archive.length || archive.readUInt32LE(offset) !== CENTRAL_HEADER) {
+  while (cursor.index < entryCount) {
+    if (
+      cursor.offset + CENTRAL_HEADER_SIZE > archive.length ||
+      archive.readUInt32LE(cursor.offset) !== CENTRAL_HEADER
+    ) {
       throw new ZipError({ reason: "not_zip", entry });
     }
-    const method = archive.readUInt16LE(offset + 10);
-    const compressedSize = archive.readUInt32LE(offset + 20);
-    const nameLength = archive.readUInt16LE(offset + 28);
-    const extraLength = archive.readUInt16LE(offset + 30);
-    const commentLength = archive.readUInt16LE(offset + 32);
-    const localOffset = archive.readUInt32LE(offset + 42);
-    const name = archive.toString("utf8", offset + CENTRAL_HEADER_SIZE, offset + CENTRAL_HEADER_SIZE + nameLength);
-    offset += CENTRAL_HEADER_SIZE + nameLength + extraLength + commentLength;
+    const method = archive.readUInt16LE(cursor.offset + 10);
+    const compressedSize = archive.readUInt32LE(cursor.offset + 20);
+    const nameLength = archive.readUInt16LE(cursor.offset + 28);
+    const extraLength = archive.readUInt16LE(cursor.offset + 30);
+    const commentLength = archive.readUInt16LE(cursor.offset + 32);
+    const localOffset = archive.readUInt32LE(cursor.offset + 42);
+    const name = archive.toString(
+      "utf8",
+      cursor.offset + CENTRAL_HEADER_SIZE,
+      cursor.offset + CENTRAL_HEADER_SIZE + nameLength,
+    );
+    cursor.offset += CENTRAL_HEADER_SIZE + nameLength + extraLength + commentLength;
+    cursor.index += 1;
 
     if (name !== entry) continue;
     if (archive.readUInt32LE(localOffset) !== LOCAL_HEADER) throw new ZipError({ reason: "not_zip", entry });

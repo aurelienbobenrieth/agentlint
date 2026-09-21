@@ -6,8 +6,16 @@ import { button } from "../../shared/ui/controls";
 import { summarizeCalibration } from "@aurelienbbn/agentlint/calibration";
 import { currentCalibrationReport } from "./selectors";
 
-export const calibrationPanel = (state: ReviewStatePayload, model: Model, h: HtmlBuilder<Message>): Html => {
-  const report = currentCalibrationReport(state, model);
+export const calibrationPanel = ({
+  state,
+  model,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const report = currentCalibrationReport({ state, model });
   const metrics = summarizeCalibration([report]);
   return h.details(
     [h.Class("calibration-metrics")],
@@ -39,9 +47,15 @@ export const calibrationPanel = (state: ReviewStatePayload, model: Model, h: Htm
           "Export reports from successive reviews and combine them with agentlint rules calibration to measure repeated invalidations.",
         ],
       ),
-      button("Download calibration report", Message.ClickedDownloadCalibration(), "secondary", h, {
-        size: "sm",
-        disabled: model.busyFindingId !== null,
+      button({
+        label: "Download calibration report",
+        message: Message.ClickedDownloadCalibration(),
+        variant: "secondary",
+        h,
+        options: {
+          size: "sm",
+          disabled: model.busyFindingId !== null,
+        },
       }),
     ],
   );

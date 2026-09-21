@@ -58,7 +58,7 @@ describe("childEnv", () => {
 
 describe("gitAuthOptions", () => {
   it("authenticates one command for the server only, after clearing a persisted header", () => {
-    const options = gitAuthOptions("https://github.com/", "tok");
+    const options = gitAuthOptions({ serverUrl: "https://github.com/", token: "tok" });
     const basic = Buffer.from("x-access-token:tok").toString("base64");
     expect(options.slice(-4)).toEqual([
       "-c",
@@ -69,7 +69,7 @@ describe("gitAuthOptions", () => {
     expect(options.some((option) => option.startsWith("core.hooksPath="))).toBe(true);
     expect(options).toContain("credential.helper=");
     expect(options).toContain("protocol.ext.allow=never");
-    expect(gitAuthOptions("https://github.com", "").join(" ")).not.toContain("extraheader");
+    expect(gitAuthOptions({ serverUrl: "https://github.com", token: "" }).join(" ")).not.toContain("extraheader");
   });
 });
 
@@ -77,17 +77,33 @@ describe("isActionComment", () => {
   const marker = "<!-- agentlint:summary -->";
   it("trusts only the account of the token in use", () => {
     const own = { user: { login: "github-actions[bot]", type: "Bot" }, body: marker };
-    expect(isActionComment(own, "github-actions[bot]")).toBe(true);
-    expect(isActionComment(own, "github-actions")).toBe(true);
+    expect(isActionComment({ comment: own, identity: "github-actions[bot]" })).toBe(true);
+    expect(isActionComment({ comment: own, identity: "github-actions" })).toBe(true);
     expect(
-      isActionComment({ user: { login: "other-app[bot]", type: "Bot" }, body: marker }, "github-actions[bot]"),
+      isActionComment({
+        comment: { user: { login: "other-app[bot]", type: "Bot" }, body: marker },
+        identity: "github-actions[bot]",
+      }),
     ).toBe(false);
     expect(
-      isActionComment({ user: { login: "github-actions", type: "User" }, body: marker }, "github-actions[bot]"),
+      isActionComment({
+        comment: { user: { login: "github-actions", type: "User" }, body: marker },
+        identity: "github-actions[bot]",
+      }),
     ).toBe(false);
-    expect(isActionComment({ user: { login: "my-app[bot]", type: "Bot" }, body: marker }, "my-app[bot]")).toBe(true);
-    expect(isActionComment({ user: { login: "maintainer", type: "User" }, body: marker }, "maintainer")).toBe(true);
-    expect(isActionComment(own, "")).toBe(false);
+    expect(
+      isActionComment({
+        comment: { user: { login: "my-app[bot]", type: "Bot" }, body: marker },
+        identity: "my-app[bot]",
+      }),
+    ).toBe(true);
+    expect(
+      isActionComment({
+        comment: { user: { login: "maintainer", type: "User" }, body: marker },
+        identity: "maintainer",
+      }),
+    ).toBe(true);
+    expect(isActionComment({ comment: own, identity: "" })).toBe(false);
   });
 });
 
@@ -97,7 +113,7 @@ describe("localCli", () => {
     cleanup.push(workspace);
     const working = join(workspace, "apps", "web");
     await mkdir(working, { recursive: true });
-    expect(await localCli(working, workspace)).toBeNull();
+    expect(await localCli({ workingDirectory: working, workspace })).toBeNull();
 
     const root = join(workspace, "node_modules", "@aurelienbbn", "agentlint");
     await mkdir(root, { recursive: true });
@@ -105,7 +121,7 @@ describe("localCli", () => {
       join(root, "package.json"),
       JSON.stringify({ version: "0.1.4", bin: { agentlint: "dist/bin.mjs" } }),
     );
-    expect(await localCli(working, workspace)).toEqual({
+    expect(await localCli({ workingDirectory: working, workspace })).toEqual({
       argv: ["node", join(root, "dist", "bin.mjs")],
       version: "0.1.4",
     });

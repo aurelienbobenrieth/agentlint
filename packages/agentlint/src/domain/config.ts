@@ -42,16 +42,12 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
   ruleId: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "empty_base":
-        return "Config base must not be empty";
-      case "empty_ignore":
-        return "Config ignore patterns must not be empty";
-      case "duplicate_binding":
-        return `Duplicate rule binding id: ${this.ruleId}`;
-      case "extends_cycle":
-        return "Config extends contains a cycle";
-    }
+    return {
+      empty_base: "Config base must not be empty",
+      empty_ignore: "Config ignore patterns must not be empty",
+      duplicate_binding: `Duplicate rule binding id: ${this.ruleId}`,
+      extends_cycle: "Config extends contains a cycle",
+    }[this.reason];
   }
 }
 
@@ -80,11 +76,19 @@ export function defineConfig<const Config extends AgentlintConfig>(config: Confi
   return config;
 }
 
-function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active = new Set<AgentlintConfig>()): void {
+function flatten({
+  config,
+  output = [],
+  active = new Set<AgentlintConfig>(),
+}: {
+  readonly config: AgentlintConfig;
+  readonly output?: AgentlintConfig[];
+  readonly active?: Set<AgentlintConfig>;
+}): void {
   assertConfig(config);
   if (active.has(config)) throw new ConfigError({ reason: "extends_cycle" });
   active.add(config);
-  for (const parent of config.extends ?? []) flatten(parent, output, active);
+  for (const parent of config.extends ?? []) flatten({ config: parent, output, active });
   active.delete(config);
   output.push(config);
 }
@@ -94,10 +98,10 @@ function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active
  */
 export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   const layers: AgentlintConfig[] = [];
-  flatten(config, layers);
+  flatten({ config, output: layers });
   const rulesById = new Map<string, AgentlintRule>();
   const ignores: string[] = [];
-  let base: string | undefined;
+  const base = layers.findLast((layer) => layer.base !== undefined)?.base;
 
   for (const layer of layers) {
     assertConfig(layer);
@@ -108,7 +112,6 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
       rulesById.set(id, rule);
     }
     ignores.push(...(layer.ignores ?? []));
-    if (layer.base !== undefined) base = layer.base;
   }
 
   return {

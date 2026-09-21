@@ -1,12 +1,15 @@
 import { evo } from "foldkit/struct";
+import { Schema } from "effect";
 
-import { type Model, persistedReview, Screen } from "../../model";
+import { type Model, PersistedReview, persistedReview, Screen } from "../../model";
 import { duplicateFindingId } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
 import { enqueueToast } from "../toasts/update";
 import { DelayPersist, LoadReview, MarkDirty, PersistReview, reviewStorageKey } from "./command";
 import type { fields } from "./messages";
+
+const encodePersistedReview = Schema.encodeUnknownSync(Schema.fromJsonString(PersistedReview));
 
 /**
  * Leaving loses work only when a detached review holds a decision that was not exported yet. Attached reviews never do:
@@ -27,14 +30,20 @@ export const persist = (model: Model): UpdateReturn => {
     commands: [
       PersistReview({
         key: reviewStorageKey(model.screen.state),
-        content: JSON.stringify(persistedReview(model)),
+        content: encodePersistedReview(persistedReview(model)),
         dirty: hasUnexportedDecisions(model),
       }),
     ],
   };
 };
 
-export const persistChange = (model: Model, change: (model: Model) => Model): UpdateReturn => persist(change(model));
+export const persistChange = ({
+  model,
+  change,
+}: {
+  readonly model: Model;
+  readonly change: (model: Model) => Model;
+}): UpdateReturn => persist(change(model));
 
 /**
  * Write after the reviewer pauses typing. The model changes immediately; only the write is delayed.
@@ -49,7 +58,7 @@ export const persistLater = (model: Model): UpdateReturn => {
  * Selection, drafts and exports key on the finding id. A state that repeats one shows one finding and would export a
  * decision for both, so it is refused outright.
  */
-export const rejectDuplicateIds = (model: Model, id: string): UpdateReturn => ({
+export const rejectDuplicateIds = ({ model, id }: { readonly model: Model; readonly id: string }): UpdateReturn => ({
   model: evo(model, {
     screen: () =>
       Screen.LoadFailed({
@@ -62,7 +71,7 @@ export const rejectDuplicateIds = (model: Model, id: string): UpdateReturn => ({
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   LoadedState: ({ state, saved, savedUnreadable }) => {
     const duplicate = duplicateFindingId(state);
-    if (duplicate !== null) return rejectDuplicateIds(model, duplicate);
+    if (duplicate !== null) return rejectDuplicateIds({ model, id: duplicate });
     const restored = evo(model, {
       screen: () => Screen.Reviewing({ state }),
       view: () => saved?.view ?? model.view,
@@ -81,22 +90,24 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       toasts: () => [],
     });
     // The selection always names a listed finding. Nothing was decided yet, so shortcuts need not wait.
-    const selected = evo(reconcileSelection(restored, restored).model, { selectionSettled: () => true });
+    const selected = evo(reconcileSelection({ before: restored, after: restored }).model, {
+      selectionSettled: () => true,
+    });
     const commands = [MarkDirty({ dirty: hasUnexportedDecisions(selected) })];
     if (!savedUnreadable) return { model: selected, commands };
-    return appendCommands(
-      enqueueToast(
-        selected,
-        `Decisions saved in this browser by another agentlint version could not be read and are not shown. The data was kept in local storage under "${reviewStorageKey(state)}:bak".`,
-        "danger",
-      ),
+    return appendCommands({
+      result: enqueueToast({
+        model: selected,
+        message: `Decisions saved in this browser by another agentlint version could not be read and are not shown. The data was kept in local storage under "${reviewStorageKey(state)}:bak".`,
+        tone: "danger",
+      }),
       commands,
-    );
+    });
   },
   FailedLoadState: ({ message }) =>
     // A failed reload keeps the review on screen; only the first load has nothing else to show.
     model.screen._tag === "Reviewing"
-      ? enqueueToast(model, `Reload failed: ${message}`, "danger")
+      ? enqueueToast({ model, message: `Reload failed: ${message}`, tone: "danger" })
       : { model: evo(model, { screen: () => Screen.LoadFailed({ message }) }) },
   ClickedReloadReview: () => ({ model, commands: [LoadReview()] }),
   ElapsedPersistDelay: ({ version }) => (version === model.saveVersion ? persist(model) : { model }),
@@ -105,9 +116,9 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   FailedPersistence: ({ message }) =>
     model.persistFailed
       ? { model }
-      : enqueueToast(
-          evo(model, { persistFailed: () => true }),
-          `Local save failed: ${message}. New decisions exist only in this tab until it succeeds.`,
-          "danger",
-        ),
+      : enqueueToast({
+          model: evo(model, { persistFailed: () => true }),
+          message: `Local save failed: ${message}. New decisions exist only in this tab until it succeeds.`,
+          tone: "danger",
+        }),
 });

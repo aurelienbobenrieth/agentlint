@@ -18,30 +18,30 @@ const client = (fetchImpl) =>
   });
 
 it("rejects repeated pages instead of looping or returning partial evidence", async () => {
-  let calls = 0;
+  const calls = { value: 0 };
   const github = client(async (_input, init) => {
-    calls++;
+    calls.value += 1;
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     return new Response("[]", { headers: { link: '<https://api.example.test/items?per_page=100>; rel="next"' } });
   });
   await expect(github.paginate("/items")).rejects.toThrow(/repeated a page/);
-  expect(calls).toBe(1);
+  expect(calls.value).toBe(1);
 });
 
 it("rejects a pagination link to another origin before sending credentials", async () => {
-  let calls = 0;
+  const calls = { value: 0 };
   const github = client(async () => {
-    calls++;
+    calls.value += 1;
     return new Response("[]", { headers: { link: '<https://other.example.test/items>; rel="next"' } });
   });
   await expect(github.paginate("/items")).rejects.toThrow(/changed API origin/);
-  expect(calls).toBe(1);
+  expect(calls.value).toBe(1);
 });
 
 it("collects distinct pages", async () => {
-  let calls = 0;
+  const calls = { value: 0 };
   const github = client(async () =>
-    ++calls === 1
+    ++calls.value === 1
       ? new Response('[{"id":1}]', { headers: { link: '<https://api.example.test/items?page=2>; rel="next"' } })
       : new Response('[{"id":2}]'),
   );
@@ -50,6 +50,6 @@ it("collects distinct pages", async () => {
 
 it("terminates a stalled subprocess", async () => {
   await expect(
-    exec([process.execPath, "-e", "setInterval(() => {}, 1000)"], { cwd: tmpdir(), timeoutMs: 100 }),
+    exec({ argv: [process.execPath, "-e", "setInterval(() => {}, 1000)"], options: { cwd: tmpdir(), timeoutMs: 100 } }),
   ).rejects.toThrow(/failed|killed|timed out/i);
 });

@@ -46,7 +46,7 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
           existing.reason !== record.expectedReason
         );
       }
-      return !acceptanceSatisfies(importedAcceptance(record), finding);
+      return !acceptanceSatisfies({ acceptance: importedAcceptance(record), finding });
     }).length;
     if (rejectedCount > 0) {
       return new AcceptancesResult({

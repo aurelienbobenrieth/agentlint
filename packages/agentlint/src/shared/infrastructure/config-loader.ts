@@ -31,16 +31,13 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agen
   ancestor: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "not_found":
-        return this.ancestor
-          ? `No agentlint config found in ${this.path}. ${this.ancestor} has .agentlint/config.ts: run agentlint from that directory.`
-          : `No agentlint config found. Create .agentlint/config.ts in ${this.path}`;
-      case "import_failed":
-        return `Failed to load ${this.path}: ${this.detail}`;
-      case "invalid_shape":
-        return `Invalid config at ${this.path}: ${this.detail ?? "must export an agentlint config object"}`;
-    }
+    return {
+      not_found: this.ancestor
+        ? `No agentlint config found in ${this.path}. ${this.ancestor} has .agentlint/config.ts: run agentlint from that directory.`
+        : `No agentlint config found. Create .agentlint/config.ts in ${this.path}`,
+      import_failed: `Failed to load ${this.path}: ${this.detail}`,
+      invalid_shape: `Invalid config at ${this.path}: ${this.detail ?? "must export an agentlint config object"}`,
+    }[this.reason];
   }
 }
 
@@ -80,14 +77,19 @@ const SELF_ENTRIES = [
  * @since 0.2.0
  * @category Internals
  */
-const selfAliases = (fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<Record<string, string>> =>
-  Effect.gen(function* () {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const bundled = yield* fs.exists(path.join(here, "index.mjs")).pipe(Effect.orElseSucceed(() => false));
-    return Object.fromEntries(
-      SELF_ENTRIES.map(([specifier, built, source]) => [specifier, path.resolve(here, bundled ? built : source)]),
-    );
-  });
+const selfAliases = Effect.fn("ConfigLoader.selfAliases")(function* ({
+  fs,
+  path,
+}: {
+  readonly fs: FileSystem.FileSystem;
+  readonly path: Path.Path;
+}) {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const bundled = yield* fs.exists(path.join(here, "index.mjs")).pipe(Effect.orElseSucceed(() => false));
+  return Object.fromEntries(
+    SELF_ENTRIES.map(([specifier, built, source]) => [specifier, path.resolve(here, bundled ? built : source)]),
+  );
+});
 
 /**
  * Discover the config file path.
@@ -95,24 +97,31 @@ const selfAliases = (fs: FileSystem.FileSystem, path: Path.Path): Effect.Effect<
  * @since 0.1.0
  * @category Internals
  */
-const discoverConfig = (
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  cwd: string,
-): Effect.Effect<string, ConfigLoadError> =>
-  Effect.gen(function* () {
-    const candidate = path.resolve(cwd, ...CONFIG_PATH);
-    if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
-      return candidate;
-    }
-    // A second config scaffolded in a subdirectory would split the repository's decisions: name the existing one.
-    for (let dir = path.dirname(cwd); ; dir = path.dirname(dir)) {
+const discoverConfig = Effect.fn("ConfigLoader.discoverConfig")(function* ({
+  fs,
+  path,
+  cwd,
+}: {
+  readonly fs: FileSystem.FileSystem;
+  readonly path: Path.Path;
+  readonly cwd: string;
+}) {
+  const candidate = path.resolve(cwd, ...CONFIG_PATH);
+  if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
+    return candidate;
+  }
+  // A second config scaffolded in a subdirectory would split the repository's decisions: name the existing one.
+  const findAncestor: (dir: string) => Effect.Effect<string, ConfigLoadError> = Effect.fn("ConfigLoader.findAncestor")(
+    function* (dir: string) {
       if (yield* fs.exists(path.resolve(dir, ...CONFIG_PATH)).pipe(Effect.orElseSucceed(() => false)))
         return yield* new ConfigLoadError({ reason: "not_found", path: cwd, ancestor: dir });
-      if (dir === path.dirname(dir)) break;
-    }
-    return yield* new ConfigLoadError({ reason: "not_found", path: cwd });
-  });
+      const parent = path.dirname(dir);
+      if (dir === parent) return yield* new ConfigLoadError({ reason: "not_found", path: cwd });
+      return yield* findAncestor(parent);
+    },
+  );
+  return yield* findAncestor(path.dirname(cwd));
+});
 
 /**
  * Effect service that discovers and loads the agentlint config file.
@@ -151,27 +160,23 @@ export class ConfigLoader extends Context.Service<
       const path = yield* Path.Path;
 
       const load = Effect.gen(function* () {
-        const configPath = yield* discoverConfig(fs, path, env.cwd);
-        const alias = yield* selfAliases(fs, path);
+        const configPath = yield* discoverConfig({ fs, path, cwd: env.cwd });
+        const alias = yield* selfAliases({ fs, path });
 
         const config = yield* Effect.tryPromise({
           try: async () => {
             const { createJiti } = await import("jiti");
             const jiti = createJiti(import.meta.url, { interopDefault: true, alias });
-            const loaded = await jiti.import(configPath);
-            return (loaded as { default?: AgentlintConfig }).default ?? (loaded as AgentlintConfig);
+            const loaded = await jiti.import<AgentlintConfig & { readonly default?: AgentlintConfig }>(configPath);
+            return loaded.default ?? loaded;
           },
           catch: (error) =>
             new ConfigLoadError({
               reason: "import_failed",
               path: configPath,
-              detail: error instanceof Error ? error.message : String(error),
+              detail: Schema.is(Schema.instanceOf(Error))(error) ? error.message : "Configuration import failed",
             }),
         });
-
-        if (!config || typeof config !== "object") {
-          return yield* new ConfigLoadError({ reason: "invalid_shape", path: configPath });
-        }
 
         return yield* Effect.try({
           try: () => normalizeConfig(config),

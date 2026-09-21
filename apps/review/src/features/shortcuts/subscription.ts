@@ -27,40 +27,25 @@ export const shortcutFor = (event: {
     return null;
   }
   if (mod || event.altKey) return null;
-  switch (event.key) {
-    case "j":
-    case "ArrowDown":
-      return "next";
-    case "k":
-    case "ArrowUp":
-      return "previous";
-    case "a":
-      return "accept";
-    case "r":
-      return "request_changes";
-    case "e":
-      return "open";
-    case "c":
-      return "copy";
-    case "/":
-      return "search";
-    case "f":
-      return "filters";
-    case "1":
-      return "queue";
-    case "2":
-      return "decisions";
-    case "[":
-      return "sidebar";
-    case "g":
-      return "guidance";
-    case "?":
-      return "help";
-    case "x":
-      return "dismiss_toast";
-    default:
-      return null;
-  }
+  const shortcuts: Readonly<Record<string, Shortcut>> = {
+    j: "next",
+    ArrowDown: "next",
+    k: "previous",
+    ArrowUp: "previous",
+    a: "accept",
+    r: "request_changes",
+    e: "open",
+    c: "copy",
+    "/": "search",
+    f: "filters",
+    "1": "queue",
+    "2": "decisions",
+    "[": "sidebar",
+    g: "guidance",
+    "?": "help",
+    x: "dismiss_toast",
+  };
+  return shortcuts[event.key] ?? null;
 };
 
 export const keyboard = (entry: SubscriptionEntry) =>

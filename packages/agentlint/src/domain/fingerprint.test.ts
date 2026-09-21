@@ -18,7 +18,9 @@ describe("canonical fingerprints", () => {
 
   it("rejects values outside canonical JSON", () => {
     expect(() => canonicalStringify({ value: Number.NaN })).toThrow("numbers must be finite");
-    expect(() => canonicalStringify({ value: undefined } as never)).toThrow("not canonical JSON data");
+    expect(() => Reflect.apply(canonicalStringify, undefined, [{ value: undefined }])).toThrow(
+      "not canonical JSON data",
+    );
   });
 
   it("normalizes equivalent repository paths", () => {
@@ -46,8 +48,12 @@ describe("canonical fingerprints", () => {
     const current = fingerprintState({ path: "src/query.ts", structure: [], occurrence: "call:0" });
     expect(current).toMatchObject({ scheme: "source-structure", version: 3 });
     expect(isSupportedFingerprint(current)).toBe(true);
-    expect(isSupportedFingerprint(new Fingerprint({ ...current, version: 2 }))).toBe(false);
-    expect(isSupportedFingerprint(new Fingerprint({ ...current, version: 4 }))).toBe(false);
+    expect(
+      isSupportedFingerprint(new Fingerprint({ scheme: current.scheme, version: 2, digest: current.digest })),
+    ).toBe(false);
+    expect(
+      isSupportedFingerprint(new Fingerprint({ scheme: current.scheme, version: 4, digest: current.digest })),
+    ).toBe(false);
   });
 
   it("invalidates state fingerprints for paths, captures, and duplicate occurrences", () => {

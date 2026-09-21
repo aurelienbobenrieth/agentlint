@@ -66,7 +66,7 @@ export class Env extends Context.Service<
    * @category Layers
    */
   static readonly layer: Layer.Layer<Env> = Layer.sync(Env, () => {
-    const isTTY = process.stdout.isTTY ?? false;
+    const isTTY = process.stdout.isTTY;
     const rawEnv = process.env;
     const username = rawEnv["USER"] ?? rawEnv["USERNAME"] ?? userInfo().username;
     const actor =

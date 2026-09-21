@@ -8,7 +8,7 @@
  * @since 0.2.0
  */
 
-import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
+import { Context, Effect, FileSystem, Layer, Path, Schema, type PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { Env } from "../../config/env.js";
 import { compareStrings } from "../../domain/compare.js";
@@ -32,6 +32,7 @@ export class ProposalStoreError extends Schema.TaggedError<ProposalStoreError>()
 
 const PROPOSAL_PATH = [".agentlint", "proposals.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(ProposalRecord));
+const encodeRecord = Schema.encodeUnknownSync(Schema.fromJsonString(ProposalRecord));
 
 /**
  * Parse a JSONL proposal file. Later records for the same identity win.
@@ -58,12 +59,12 @@ function parseProposals(content: string): ProposalRecord[] {
 function sortProposals(records: ReadonlyArray<ProposalRecord>): ProposalRecord[] {
   const keys = new Map(records.map((record) => [record, proposalKey(record)]));
   const keyOf = (record: ProposalRecord) => keys.get(record) ?? proposalKey(record);
-  return records.toSorted((left, right) => compareStrings(keyOf(left), keyOf(right)));
+  return records.toSorted((left, right) => compareStrings({ left: keyOf(left), right: keyOf(right) }));
 }
 
 function serializeProposals(records: ReadonlyArray<ProposalRecord>): string {
   const sorted = sortProposals(records);
-  return sorted.length === 0 ? "" : `${sorted.map((record) => JSON.stringify(record)).join("\n")}\n`;
+  return sorted.length === 0 ? "" : `${sorted.map((record) => encodeRecord(record)).join("\n")}\n`;
 }
 
 export class ProposalStore extends Context.Service<
@@ -90,8 +91,13 @@ export class ProposalStore extends Context.Service<
       const path = yield* Path.Path;
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(env.cwd, ...PROPOSAL_PATH);
-      const io = (error: unknown) => new ProposalStoreError({ reason: "io", detail: String(error), line: undefined });
-      const locked = withFileLock(fs, directory, path.resolve(directory, "proposals.lock"), io);
+      const io = (error: PlatformError.PlatformError | string) =>
+        new ProposalStoreError({
+          reason: "io",
+          detail: Schema.is(Schema.String)(error) ? error : error.message,
+          line: undefined,
+        });
+      const locked = withFileLock({ fs, directory, lock: path.resolve(directory, "proposals.lock"), fail: io });
 
       const readRecords = (): Effect.Effect<ProposalRecord[], ProposalStoreError> =>
         fs.exists(file).pipe(
@@ -118,21 +124,20 @@ export class ProposalStore extends Context.Service<
           ),
         );
 
-      const writeRecords = (records: ReadonlyArray<ProposalRecord>) =>
-        Effect.gen(function* () {
-          const sorted = sortProposals(records);
-          yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(io));
-          // Replace the file atomically so a reader or an interrupted writer never sees half of it.
-          const temporary = path.resolve(directory, `proposals.${randomUUID()}.tmp`);
-          yield* fs
-            .writeFileString(temporary, serializeProposals(sorted), { flag: "wx" })
-            .pipe(
-              Effect.andThen(fs.rename(temporary, file)),
-              Effect.mapError(io),
-              Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
-            );
-          return sorted;
-        });
+      const writeRecords = Effect.fn("ProposalStore.writeRecords")(function* (records: ReadonlyArray<ProposalRecord>) {
+        const sorted = sortProposals(records);
+        yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(io));
+        // Replace the file atomically so a reader or an interrupted writer never sees half of it.
+        const temporary = path.resolve(directory, `proposals.${randomUUID()}.tmp`);
+        yield* fs
+          .writeFileString(temporary, serializeProposals(sorted), { flag: "wx" })
+          .pipe(
+            Effect.andThen(fs.rename(temporary, file)),
+            Effect.mapError(io),
+            Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
+          );
+        return sorted;
+      });
 
       return ProposalStore.of({
         read: readRecords,
@@ -148,7 +153,9 @@ export class ProposalStore extends Context.Service<
             ),
           ),
         prune: (current) => {
-          const keys = new Set(current.map((finding) => findingIdentityKey(finding.source, finding.fingerprint)));
+          const keys = new Set(
+            current.map((finding) => findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint })),
+          );
           const live = (records: ReadonlyArray<ProposalRecord>) =>
             records.filter((record) => keys.has(proposalKey(record)));
           // The common case has nothing to drop, and then needs neither the lock nor a write.

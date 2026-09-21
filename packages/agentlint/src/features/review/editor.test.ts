@@ -1,27 +1,48 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Array as EffectArray, Order } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { detectEditorApplications, editorInvocation, launcherFromLookup, openInEditor } from "./editor.js";
 
 describe("review editor adapters", () => {
   it("keeps a Windows file target in one allowlisted argument", () => {
-    expect(editorInvocation("vscode", "win32", String.raw`C:\work tree\démo.ts`, 7, 3)).toEqual({
+    expect(
+      editorInvocation({
+        application: "vscode",
+        platform: "win32",
+        file: String.raw`C:\work tree\démo.ts`,
+        line: 7,
+        column: 3,
+      }),
+    ).toEqual({
       command: "rundll32.exe",
       args: ["url.dll,FileProtocolHandler", "vscode://file/C:/work%20tree/d%C3%A9mo.ts:7:3"],
     });
-    expect(editorInvocation("explorer", "win32", String.raw`C:\work tree\démo.ts`, 7, 3)).toEqual({
+    expect(
+      editorInvocation({
+        application: "explorer",
+        platform: "win32",
+        file: String.raw`C:\work tree\démo.ts`,
+        line: 7,
+        column: 3,
+      }),
+    ).toEqual({
       command: "explorer.exe",
       args: [String.raw`/select,C:\work tree\démo.ts`],
     });
   });
 
   it("uses platform launchers without a shell", () => {
-    expect(editorInvocation("zed", "darwin", "/work tree/demo.ts", 2, 9)).toEqual({
+    expect(
+      editorInvocation({ application: "zed", platform: "darwin", file: "/work tree/demo.ts", line: 2, column: 9 }),
+    ).toEqual({
       command: "open",
       args: ["zed://file/work%20tree/demo.ts:2:9"],
     });
-    expect(editorInvocation("explorer", "linux", "/work tree/demo.ts", 2, 9)).toEqual({
+    expect(
+      editorInvocation({ application: "explorer", platform: "linux", file: "/work tree/demo.ts", line: 2, column: 9 }),
+    ).toEqual({
       command: "xdg-open",
       args: ["/work tree"],
     });
@@ -29,31 +50,49 @@ describe("review editor adapters", () => {
 
   it("prefers a command-line launcher and resolves Windows shims to the executable", () => {
     expect(
-      editorInvocation("cursor", "win32", String.raw`C:\repo\a.ts`, 4, 5, String.raw`C:\Apps\cursor\Cursor.exe`),
+      editorInvocation({
+        application: "cursor",
+        platform: "win32",
+        file: String.raw`C:\repo\a.ts`,
+        line: 4,
+        column: 5,
+        launcher: String.raw`C:\Apps\cursor\Cursor.exe`,
+      }),
     ).toEqual({
       command: String.raw`C:\Apps\cursor\Cursor.exe`,
       args: ["--goto", String.raw`C:\repo\a.ts:4:5`],
     });
-    expect(editorInvocation("zed", "linux", "/repo/a.ts", 4, 5, "/usr/bin/zed")).toEqual({
+    expect(
+      editorInvocation({
+        application: "zed",
+        platform: "linux",
+        file: "/repo/a.ts",
+        line: 4,
+        column: 5,
+        launcher: "/usr/bin/zed",
+      }),
+    ).toEqual({
       command: "/usr/bin/zed",
       args: ["/repo/a.ts:4:5"],
     });
     const cursor = { windowsExecutable: (shim: string) => `${shim}${String.raw`\..\Cursor.exe`}` };
     expect(
-      launcherFromLookup(
-        cursor,
-        "win32",
-        `${String.raw`C:\Apps\cursor\bin\cursor`}\r\n${String.raw`C:\Apps\cursor\bin\cursor.cmd`}\r\n`,
-      ),
+      launcherFromLookup({
+        application: cursor,
+        platform: "win32",
+        output: `${String.raw`C:\Apps\cursor\bin\cursor`}\r\n${String.raw`C:\Apps\cursor\bin\cursor.cmd`}\r\n`,
+      }),
     ).toBe(String.raw`C:\Apps\cursor\bin\..\Cursor.exe`);
     expect(
-      launcherFromLookup(
-        cursor,
-        "win32",
-        `${String.raw`C:\Apps\Zed\bin\zed`}\r\n${String.raw`C:\Apps\Zed\bin\Zed.exe`}\r\n`,
-      ),
+      launcherFromLookup({
+        application: cursor,
+        platform: "win32",
+        output: `${String.raw`C:\Apps\Zed\bin\zed`}\r\n${String.raw`C:\Apps\Zed\bin\Zed.exe`}\r\n`,
+      }),
     ).toBe(String.raw`C:\Apps\Zed\bin\Zed.exe`);
-    expect(launcherFromLookup(cursor, "darwin", "/usr/local/bin/cursor\n")).toBe("/usr/local/bin/cursor");
+    expect(launcherFromLookup({ application: cursor, platform: "darwin", output: "/usr/local/bin/cursor\n" })).toBe(
+      "/usr/local/bin/cursor",
+    );
   });
 
   it("reports only applications whose handlers are detected", async () => {
@@ -63,7 +102,7 @@ describe("review editor adapters", () => {
       if (args.some((arg) => arg.includes("vscode") || arg.endsWith("explorer.exe"))) return "available";
       throw new Error("missing");
     });
-    await expect(detectEditorApplications("win32", runner)).resolves.toEqual([
+    await expect(detectEditorApplications({ platform: "win32", runner })).resolves.toEqual([
       { id: "vscode", label: "VS Code" },
       { id: "vscode-insiders", label: "VS Code Insiders" },
       { id: "explorer", label: "File Explorer" },
@@ -88,8 +127,8 @@ describe("review editor adapters", () => {
 `;
         throw new Error("missing");
       };
-      await detectEditorApplications("win32", detect, repository);
-      expect(lookups.toSorted()).toEqual([
+      await detectEditorApplications({ platform: "win32", runner: detect, repository });
+      expect(EffectArray.sortWith(lookups, (value) => value, Order.String)).toEqual([
         "$PATH:code",
         "$PATH:code-insiders",
         "$PATH:cursor",
@@ -98,11 +137,25 @@ describe("review editor adapters", () => {
       ]);
       const launched: string[] = [];
       const launch = async ({ command }: { readonly command: string }) => (launched.push(command), "");
-      await openInEditor("vscode", "win32", join(repository, "a.ts"), 1, 1, launch);
-      await openInEditor("cursor", "win32", join(repository, "a.ts"), 1, 1, launch);
+      await openInEditor({
+        application: "vscode",
+        platform: "win32",
+        file: join(repository, "a.ts"),
+        line: 1,
+        column: 1,
+        runner: launch,
+      });
+      await openInEditor({
+        application: "cursor",
+        platform: "win32",
+        file: join(repository, "a.ts"),
+        line: 1,
+        column: 1,
+        runner: launch,
+      });
       expect(launched).toEqual(["rundll32.exe", join(installed, "cursor.exe")]);
     } finally {
-      await detectEditorApplications("test", async () => "");
+      await detectEditorApplications({ platform: "test", runner: async () => "" });
       rmSync(repository, { recursive: true, force: true });
       rmSync(installed, { recursive: true, force: true });
     }
@@ -112,7 +165,14 @@ describe("review editor adapters", () => {
     const runner = vi.fn<
       (invocation: { readonly command: string; readonly args: ReadonlyArray<string> }) => Promise<string>
     >(async () => "");
-    await openInEditor("cursor", "linux", "/repo/a file.ts", 4, 5, runner);
+    await openInEditor({
+      application: "cursor",
+      platform: "linux",
+      file: "/repo/a file.ts",
+      line: 4,
+      column: 5,
+      runner,
+    });
     expect(runner).toHaveBeenCalledWith({
       command: "xdg-open",
       args: ["cursor://file/repo/a%20file.ts:4:5"],

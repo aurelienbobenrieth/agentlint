@@ -1,0 +1,26 @@
+name: Validate and pack agentlint
+description: Build, validate, pack, and smoke-test the release artifact.
+outputs:
+  path:
+    description: Absolute path to the packed npm artifact.
+    value: ${{ steps.package.outputs.path }}
+runs:
+  using: composite
+  steps:
+    - name: Build
+      shell: bash
+      run: pnpm run build
+    - name: Run validation suite
+      shell: bash
+      run: pnpm run check
+    - name: Pack release artifact
+      id: package
+      shell: bash
+      run: |
+        pnpm --filter @aurelienbbn/agentlint pack --pack-destination "$RUNNER_TEMP"
+        echo "path=$(find "$RUNNER_TEMP" -name 'aurelienbbn-agentlint-*.tgz' -print -quit)" >> "$GITHUB_OUTPUT"
+    - name: Smoke-test packed artifact
+      shell: bash
+      env:
+        PACKAGE_PATH: ${{ steps.package.outputs.path }}
+      run: node scripts/smoke-package.mjs "$PACKAGE_PATH"

@@ -8,16 +8,13 @@ import type { ChangeFindingOptions, ChangeRule, ChangeRuleContext, ChangeSet, Ch
 import { findingSourceForRule } from "./rule-identity.js";
 
 function operation(file: ChangedFile): "add" | "delete" | "modify" | "rename" {
-  switch (file.status) {
-    case "added":
-      return "add";
-    case "deleted":
-      return "delete";
-    case "renamed":
-      return "rename";
-    case "modified":
-      return "modify";
-  }
+  const operations = {
+    added: "add",
+    deleted: "delete",
+    renamed: "rename",
+    modified: "modify",
+  } as const satisfies Readonly<Record<ChangedFile["status"], "add" | "delete" | "modify" | "rename">>;
+  return operations[file.status];
 }
 
 export class ChangeRuleContextImpl implements ChangeRuleContext {
@@ -27,7 +24,7 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
   #keys = new Set<string>();
   #sourceIdentity: ReturnType<typeof findingSourceForRule>;
 
-  constructor(rule: ChangeRule, change: ChangeSet) {
+  constructor({ rule, change }: { readonly rule: ChangeRule; readonly change: ChangeSet }) {
     this.rule = rule;
     this.change = change;
     this.#sourceIdentity = findingSourceForRule(rule);

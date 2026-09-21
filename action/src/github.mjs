@@ -6,9 +6,13 @@
  */
 
 import { devNull } from "node:os";
+import { Array as A, Schema } from "effect";
 
 import { git } from "./cli.mjs";
 import { isRecord } from "./artifact.mjs";
+
+const isNumber = Schema.is(Schema.Number);
+const isString = Schema.is(Schema.String);
 
 /**
  * @typedef {object} PlanEntry
@@ -26,12 +30,13 @@ import { isRecord } from "./artifact.mjs";
 
 class GitHubError extends Error {
   /**
-   * @param {string} method
-   * @param {string} url
-   * @param {number} status
-   * @param {string} detail
+   * @param {object} input
+   * @param {string} input.method
+   * @param {string} input.url
+   * @param {number} input.status
+   * @param {string} input.detail
    */
-  constructor(method, url, status, detail) {
+  constructor({ method, url, status, detail }) {
     super(`${method} ${url} failed with ${status}: ${detail}`);
     this.name = "GitHubError";
     this.status = status;
@@ -44,12 +49,13 @@ class GitHubError extends Error {
  * @property {PlanEntry[]} plan
  * @property {(path: string) => Promise<unknown>} get Resolves `null` when a dry run cannot read
  * @property {(path: string) => Promise<unknown[]>} paginate
- * @property {(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body: unknown) => Promise<unknown>} write
- * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} graphql Read-only query
- * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} mutate
- * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitFetch
+ * @property {(input: { method: "POST" | "PATCH" | "PUT" | "DELETE"; path: string; body: unknown }) => Promise<unknown>} write
+ * @property {(input: { query: string; variables: Record<string, unknown> }) => Promise<unknown>} graphql Read-only
+ *   query
+ * @property {(input: { query: string; variables: Record<string, unknown> }) => Promise<unknown>} mutate
+ * @property {(input: { args: ReadonlyArray<string>; cwd: string }) => Promise<import("./cli.mjs").ExecResult>} gitFetch
  *   Authenticated `git fetch`
- * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitWrite
+ * @property {(input: { args: ReadonlyArray<string>; cwd: string }) => Promise<import("./cli.mjs").ExecResult>} gitWrite
  *   Authenticated `git push`; a dry run records it and reports success
  * @property {() => Promise<string>} identity Login of the account the token acts as
  */
@@ -71,11 +77,12 @@ const DEFAULT_IDENTITY = "github-actions[bot]";
  * rewritten remote on another host never receives it. The empty value first clears a header that a checkout persisted;
  * two `Authorization` headers are rejected by GitHub.
  *
- * @param {string} serverUrl
- * @param {string} token
+ * @param {object} input
+ * @param {string} input.serverUrl
+ * @param {string} input.token
  * @returns {string[]}
  */
-export function gitAuthOptions(serverUrl, token) {
+export function gitAuthOptions({ serverUrl, token }) {
   const hardening = [
     "-c",
     `core.hooksPath=${devNull}`,
@@ -124,29 +131,30 @@ export function createGitHub(options) {
    * @type {PlanEntry[]}
    */
   const plan = [];
-  const authOptions = gitAuthOptions(options.serverUrl ?? "https://github.com", token);
+  const authOptions = gitAuthOptions({ serverUrl: options.serverUrl ?? "https://github.com", token });
   /**
-   * @type {Promise<string> | null}
+   * @type {{ identity: Promise<string> | null }}
    */
-  let identity = null;
+  const memo = { identity: null };
 
   /**
    * Run an authenticated git command. Git does not print the header, but a failure is logged and posted to the pull
    * request, and a spawn error quotes argv, so every text that leaves here is redacted.
    *
-   * @param {ReadonlyArray<string>} args
-   * @param {string} cwd
+   * @param {object} input
+   * @param {ReadonlyArray<string>} input.args
+   * @param {string} input.cwd
    * @returns {Promise<import("./cli.mjs").ExecResult>}
    */
-  async function authenticatedGit(args, cwd) {
-    const secrets = [token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")].filter(Boolean);
+  async function authenticatedGit({ args, cwd }) {
+    const secrets = A.filter([token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")], Boolean);
     const clean = (
       /**
        * @type {string}
        */ text,
     ) => secrets.reduce((acc, secret) => acc.replaceAll(secret, "***"), text);
     try {
-      const result = await git([...authOptions, ...args], cwd);
+      const result = await git({ args: [...authOptions, ...args], cwd });
       return { code: result.code, stdout: clean(result.stdout), stderr: clean(result.stderr) };
     } catch (error) {
       throw new Error(clean(error instanceof Error ? error.message : String(error)), { cause: error });
@@ -159,12 +167,13 @@ export function createGitHub(options) {
   const url = (path) => (path.startsWith("http") ? path : `${apiUrl}${path}`);
 
   /**
-   * @param {string} method
-   * @param {string} target
-   * @param {unknown} [body]
+   * @param {object} input
+   * @param {string} input.method
+   * @param {string} input.target
+   * @param {unknown} [input.body]
    * @returns {Promise<{ data: unknown; headers: Headers }>}
    */
-  async function send(method, target, body) {
+  async function send({ method, target, body }) {
     const response = await fetchImpl(target, {
       method,
       headers: {
@@ -178,7 +187,8 @@ export function createGitHub(options) {
       signal: AbortSignal.timeout(options.requestTimeoutMs ?? 30_000),
     });
     const text = await response.text();
-    if (!response.ok) throw new GitHubError(method, target, response.status, text.slice(0, 500));
+    if (!response.ok)
+      throw new GitHubError({ method, url: target, status: response.status, detail: text.slice(0, 500) });
     return { data: text === "" ? null : JSON.parse(text), headers: response.headers };
   }
 
@@ -187,10 +197,11 @@ export function createGitHub(options) {
    * plan can still be printed.
    *
    * @template T
-   * @param {() => Promise<T>} read
-   * @param {T} fallback
+   * @param {object} input
+   * @param {() => Promise<T>} input.read
+   * @param {T} input.fallback
    */
-  async function tolerate(read, fallback) {
+  async function tolerate({ read, fallback }) {
     try {
       return await read();
     } catch (error) {
@@ -201,27 +212,34 @@ export function createGitHub(options) {
   }
 
   /**
-   * @param {string} method
-   * @param {string} target
-   * @param {unknown} body
+   * @param {object} input
+   * @param {string} input.method
+   * @param {string} input.target
+   * @param {unknown} input.body
    */
-  async function write(method, target, body) {
+  async function write({ method, target, body }) {
     if (dryRun) {
       plan.push({ method, url: target, body });
       log.info(`dry-run: ${method} ${target}`);
       return null;
     }
-    return (await send(method, target, body)).data;
+    return (await send({ method, target, body })).data;
   }
 
   /**
-   * @param {string} query
-   * @param {Record<string, unknown>} variables
+   * @param {object} input
+   * @param {string} input.query
+   * @param {Record<string, unknown>} input.variables
    */
-  async function graphql(query, variables) {
-    const { data } = await send("POST", graphqlUrl, { query, variables });
+  async function graphql({ query, variables }) {
+    const { data } = await send({ method: "POST", target: graphqlUrl, body: { query, variables } });
     if (isRecord(data) && Array.isArray(data["errors"]) && data["errors"].length > 0) {
-      throw new GitHubError("POST", graphqlUrl, 200, JSON.stringify(data["errors"]).slice(0, 500));
+      throw new GitHubError({
+        method: "POST",
+        url: graphqlUrl,
+        status: 200,
+        detail: JSON.stringify(data["errors"]).slice(0, 500),
+      });
     }
     return isRecord(data) ? data["data"] : null;
   }
@@ -229,60 +247,71 @@ export function createGitHub(options) {
   return {
     dryRun,
     plan,
-    get: (path) => tolerate(async () => (await send("GET", url(path))).data, null),
+    get: (path) =>
+      tolerate({ read: async () => (await send({ method: "GET", target: url(path) })).data, fallback: null }),
     paginate: (path) =>
-      tolerate(async () => {
-        /**
-         * @type {unknown[]}
-         */
-        const items = [];
-        const separator = path.includes("?") ? "&" : "?";
-        /**
-         * @type {string | null}
-         */
-        let next = url(`${path}${separator}per_page=100`);
-        const seen = new Set();
-        while (next) {
-          if (new URL(next).origin !== new URL(apiUrl).origin) throw new Error("GitHub pagination changed API origin");
-          if (seen.has(next) || seen.size >= 1_000)
-            throw new Error("GitHub pagination repeated a page or exceeded 1000 pages");
-          seen.add(next);
-          const page = await send("GET", next);
-          if (Array.isArray(page.data)) items.push(...page.data);
-          next = nextLink(page.headers);
-        }
-        return items;
-      }, []),
-    write: (method, path, body) => write(method, url(path), body),
-    graphql: (query, variables) => tolerate(() => graphql(query, variables), null),
-    mutate: async (query, variables) => {
+      tolerate({
+        read: async () => {
+          /**
+           * @type {unknown[]}
+           */
+          const items = [];
+          const separator = path.includes("?") ? "&" : "?";
+          /**
+           * @type {{ next: string | null }}
+           */
+          const pagination = { next: url(`${path}${separator}per_page=100`) };
+          const seen = new Set();
+          while (pagination.next) {
+            if (new URL(pagination.next).origin !== new URL(apiUrl).origin)
+              throw new Error("GitHub pagination changed API origin");
+            if (seen.has(pagination.next) || seen.size >= 1_000)
+              throw new Error("GitHub pagination repeated a page or exceeded 1000 pages");
+            seen.add(pagination.next);
+            const page = await send({ method: "GET", target: pagination.next });
+            if (Array.isArray(page.data)) items.push(...page.data);
+            pagination.next = nextLink(page.headers);
+          }
+          return items;
+        },
+        fallback: [],
+      }),
+    write: ({ method, path, body }) => write({ method, target: url(path), body }),
+    graphql: ({ query, variables }) => tolerate({ read: () => graphql({ query, variables }), fallback: null }),
+    mutate: async ({ query, variables }) => {
       if (dryRun) {
         plan.push({ method: "GRAPHQL", url: graphqlUrl, body: { query, variables } });
         log.info(`dry-run: GRAPHQL ${query.trim().split("\n")[0]}`);
         return null;
       }
-      return graphql(query, variables);
+      return graphql({ query, variables });
     },
-    gitFetch: (args, cwd) => authenticatedGit(["fetch", ...args], cwd),
-    gitWrite: async (args, cwd) => {
+    gitFetch: ({ args, cwd }) => authenticatedGit({ args: ["fetch", ...args], cwd }),
+    gitWrite: async ({ args, cwd }) => {
       if (dryRun) {
         plan.push({ method: "GIT", url: `git push ${args.join(" ")}`, body: null });
         log.info(`dry-run: git push ${args.join(" ")}`);
         return { code: 0, stdout: "", stderr: "" };
       }
-      return authenticatedGit(["push", ...args], cwd);
+      return authenticatedGit({ args: ["push", ...args], cwd });
     },
     identity: () => {
       // The REST `/user` endpoint refuses installation tokens; the GraphQL viewer answers for every token kind.
-      identity ??= tolerate(() => graphql("query { viewer { login } }", {}), null)
-        .catch(() => null)
+      memo.identity ??= tolerate({
+        read: () => graphql({ query: "query { viewer { login } }", variables: {} }),
+        fallback: null,
+      })
+        .catch(() => {
+          // REASON: identity lookup has an explicit conservative fallback for restricted tokens.
+          return null;
+        })
         .then((data) => {
-          const login = stringField(isRecord(data) ? data["viewer"] : undefined, "login");
+          const login = stringField({ record: isRecord(data) ? data["viewer"] : undefined, key: "login" });
           if (login !== "") return login;
           log.warn(`could not resolve the token's account; assuming ${DEFAULT_IDENTITY}`);
           return DEFAULT_IDENTITY;
         });
-      return identity;
+      return memo.identity;
     },
   };
 }
@@ -292,15 +321,16 @@ export function createGitHub(options) {
  * @returns {number | null}
  */
 export function numberField(value) {
-  return typeof value === "number" ? value : null;
+  return isNumber(value) ? value : null;
 }
 
 /**
- * @param {unknown} record
- * @param {string} key
+ * @param {object} input
+ * @param {unknown} input.record
+ * @param {string} input.key
  * @returns {string}
  */
-export function stringField(record, key) {
+export function stringField({ record, key }) {
   const value = isRecord(record) ? record[key] : undefined;
-  return typeof value === "string" ? value : "";
+  return isString(value) ? value : "";
 }

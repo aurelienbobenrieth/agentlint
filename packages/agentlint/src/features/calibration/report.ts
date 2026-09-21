@@ -1,7 +1,8 @@
 /**
  * Calibration measurement, independent of gate semantics. @module @since 0.2.0
  */
-import { Schema } from "effect";
+import { Array as A, Schema } from "effect";
+import { encodeJson } from "../../shared/infrastructure/json.js";
 import { CalibrationReport, type CalibrationObservation, type ReviewStatePayload } from "../review/contract.js";
 
 export { CalibrationReport } from "../review/contract.js";
@@ -34,10 +35,13 @@ export const CalibrationSummary = Schema.Struct({
 });
 export type CalibrationSummary = Schema.Schema.Type<typeof CalibrationSummary>;
 
-export const calibrationReport = (
-  state: ReviewStatePayload,
-  observations: ReadonlyArray<CalibrationObservation>,
-): CalibrationReport => {
+export const calibrationReport = ({
+  state,
+  observations,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly observations: ReadonlyArray<CalibrationObservation>;
+}): CalibrationReport => {
   const counts = new Map<string, number>();
   for (const finding of state.findings) counts.set(finding.ruleId, (counts.get(finding.ruleId) ?? 0) + 1);
   return {
@@ -69,7 +73,7 @@ export const summarizeCalibration = (reports: ReadonlyArray<CalibrationReport>):
   for (const report of reports)
     for (const observation of report.observations) {
       const identity = observation.identity;
-      const key = JSON.stringify([
+      const key = encodeJson([
         report.project,
         sourceKey(identity.source),
         identity.fingerprint.scheme,
@@ -80,7 +84,7 @@ export const summarizeCalibration = (reports: ReadonlyArray<CalibrationReport>):
     }
   const groups = new Map<string, { project: string; items: CalibrationObservation[] }>();
   for (const { project, observation } of observations.values()) {
-    const key = JSON.stringify([project, sourceKey(observation.identity.source)]);
+    const key = encodeJson([project, sourceKey(observation.identity.source)]);
     const group = groups.get(key);
     if (group) group.items.push(observation);
     else groups.set(key, { project, items: [observation] });
@@ -118,7 +122,7 @@ export const summarizeCalibration = (reports: ReadonlyArray<CalibrationReport>):
             applicabilityRate: applies + doesNotApply === 0 ? null : applies / (applies + doesNotApply),
             reasons,
             invalidatedEvidence: invalidated.length,
-            repeatedInvalidationLineages: [...lineages.values()].filter((count) => count > 1).length,
+            repeatedInvalidationLineages: A.filter([...lineages.values()], (count) => count > 1).length,
           },
         ];
       }),

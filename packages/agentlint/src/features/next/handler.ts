@@ -25,7 +25,21 @@ export const nextHandler = Effect.fn("nextHandler")(function* (command: NextComm
     first === undefined
       ? undefined
       : yield* buildReviewPayload({
-          check: new CheckResult({ ...check, findings: [first] }),
+          check: new CheckResult({
+            findings: [first],
+            sources: check.sources,
+            scannedFiles: check.scannedFiles,
+            acceptances: check.acceptances,
+            unresolved: check.unresolved,
+            accepted: check.accepted,
+            lineage: check.lineage,
+            staleCount: check.staleCount,
+            scope: check.scope,
+            base: check.base,
+            exitCode: check.exitCode,
+            noMatchingRules: check.noMatchingRules,
+            availableRules: check.availableRules,
+          }),
           base: command.base,
           mode: "review",
           transport: "detached",

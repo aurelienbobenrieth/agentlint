@@ -27,18 +27,28 @@ function normalizeSelector(selector: string): string {
   return selector.trim().replace(/^\[(\d+)\]$/, "$1");
 }
 
-function resolveHashFromCache(selector: string, cache: SelectorCachePayload): string | undefined {
+function resolveHashFromCache({
+  selector,
+  cache,
+}: {
+  readonly selector: string;
+  readonly cache: SelectorCachePayload;
+}): string | undefined {
   const normalized = normalizeSelector(selector);
   return cache.findings.find((entry) => entry.selector === normalized)?.hash;
 }
 
-export function resolveFindingSelector(
-  selector: string,
-  findings: ReadonlyArray<FindingRecord>,
-  cache: SelectorCachePayload,
-): SelectorResolution {
+export function resolveFindingSelector({
+  selector,
+  findings,
+  cache,
+}: {
+  readonly selector: string;
+  readonly findings: ReadonlyArray<FindingRecord>;
+  readonly cache: SelectorCachePayload;
+}): SelectorResolution {
   const normalized = normalizeSelector(selector);
-  const cachedHash = resolveHashFromCache(normalized, cache);
+  const cachedHash = resolveHashFromCache({ selector: normalized, cache });
   const hash = cachedHash ?? normalized;
 
   const hashMatch = findings.find((finding) => findingKey(finding) === hash);

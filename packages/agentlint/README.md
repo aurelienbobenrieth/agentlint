@@ -154,7 +154,7 @@ const boundedReads = defineRule({
 export default defineConfig({ rules: [boundedReads] });
 ```
 
-Patterns are parsed code shapes, not text searches. `$NAME` captures one node, `$_` matches one node, and `$$ARGS` matches sibling sequences. A placeholder that appears twice must capture the same code: `$A === $A` matches `x === x` and not `x === y`. When several matches of one rule apply to the same node, the node is reported once, under the first declared match. A `where` constraint searches the matched code; a property constraint such as `take: $_` also accepts the shorthand `{ take }` and does not look inside the value of another property. A raw tree-sitter `query` can designate its result with `@match`. `createOnce(context)` is the imperative escape hatch for stateful and repository-wide detectors.
+Patterns are parsed code shapes, not text searches. `$NAME` captures one node, `$_` matches one node, and `$$ARGS` matches sibling sequences. A placeholder that appears twice must capture the same code: `$A === $A` matches `x === x` and not `x === y`. When several matches of one rule apply to the same node, the node is reported once, under the first declared match. A `where` constraint searches the matched code; a property constraint such as `take: $_` also accepts the shorthand `{ take }` and does not look inside the value of another property. A raw tree-sitter `query` can designate its result with `@match`. `createOnce({ context, options })` is the imperative escape hatch for stateful and repository-wide detectors.
 
 Fixtures are focused evidence. `mustReport` proves activation. `mustStaySilent` protects valuable boundaries. They need not enumerate every possible mistake, and their code is never sent to the agent as normal guidance.
 
@@ -187,7 +187,7 @@ const destructiveMigration = defineRule({
   detector: {
     id: "sql/destructive-operation",
     version: 1,
-    detect(context) {
+    detect({ context }) {
       for (const file of context.change.files) {
         for (const hunk of file.hunks) {
           const destructive = hunk.lines.find(

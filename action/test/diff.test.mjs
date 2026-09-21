@@ -48,8 +48,10 @@ describe("commentableByFile", () => {
     expect([...(map.get("src/vendor/legacy-parser.js") ?? [])]).toEqual([1, 2, 3, 4]);
     expect([...(map.get("src/payments/capture-order.ts") ?? [])]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(map.get("assets/logo.png")?.size).toBe(0);
-    expect(isCommentable(map, { file: "src/vendor/legacy-parser.js", line: 3 })).toBe(true);
-    expect(isCommentable(map, { file: "src/vendor/legacy-parser.js", line: 9 })).toBe(false);
-    expect(isCommentable(map, { file: "src/migrations/2026-07-drop-legacy-users.ts", line: 4 })).toBe(false);
+    expect(isCommentable({ commentable: map, location: { file: "src/vendor/legacy-parser.js", line: 3 } })).toBe(true);
+    expect(isCommentable({ commentable: map, location: { file: "src/vendor/legacy-parser.js", line: 9 } })).toBe(false);
+    expect(
+      isCommentable({ commentable: map, location: { file: "src/migrations/2026-07-drop-legacy-users.ts", line: 4 } }),
+    ).toBe(false);
   });
 });

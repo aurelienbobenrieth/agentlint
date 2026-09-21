@@ -3,7 +3,7 @@ import { Effect, FileSystem, Layer } from "effect";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Env } from "../../config/env.js";
 import { ConfigLoader } from "./config-loader.js";
 
@@ -30,7 +30,7 @@ const testEnv = (cwd: string) =>
   );
 
 const testLayer = (cwd: string) =>
-  ConfigLoader.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(testEnv(cwd)));
+  ConfigLoader.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, testEnv(cwd))));
 const TestLayer = testLayer(TEST_CWD);
 
 const cleanup = Effect.gen(function* () {
@@ -46,36 +46,34 @@ const ensureDir = Effect.gen(function* () {
 }).pipe(Effect.provide(NodeServices.layer));
 
 describe("ConfigLoader", () => {
-  it("loads .agentlint/config.ts", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
+  it.effect("loads .agentlint/config.ts", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* ensureDir;
 
-    await Effect.runPromise(
-      Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(CONFIG_DIR, { recursive: true });
         yield* fs.writeFileString(CONFIG_PATH, 'export default { rules: [], base: "main" }\n');
-      }).pipe(Effect.provide(NodeServices.layer)),
-    );
+      }).pipe(Effect.provide(NodeServices.layer));
 
-    const config = await Effect.runPromise(
-      Effect.gen(function* () {
+      const config = yield* Effect.gen(function* () {
         const loader = yield* ConfigLoader;
         return yield* loader.load();
-      }).pipe(Effect.provide(TestLayer)),
-    );
+      }).pipe(Effect.provide(TestLayer));
 
-    expect(config.rules).toEqual([]);
-    expect(config.base).toBe("main");
+      expect(config.rules).toEqual([]);
+      expect(config.base).toBe("main");
 
-    await Effect.runPromise(cleanup);
-  });
+      yield* cleanup;
+    }),
+  );
 
-  it("resolves @aurelienbbn/agentlint to the running package without node_modules", async () => {
-    await Effect.runPromise(cleanup);
+  it.effect("resolves @aurelienbbn/agentlint to the running package without node_modules", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
 
-    await Effect.runPromise(
-      Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(join(ALIAS_CWD, ".agentlint"), { recursive: true });
         yield* fs.writeFileString(
@@ -98,64 +96,54 @@ export default defineConfig({
 });
 `,
         );
-      }).pipe(Effect.provide(NodeServices.layer)),
-    );
+      }).pipe(Effect.provide(NodeServices.layer));
 
-    const config = await Effect.runPromise(
-      Effect.gen(function* () {
+      const config = yield* Effect.gen(function* () {
         const loader = yield* ConfigLoader;
         return yield* loader.load();
-      }).pipe(Effect.provide(testLayer(ALIAS_CWD))),
-    );
+      }).pipe(Effect.provide(testLayer(ALIAS_CWD)));
 
-    expect(config.rules.map((rule) => rule.binding.id)).toEqual(["demo/danger"]);
-    expect(config.rules[0]?.standard.title).toBe("Danger is reviewed");
+      expect(config.rules.map((rule) => rule.binding.id)).toEqual(["demo/danger"]);
+      expect(config.rules[0]?.standard.title).toBe("Danger is reviewed");
 
-    await Effect.runPromise(cleanup);
-  });
+      yield* cleanup;
+    }),
+  );
 
-  it("does not fall back to root agentlint.config.ts", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(ensureDir);
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("does not fall back to root agentlint.config.ts", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* ensureDir;
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.writeFileString(`${TEST_CWD}/agentlint.config.ts`, "export default { rules: {} }\n");
-      }).pipe(Effect.provide(NodeServices.layer)),
-    );
-
-    await expect(
-      Effect.runPromise(
+      }).pipe(Effect.provide(NodeServices.layer));
+      const failure = yield* Effect.flip(
         Effect.gen(function* () {
           const loader = yield* ConfigLoader;
           return yield* loader.load();
         }).pipe(Effect.provide(TestLayer)),
-      ),
-    ).rejects.toMatchObject({
-      message: expect.stringContaining("Create .agentlint/config.ts"),
-    });
-
-    await Effect.runPromise(cleanup);
-  });
-
-  it("points a subdirectory run at the ancestor that owns the config", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agentlint-config-ancestor-"));
-    try {
-      mkdirSync(join(root, ".agentlint"));
-      writeFileSync(join(root, ".agentlint", "config.ts"), "export default { rules: [] }\n");
-      const nested = join(root, "packages", "web");
-      mkdirSync(nested, { recursive: true });
-      const error = await Effect.runPromise(
-        Effect.gen(function* () {
-          return yield* Effect.flip((yield* ConfigLoader).load());
-        }).pipe(Effect.provide(testLayer(nested))),
       );
-      expect(error).toMatchObject({ reason: "not_found", path: nested, ancestor: root });
-      expect(error.message).toContain(`${root} has .agentlint/config.ts: run agentlint from that directory`);
-      expect(error.message).not.toContain("Create .agentlint/config.ts");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+      expect(failure).toMatchObject({ message: expect.stringContaining("Create .agentlint/config.ts") });
+      yield* cleanup;
+    }),
+  );
+
+  it.effect("points a subdirectory run at the ancestor that owns the config", () =>
+    Effect.gen(function* () {
+      const root = mkdtempSync(join(tmpdir(), "agentlint-config-ancestor-"));
+      yield* Effect.gen(function* () {
+        mkdirSync(join(root, ".agentlint"));
+        writeFileSync(join(root, ".agentlint", "config.ts"), "export default { rules: [] }\n");
+        const nested = join(root, "packages", "web");
+        mkdirSync(nested, { recursive: true });
+        const error = yield* Effect.gen(function* () {
+          return yield* Effect.flip((yield* ConfigLoader).load());
+        }).pipe(Effect.provide(testLayer(nested)));
+        expect(error).toMatchObject({ reason: "not_found", path: nested, ancestor: root });
+        expect(error.message).toContain(`${root} has .agentlint/config.ts: run agentlint from that directory`);
+        expect(error.message).not.toContain("Create .agentlint/config.ts");
+      }).pipe(Effect.ensuring(Effect.sync(() => rmSync(root, { recursive: true, force: true }))));
+    }),
+  );
 });

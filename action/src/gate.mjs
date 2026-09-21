@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdtemp, readdir } from "node:fs/promises";
+import { Array as A, Match, Schema } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -72,12 +73,28 @@ import {
  */
 
 const ANNOTATION_BATCH = 50;
+/**
+ * @type {Gate}
+ */
+const OPEN_GATE = "open";
+/**
+ * @type {Gate}
+ */
+const CLOSED_GATE = "closed";
+/**
+ * @type {Gate}
+ */
+const ERROR_GATE = "error";
 
 /**
  * @param {number} code @returns {Gate}
  */
 function gateFromExit(code) {
-  return code === 0 ? "open" : code === 1 ? "closed" : "error";
+  return Match.value(code).pipe(
+    Match.when(0, () => OPEN_GATE),
+    Match.when(1, () => CLOSED_GATE),
+    Match.orElse(() => ERROR_GATE),
+  );
 }
 
 /**
@@ -90,10 +107,10 @@ export function pullRequestFrom(pull) {
   const headRepo = isRecord(head) ? head["repo"] : undefined;
   return {
     number: (isRecord(pull) && numberField(pull["number"])) || 0,
-    headSha: stringField(head, "sha"),
-    headRef: stringField(head, "ref"),
-    baseRef: stringField(base, "ref"),
-    headRepo: stringField(headRepo, "full_name"),
+    headSha: stringField({ record: head, key: "sha" }),
+    headRef: stringField({ record: head, key: "ref" }),
+    baseRef: stringField({ record: base, key: "ref" }),
+    headRepo: stringField({ record: headRepo, key: "full_name" }),
   };
 }
 
@@ -101,10 +118,11 @@ export function pullRequestFrom(pull) {
  * The ref passed to `--base`. A branch name, slashes included (`release/1.x`), becomes `origin/<base>`, fetched when
  * the checkout does not have it. Only `HEAD`, `origin/...`, and `refs/...` are explicit refs and pass through.
  *
- * @param {Context} ctx
- * @param {string} base
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {string} input.base
  */
-export async function resolveBase(ctx, base) {
+export async function resolveBase({ ctx, base }) {
   const cwd = ctx.workingDirectory;
   if (base === "" || base === "HEAD") return "HEAD";
   // The value is a workflow input or the pull request's base branch. It is never placed where Git reads an option.
@@ -112,9 +130,9 @@ export async function resolveBase(ctx, base) {
   if (base.startsWith("origin/") || base.startsWith("refs/")) return base;
   const remote = `origin/${base}`;
   const tracking = `refs/remotes/origin/${base}`;
-  const exists = async () => (await git(["rev-parse", "--verify", "--quiet", tracking], cwd)).code === 0;
+  const exists = async () => (await git({ args: ["rev-parse", "--verify", "--quiet", tracking], cwd })).code === 0;
   if (await exists()) return remote;
-  const fetched = await ctx.github.gitFetch(["--no-tags", "origin", `+refs/heads/${base}:${tracking}`], cwd);
+  const fetched = await ctx.github.gitFetch({ args: ["--no-tags", "origin", `+refs/heads/${base}:${tracking}`], cwd });
   if (fetched.code === 0 && (await exists())) return remote;
   ctx.log.warn(`base ${remote} is not available; using ${base} as given`);
   return base;
@@ -132,7 +150,10 @@ export async function installIfRequested(ctx) {
     // Package managers are `.cmd` shims on Windows, which need a shell. The command is a fixed literal chosen from the
     // lockfile name, so no repository or pull request text reaches the shell.
     // Lifecycle scripts are repository code: they get the environment without the token or any other credential.
-    const installed = await exec(command, { cwd: dir, env: childEnv(ctx.env), shell: process.platform === "win32" });
+    const installed = await exec({
+      argv: command,
+      options: { cwd: dir, env: childEnv(ctx.env), shell: process.platform === "win32" },
+    });
     if (installed.code !== 0) throw new Error(`install failed:\n${installed.stderr}`);
     return;
   }
@@ -143,10 +164,11 @@ export async function installIfRequested(ctx) {
  * CLI output quotes repository content: messages, excerpts, file names. A line that starts with `::` would otherwise
  * run as a workflow command, so the runner's command processing is suspended while the output is printed.
  *
- * @param {Context} ctx
- * @param {string} output
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {string} input.output
  */
-export function logCliOutput(ctx, output) {
+export function logCliOutput({ ctx, output }) {
   if (output.trim() === "") return;
   const token = randomUUID();
   ctx.log.info(`::stop-commands::${token}`);
@@ -157,16 +179,17 @@ export function logCliOutput(ctx, output) {
 /**
  * Run `check --all --review-output` and read the artifact back.
  *
- * @param {Context} ctx
- * @param {string} base
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {string} input.base
  * @returns {Promise<Scan>}
  */
-export async function scan(ctx, base) {
+export async function scan({ ctx, base }) {
   const dir = await mkdtemp(join(ctx.env["RUNNER_TEMP"] ?? tmpdir(), "agentlint-"));
   const artifactPath = join(dir, "agentlint-review.json");
-  const result = await ctx.cli.run(["check", "--all", "--base", base, "--review-output", artifactPath]);
-  logCliOutput(ctx, result.stdout);
-  logCliOutput(ctx, result.stderr);
+  const result = await ctx.cli.run({ args: ["check", "--all", "--base", base, "--review-output", artifactPath] });
+  logCliOutput({ ctx, output: result.stdout });
+  logCliOutput({ ctx, output: result.stderr });
   if (result.code !== 0 && result.code !== 1) {
     return { gate: "error", code: result.code, findings: [], artifactPath: "" };
   }
@@ -175,29 +198,45 @@ export async function scan(ctx, base) {
 }
 
 /**
- * @param {Context} ctx
- * @param {string} headSha
- * @param {Scan} result
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {string} input.headSha
+ * @param {Scan} input.result
  */
-async function publishCheckRun(ctx, headSha, result) {
+async function publishCheckRun({ ctx, headSha, result }) {
   const annotations = renderAnnotations(result.findings);
-  const output = renderCheckOutput(result.gate, result.findings);
-  const conclusion = result.gate === "open" ? "success" : result.gate === "closed" ? "failure" : "action_required";
-  const created = await ctx.github.write("POST", `/repos/${ctx.repository}/check-runs`, {
-    name: "agentlint",
-    head_sha: headSha,
-    status: "completed",
-    conclusion,
-    output: { ...output, annotations: annotations.slice(0, ANNOTATION_BATCH) },
+  const output = renderCheckOutput({ gate: result.gate, findings: result.findings });
+  const conclusion = Match.value(result.gate).pipe(
+    Match.when("open", () => "success"),
+    Match.when("closed", () => "failure"),
+    Match.orElse(() => "action_required"),
+  );
+  const created = await ctx.github.write({
+    method: "POST",
+    path: `/repos/${ctx.repository}/check-runs`,
+    body: {
+      name: "agentlint",
+      head_sha: headSha,
+      status: "completed",
+      conclusion,
+      output: { ...output, annotations: annotations.slice(0, ANNOTATION_BATCH) },
+    },
   });
   const id = isRecord(created) ? numberField(created["id"]) : null;
   // A dry run records the plan under a placeholder. A real run without an id has no check run to extend.
   if (id === null && !ctx.inputs.dryRun && annotations.length > ANNOTATION_BATCH) {
     throw new Error("GitHub created the check run without an id, so its remaining annotations cannot be attached");
   }
-  for (let offset = ANNOTATION_BATCH; offset < annotations.length; offset += ANNOTATION_BATCH) {
-    await ctx.github.write("PATCH", `/repos/${ctx.repository}/check-runs/${id ?? "dry-run"}`, {
-      output: { ...output, annotations: annotations.slice(offset, offset + ANNOTATION_BATCH) },
+  for (const offset of Array.from(
+    { length: Math.ceil(Math.max(0, annotations.length - ANNOTATION_BATCH) / ANNOTATION_BATCH) },
+    (_, index) => ANNOTATION_BATCH * (index + 1),
+  )) {
+    await ctx.github.write({
+      method: "PATCH",
+      path: `/repos/${ctx.repository}/check-runs/${id ?? "dry-run"}`,
+      body: {
+        output: { ...output, annotations: annotations.slice(offset, offset + ANNOTATION_BATCH) },
+      },
     });
   }
 }
@@ -205,31 +244,38 @@ async function publishCheckRun(ctx, headSha, result) {
 /**
  * The sticky summary that this action's own account posted, if any.
  *
- * @param {Context} ctx
- * @param {number} pullNumber
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {number} input.pullNumber
  * @returns {Promise<unknown>}
  */
-export async function findSummary(ctx, pullNumber) {
+export async function findSummary({ ctx, pullNumber }) {
   const comments = await ctx.github.paginate(`/repos/${ctx.repository}/issues/${pullNumber}/comments`);
   const identity = await ctx.github.identity();
   // The newest one: the action edits a single summary in place, so there is normally exactly one.
   return comments.findLast(
-    (comment) => isActionComment(comment, identity) && stringField(comment, "body").includes(SUMMARY_MARKER),
+    (comment) =>
+      isActionComment({ comment, identity }) && stringField({ record: comment, key: "body" }).includes(SUMMARY_MARKER),
   );
 }
 
 /**
- * @param {Context} ctx
- * @param {number} pullNumber
- * @param {string} body
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {number} input.pullNumber
+ * @param {string} input.body
  */
-async function upsertSummary(ctx, pullNumber, body) {
-  const existing = await findSummary(ctx, pullNumber);
+async function upsertSummary({ ctx, pullNumber, body }) {
+  const existing = await findSummary({ ctx, pullNumber });
   const id = isRecord(existing) ? numberField(existing["id"]) : null;
   if (id !== null) {
-    await ctx.github.write("PATCH", `/repos/${ctx.repository}/issues/comments/${id}`, { body });
+    await ctx.github.write({ method: "PATCH", path: `/repos/${ctx.repository}/issues/comments/${id}`, body: { body } });
   } else {
-    await ctx.github.write("POST", `/repos/${ctx.repository}/issues/${pullNumber}/comments`, { body });
+    await ctx.github.write({
+      method: "POST",
+      path: `/repos/${ctx.repository}/issues/${pullNumber}/comments`,
+      body: { body },
+    });
   }
 }
 
@@ -251,23 +297,27 @@ const RESOLVE_MUTATION = `mutation($threadId: ID!) {
 /**
  * Map from first-comment database id to review thread id and resolved state.
  *
- * @param {Context} ctx
- * @param {number} pullNumber
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {number} input.pullNumber
  * @returns {Promise<Map<number, { threadId: string; resolved: boolean }>>}
  */
-async function reviewThreads(ctx, pullNumber) {
+async function reviewThreads({ ctx, pullNumber }) {
   const [owner, name] = ctx.repository.split("/");
   /**
    * @type {Map<number, { threadId: string; resolved: boolean }>}
    */
   const map = new Map();
   /**
-   * @type {string | null}
+   * @type {{ after: string | null }}
    */
-  let after = null;
+  const pagination = { after: null };
   const seen = new Set();
   for (;;) {
-    const data = await ctx.github.graphql(THREADS_QUERY, { owner, name, number: pullNumber, after });
+    const data = await ctx.github.graphql({
+      query: THREADS_QUERY,
+      variables: { owner, name, number: pullNumber, after: pagination.after },
+    });
     const repository = isRecord(data) ? data["repository"] : undefined;
     const pull = isRecord(repository) ? repository["pullRequest"] : undefined;
     const threads = isRecord(pull) ? pull["reviewThreads"] : undefined;
@@ -279,35 +329,40 @@ async function reviewThreads(ctx, pullNumber) {
       const first = Array.isArray(comments) ? comments[0] : undefined;
       const databaseId = isRecord(first) ? numberField(first["databaseId"]) : null;
       if (databaseId === null) continue;
-      map.set(databaseId, { threadId: stringField(node, "id"), resolved: node["isResolved"] === true });
+      map.set(databaseId, {
+        threadId: stringField({ record: node, key: "id" }),
+        resolved: node["isResolved"] === true,
+      });
     }
     const pageInfo = threads["pageInfo"];
     if (!isRecord(pageInfo) || pageInfo["hasNextPage"] !== true) return map;
-    after = stringField(pageInfo, "endCursor");
-    if (!after || seen.has(after) || seen.size >= 1_000)
+    pagination.after = stringField({ record: pageInfo, key: "endCursor" });
+    if (!pagination.after || seen.has(pagination.after) || seen.size >= 1_000)
       throw new Error("GitHub review pagination returned an invalid cursor or exceeded 1000 pages");
-    seen.add(after);
+    seen.add(pagination.after);
   }
 }
 
 /**
  * Existing agentlint inline threads on the pull request, keyed by digest.
  *
- * @param {Context} ctx
- * @param {number} pullNumber
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {number} input.pullNumber
  * @returns {Promise<ReviewThread[]>}
  */
-async function existingThreads(ctx, pullNumber) {
+async function existingThreads({ ctx, pullNumber }) {
   const comments = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pullNumber}/comments`);
-  const threads = await reviewThreads(ctx, pullNumber);
+  const threads = await reviewThreads({ ctx, pullNumber });
   const identity = await ctx.github.identity();
   /**
    * @type {ReviewThread[]}
    */
   const result = [];
   for (const comment of comments) {
-    if (!isRecord(comment) || !isActionComment(comment, identity) || comment["in_reply_to_id"] !== undefined) continue;
-    const digest = digestFromBody(stringField(comment, "body"));
+    if (!isRecord(comment) || !isActionComment({ comment, identity }) || comment["in_reply_to_id"] !== undefined)
+      continue;
+    const digest = digestFromBody(stringField({ record: comment, key: "body" }));
     const commentId = numberField(comment["id"]);
     if (digest === null || commentId === null) continue;
     const thread = threads.get(commentId);
@@ -317,75 +372,79 @@ async function existingThreads(ctx, pullNumber) {
 }
 
 /**
- * @param {Context} ctx
- * @param {PullRequest} pull
- * @param {Scan} result
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {PullRequest} input.pull
+ * @param {Scan} input.result
  * @returns {Promise<Set<string>>} Digests that have an inline thread after this run
  */
-async function publishInline(ctx, pull, result) {
+async function publishInline({ ctx, pull, result }) {
   const files = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pull.number}/files`);
   const commentable = commentableByFile(
     files.filter(isRecord).map((file) => {
-      const patch = typeof file["patch"] === "string" ? file["patch"] : undefined;
-      return {
-        filename: stringField(file, "filename"),
-        ...(patch === undefined ? {} : { patch }),
-        status: stringField(file, "status"),
-      };
+      const patch = Schema.is(Schema.String)(file["patch"]) ? file["patch"] : undefined;
+      const filename = stringField({ record: file, key: "filename" });
+      const status = stringField({ record: file, key: "status" });
+      return patch === undefined ? { filename, status } : { filename, patch, status };
     }),
   );
-  const threads = await existingThreads(ctx, pull.number);
+  const threads = await existingThreads({ ctx, pullNumber: pull.number });
   const plan = planReconciliation({ findings: result.findings, threads, commentable });
   ctx.log.info(
     `inline: ${plan.create.length} new, ${plan.resolve.length} to resolve, ${plan.leave.length} unchanged, ${plan.outside.length} outside the diff`,
   );
 
   if (plan.create.length > 0) {
-    await ctx.github.write("POST", `/repos/${ctx.repository}/pulls/${pull.number}/reviews`, {
-      commit_id: pull.headSha,
-      event: "COMMENT",
-      body: renderReviewBody(plan.create.length),
-      comments: plan.create.map((finding) => ({
-        path: finding.file,
-        line: finding.line,
-        side: "RIGHT",
-        body: renderInlineBody(finding),
-      })),
+    await ctx.github.write({
+      method: "POST",
+      path: `/repos/${ctx.repository}/pulls/${pull.number}/reviews`,
+      body: {
+        commit_id: pull.headSha,
+        event: "COMMENT",
+        body: renderReviewBody(plan.create.length),
+        comments: plan.create.map((finding) => ({
+          path: finding.file,
+          line: finding.line,
+          side: "RIGHT",
+          body: renderInlineBody(finding),
+        })),
+      },
     });
   }
   for (const { thread, reply } of plan.resolve) {
-    await ctx.github.write(
-      "POST",
-      `/repos/${ctx.repository}/pulls/${pull.number}/comments/${thread.commentId}/replies`,
-      {
+    await ctx.github.write({
+      method: "POST",
+      path: `/repos/${ctx.repository}/pulls/${pull.number}/comments/${thread.commentId}/replies`,
+      body: {
         body: reply,
       },
-    );
-    if (thread.threadId) await ctx.github.mutate(RESOLVE_MUTATION, { threadId: thread.threadId });
+    });
+    if (thread.threadId) await ctx.github.mutate({ query: RESOLVE_MUTATION, variables: { threadId: thread.threadId } });
     else ctx.log.warn(`thread for comment ${thread.commentId} has no GraphQL id; left unresolved`);
   }
-  return new Set(
-    [...plan.leave, ...plan.resolve.map((entry) => entry.thread)]
-      .map((thread) => thread.digest)
-      .concat(plan.create.map((finding) => finding.digest)),
-  );
+  const reconciledThreads = [...plan.leave, ...A.map(plan.resolve, (entry) => entry.thread)];
+  return new Set([
+    ...A.map(reconciledThreads, (thread) => thread.digest),
+    ...A.map(plan.create, (finding) => finding.digest),
+  ]);
 }
 
 /**
  * Publish a scan for a same-repository pull request: check run, sticky summary, inline comments.
  *
- * @param {Context} ctx
- * @param {PullRequest} pull
- * @param {Scan} result
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {PullRequest} input.pull
+ * @param {Scan} input.result
  */
-export async function publish(ctx, pull, result) {
-  await publishCheckRun(ctx, pull.headSha, result);
+export async function publish({ ctx, pull, result }) {
+  await publishCheckRun({ ctx, headSha: pull.headSha, result });
   if (!ctx.inputs.comment) return;
-  const inlineDigests = await publishInline(ctx, pull, result);
-  await upsertSummary(
+  const inlineDigests = await publishInline({ ctx, pull, result });
+  await upsertSummary({
     ctx,
-    pull.number,
-    renderSummary({
+    pullNumber: pull.number,
+    body: renderSummary({
       repository: ctx.repository,
       headSha: pull.headSha,
       pullNumber: pull.number,
@@ -394,14 +453,15 @@ export async function publish(ctx, pull, result) {
       inlineDigests,
       serverUrl: ctx.serverUrl,
     }),
-  );
+  });
 }
 
 /**
- * @param {Context} ctx
- * @param {Scan} result
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {Scan} input.result
  */
-export function recordOutputs(ctx, result) {
+export function recordOutputs({ ctx, result }) {
   const counts = countFindings(result.findings);
   ctx.outputs.set("gate", result.gate);
   ctx.outputs.set("unresolved", String(counts.unresolved));
@@ -415,18 +475,21 @@ const FORK_NOTICE =
   "commits to a branch in this repository to run the real gate.";
 
 /**
- * @param {Context} ctx
- * @param {string} markdown
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {string} input.markdown
  */
-async function appendSummary(ctx, markdown) {
+async function appendSummary({ ctx, markdown }) {
   const path = ctx.env["GITHUB_STEP_SUMMARY"];
   if (path) await appendFile(path, markdown, "utf8");
 }
 
 /**
- * @param {Context} ctx @param {PullRequest} pull
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {PullRequest} input.pull
  */
-export function isFork(ctx, pull) {
+export function isFork({ ctx, pull }) {
   // A deleted head repository reports no name. Treat it as a fork: never push to or comment for an unknown origin.
   return pull.headRepo !== ctx.repository;
 }
@@ -436,31 +499,31 @@ export function isFork(ctx, pull) {
  * @returns {Promise<number>} Exit code of the step: the gate code
  */
 export async function runGate(ctx) {
-  const action = stringField(ctx.event, "action");
-  if (!["opened", "synchronize", "reopened", "ready_for_review"].includes(action)) {
+  const action = stringField({ record: ctx.event, key: "action" });
+  if (!A.contains(["opened", "synchronize", "reopened", "ready_for_review"], action)) {
     ctx.log.info(`pull_request.${action}: nothing to do`);
     return 0;
   }
   const pull = pullRequestFrom(ctx.event["pull_request"]);
-  const headSha = pull.headSha || (await gitOutput(["rev-parse", "HEAD"], ctx.workingDirectory));
+  const headSha = pull.headSha || (await gitOutput({ args: ["rev-parse", "HEAD"], cwd: ctx.workingDirectory }));
   // The base is fetched before any repository code runs.
-  const base = await resolveBase(ctx, ctx.inputs.base || pull.baseRef);
+  const base = await resolveBase({ ctx, base: ctx.inputs.base || pull.baseRef });
   await installIfRequested(ctx);
-  const result = await scan(ctx, base);
-  recordOutputs(ctx, result);
+  const result = await scan({ ctx, base });
+  recordOutputs({ ctx, result });
 
-  if (isFork(ctx, pull)) {
+  if (isFork({ ctx, pull })) {
     ctx.log.warn(FORK_NOTICE);
-    await appendSummary(
+    await appendSummary({
       ctx,
-      `### agentlint
+      markdown: `### agentlint
 
 ${FORK_NOTICE}
 `,
-    );
+    });
     for (const line of renderWorkflowCommands(result.findings)) ctx.log.info(line);
     return result.code;
   }
-  await publish(ctx, { ...pull, headSha }, result);
+  await publish({ ctx, pull: { ...pull, headSha }, result });
   return result.code;
 }

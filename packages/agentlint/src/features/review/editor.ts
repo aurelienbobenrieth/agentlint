@@ -5,6 +5,7 @@
 import { execFile, spawn } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, posix, relative, win32 } from "node:path";
+import { Array as A, Match } from "effect";
 import type { EditorApplication, EditorApplicationId } from "./contract.js";
 
 interface Invocation {
@@ -99,13 +100,19 @@ const launchers = new Map<EditorApplicationId, string>();
  * `scheme://file/<path>:line:column`. The path separator and the drive letter follow the target platform, never the
  * platform running the server, so the mapping stays deterministic in tests and in a detached review.
  */
-function editorUri(
-  application: Exclude<EditorApplicationId, "explorer">,
-  platform: string,
-  file: string,
-  line: number,
-  column: number,
-) {
+function editorUri({
+  application,
+  platform,
+  file,
+  line,
+  column,
+}: {
+  readonly application: Exclude<EditorApplicationId, "explorer">;
+  readonly platform: string;
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+}) {
   const absolute = platform === "win32" ? win32.resolve(file).replaceAll("\\", "/") : posix.resolve(file);
   const pathname = absolute
     .split("/")
@@ -117,20 +124,27 @@ function editorUri(
 /**
  * Pure adapter mapping, exported so argument boundaries can be regression-tested.
  */
-export function editorInvocation(
-  application: EditorApplicationId,
-  platform: string,
-  file: string,
-  line: number,
-  column: number,
-  launcher?: string,
-): Invocation {
+export function editorInvocation({
+  application,
+  platform,
+  file,
+  line,
+  column,
+  launcher,
+}: {
+  readonly application: EditorApplicationId;
+  readonly platform: string;
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly launcher?: string;
+}): Invocation {
   if (application === "explorer") {
-    return platform === "win32"
-      ? { command: "explorer.exe", args: [`/select,${file}`] }
-      : platform === "darwin"
-        ? { command: "open", args: ["-R", file] }
-        : { command: "xdg-open", args: [posix.dirname(file)] };
+    return Match.value(platform).pipe(
+      Match.when("win32", () => ({ command: "explorer.exe", args: [`/select,${file}`] })),
+      Match.when("darwin", () => ({ command: "open", args: ["-R", file] })),
+      Match.orElse(() => ({ command: "xdg-open", args: [posix.dirname(file)] })),
+    );
   }
 
   // A real CLI takes the position as one argument and never loses it, unlike a
@@ -142,57 +156,74 @@ export function editorInvocation(
       : { command: launcher, args: ["--goto", target] };
   }
 
-  const uri = editorUri(application, platform, file, line, column);
-  return platform === "win32"
-    ? { command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", uri] }
-    : platform === "darwin"
-      ? { command: "open", args: [uri] }
-      : { command: "xdg-open", args: [uri] };
+  const uri = editorUri({ application, platform, file, line, column });
+  return Match.value(platform).pipe(
+    Match.when("win32", () => ({ command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", uri] })),
+    Match.when("darwin", () => ({ command: "open", args: [uri] })),
+    Match.orElse(() => ({ command: "xdg-open", args: [uri] })),
+  );
 }
 
 /**
  * `where.exe <name>` searches the current directory, which is the reviewed repository, before PATH. The `$PATH:<name>`
  * form searches PATH only.
  */
-function lookupInvocation(name: string, platform: string): Invocation {
+function lookupInvocation({ name, platform }: { readonly name: string; readonly platform: string }): Invocation {
   return platform === "win32" ? { command: "where.exe", args: [`$PATH:${name}`] } : { command: "which", args: [name] };
 }
 
 /**
  * A launcher inside the reviewed repository is content under review, never an installed editor.
  */
-async function isOutsideRepository(launcher: string, repository: string): Promise<boolean> {
+async function isOutsideRepository({
+  launcher,
+  repository,
+}: {
+  readonly launcher: string;
+  readonly repository: string;
+}): Promise<boolean> {
   try {
     const fromRepository = relative(await realpath(repository), await realpath(launcher));
     return fromRepository.split(/[\\/]/u)[0] === ".." || isAbsolute(fromRepository);
   } catch {
+    // REASON: an unresolvable launcher is conservatively treated as unavailable outside the repository.
     return false;
   }
 }
 
-function detectionInvocation(application: ApplicationSpec, platform: string): Invocation | undefined {
+function detectionInvocation({
+  application,
+  platform,
+}: {
+  readonly application: ApplicationSpec;
+  readonly platform: string;
+}): Invocation | undefined {
   if (application.id === "explorer") {
-    return platform === "win32"
-      ? lookupInvocation("explorer.exe", platform)
-      : platform === "darwin"
-        ? { command: "which", args: ["open"] }
-        : { command: "which", args: ["xdg-open"] };
+    return Match.value(platform).pipe(
+      Match.when("win32", () => lookupInvocation({ name: "explorer.exe", platform })),
+      Match.when("darwin", () => ({ command: "which", args: ["open"] })),
+      Match.orElse(() => ({ command: "which", args: ["xdg-open"] })),
+    );
   }
-  return platform === "win32"
-    ? { command: "reg.exe", args: ["query", `HKCR\\${application.scheme}`] }
-    : platform === "darwin"
-      ? { command: "open", args: ["-Ra", application.macName ?? application.label] }
-      : { command: "xdg-mime", args: ["query", "default", `x-scheme-handler/${application.scheme}`] };
+  return Match.value(platform).pipe(
+    Match.when("win32", () => ({ command: "reg.exe", args: ["query", `HKCR\\${application.scheme}`] })),
+    Match.when("darwin", () => ({ command: "open", args: ["-Ra", application.macName ?? application.label] })),
+    Match.orElse(() => ({ command: "xdg-mime", args: ["query", "default", `x-scheme-handler/${application.scheme}`] })),
+  );
 }
 
 /**
  * Resolve the `where`/`which` output to something `execFile` can spawn without a shell.
  */
-export function launcherFromLookup(
-  application: Pick<ApplicationSpec, "windowsExecutable">,
-  platform: string,
-  output: string,
-): string | undefined {
+export function launcherFromLookup({
+  application,
+  platform,
+  output,
+}: {
+  readonly application: Pick<ApplicationSpec, "windowsExecutable">;
+  readonly platform: string;
+  readonly output: string;
+}): string | undefined {
   const candidates = output
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -204,36 +235,43 @@ export function launcherFromLookup(
   return shim && application.windowsExecutable ? application.windowsExecutable(win32.dirname(shim)) : undefined;
 }
 
-export async function detectEditorApplications(
-  platform: string,
-  runner: Runner = run,
-  repository?: string,
-): Promise<ReadonlyArray<EditorApplication>> {
+export async function detectEditorApplications({
+  platform,
+  runner = run,
+  repository,
+}: {
+  readonly platform: string;
+  readonly runner?: Runner;
+  readonly repository?: string;
+}): Promise<ReadonlyArray<EditorApplication>> {
   launchers.clear();
   const detected = await Promise.all(
-    APPLICATIONS.map(async (application) => {
-      const invocation = detectionInvocation(application, platform);
+    A.map(APPLICATIONS, async (application) => {
+      const invocation = detectionInvocation({ application, platform });
       if (!invocation) return undefined;
-      let viaScheme = false;
-      try {
-        const output = await runner({ ...invocation, timeoutMs: 5_000 });
-        viaScheme = !(platform === "linux" && application.id !== "explorer" && output.trim() === "");
-      } catch {
-        viaScheme = false;
-      }
-      let viaCli = false;
-      if (application.cli) {
+      const viaScheme = await (async () => {
         try {
-          const output = await runner({ ...lookupInvocation(application.cli, platform), timeoutMs: 5_000 });
-          const launcher = launcherFromLookup(application, platform, output);
-          if (launcher && (repository === undefined || (await isOutsideRepository(launcher, repository)))) {
-            launchers.set(application.id, launcher);
-            viaCli = true;
-          }
+          const output = await runner({ ...invocation, timeoutMs: 5_000 });
+          return !(platform === "linux" && application.id !== "explorer" && output.trim() === "");
         } catch {
-          viaCli = false;
+          // REASON: a failed scheme probe means this optional editor is unavailable.
+          return false;
         }
-      }
+      })();
+      const viaCli = await (async () => {
+        if (!application.cli) return false;
+        try {
+          const output = await runner({ ...lookupInvocation({ name: application.cli, platform }), timeoutMs: 5_000 });
+          const launcher = launcherFromLookup({ application, platform, output });
+          if (!launcher || (repository !== undefined && !(await isOutsideRepository({ launcher, repository }))))
+            return false;
+          launchers.set(application.id, launcher);
+          return true;
+        } catch {
+          // REASON: a failed CLI lookup means this optional editor is unavailable.
+          return false;
+        }
+      })();
       return viaScheme || viaCli
         ? ({ id: application.id, label: application.label } satisfies EditorApplication)
         : undefined;
@@ -242,13 +280,21 @@ export async function detectEditorApplications(
   return detected.filter((application): application is EditorApplication => application !== undefined);
 }
 
-export async function openInEditor(
-  application: EditorApplicationId,
-  platform: string,
-  file: string,
-  line: number,
-  column: number,
-  runner: Runner = launch,
-): Promise<void> {
-  await runner(editorInvocation(application, platform, file, line, column, launchers.get(application)));
+export async function openInEditor({
+  application,
+  platform,
+  file,
+  line,
+  column,
+  runner = launch,
+}: {
+  readonly application: EditorApplicationId;
+  readonly platform: string;
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly runner?: Runner;
+}): Promise<void> {
+  const launcher = launchers.get(application);
+  await runner(editorInvocation({ application, platform, file, line, column, ...(launcher ? { launcher } : {}) }));
 }

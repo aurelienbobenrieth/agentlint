@@ -11,15 +11,22 @@ import { actorKind, actorLabel, relativeTime, safeExternalHref } from "../../sha
 import { decisionForm } from "../decision/view";
 import { highlightedLine, highlightedLines } from "./syntax";
 
-const renderCodePanel = (
-  finding: ReviewFindingPayload,
-  source: string,
-  codeView: CodeView,
-  canOpen: boolean,
-  preferred: EditorApplication | undefined,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const allLines = highlightedLines(source, finding.file);
+const renderCodePanel = ({
+  finding,
+  source,
+  codeView,
+  canOpen,
+  preferred,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly source: string;
+  readonly codeView: CodeView;
+  readonly canOpen: boolean;
+  readonly preferred: EditorApplication | undefined;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const allLines = highlightedLines({ source, file: finding.file });
   const start = Math.max(1, finding.code.focus.startLine);
   const end = Math.max(start, finding.code.focus.endLine);
   const first = codeView === "full" ? 1 : Math.max(1, start - 3);
@@ -41,9 +48,16 @@ const renderCodePanel = (
                     : [h.OnClick(Message.ClickedOpenFinding({ findingId: finding.id }))]),
                   h.Title(preferred === undefined ? "Open in…" : `Open in ${preferred.label}`),
                 ],
-                [icon("file", h), h.span([], [`${finding.file}:${finding.line}`]), icon("external", h)],
+                [
+                  icon({ name: "file", h }),
+                  h.span([], [`${finding.file}:${finding.line}`]),
+                  icon({ name: "external", h }),
+                ],
               )
-            : h.span([h.Class("code__file")], [icon("file", h), h.span([], [`${finding.file}:${finding.line}`])]),
+            : h.span(
+                [h.Class("code__file")],
+                [icon({ name: "file", h }), h.span([], [`${finding.file}:${finding.line}`])],
+              ),
           h.button(
             [
               h.Type("button"),
@@ -75,7 +89,15 @@ const renderCodePanel = (
  */
 const codePanel = createKeyedLazy();
 
-const diffBlock = (diff: string, file: string, h: HtmlBuilder<Message>): Html =>
+const diffBlock = ({
+  diff,
+  file,
+  h,
+}: {
+  readonly diff: string;
+  readonly file: string;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.pre(
     [h.Class("diff")],
     diff.split(/\r?\n/u).map((line) => {
@@ -97,27 +119,46 @@ const diffBlock = (diff: string, file: string, h: HtmlBuilder<Message>): Html =>
           h.span([h.Class("diff__marker")], [marker]),
           kind === "meta" || kind === "hunk"
             ? h.span([], [line])
-            : h.span([h.InnerHTML(highlightedLine(code.length === 0 ? " " : code, file))], []),
+            : h.span([h.InnerHTML(highlightedLine({ source: code.length === 0 ? " " : code, file }))], []),
         ],
       );
     }),
   );
 
-const actorRow = (actor: string, at: string, nowIso: string, verb: string, h: HtmlBuilder<Message>): Html =>
+const actorRow = ({
+  actor,
+  at,
+  nowIso,
+  verb,
+  h,
+}: {
+  readonly actor: string;
+  readonly at: string;
+  readonly nowIso: string;
+  readonly verb: string;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.span(
     [h.Class("actor")],
     [
-      icon(actorKind(actor) === "agent" ? "sparkle" : "user", h),
+      icon({ name: actorKind(actor) === "agent" ? "sparkle" : "user", h }),
       h.span([h.Class("actor__name")], [actorLabel(actor)]),
-      h.span([h.Class("actor__verb")], [`${verb} `, h.time([h.Datetime(at), h.Title(at)], [relativeTime(at, nowIso)])]),
+      h.span(
+        [h.Class("actor__verb")],
+        [`${verb} `, h.time([h.Datetime(at), h.Title(at)], [relativeTime({ iso: at, nowIso })])],
+      ),
     ],
   );
 
-const proposalCard = (
-  finding: ReviewFindingPayload,
-  state: ReviewStatePayload,
-  h: HtmlBuilder<Message>,
-): Html | null => {
+const proposalCard = ({
+  finding,
+  state,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly h: HtmlBuilder<Message>;
+}): Html | null => {
   const proposal = finding.proposal;
   if (proposal === null) return null;
   return h.section(
@@ -127,20 +168,24 @@ const proposalCard = (
         [h.Class("card__head")],
         [
           h.span([h.Class("card__title")], ["Agent proposal"]),
-          actorRow(proposal.actor, proposal.at, state.generatedAt, "proposed", h),
+          actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h }),
         ],
       ),
       h.p([h.Class("card__text")], [proposal.summary]),
-      ...(proposal.diff === null ? [] : [diffBlock(proposal.diff, finding.file, h)]),
+      ...(proposal.diff === null ? [] : [diffBlock({ diff: proposal.diff, file: finding.file, h })]),
     ],
   );
 };
 
-const acceptanceCard = (
-  finding: ReviewFindingPayload,
-  state: ReviewStatePayload,
-  h: HtmlBuilder<Message>,
-): Html | null => {
+const acceptanceCard = ({
+  finding,
+  state,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly h: HtmlBuilder<Message>;
+}): Html | null => {
   const acceptance = finding.acceptance;
   if (acceptance === null) return null;
   return h.section(
@@ -149,14 +194,14 @@ const acceptanceCard = (
       h.div(
         [h.Class("card__head")],
         [
-          h.span([h.Class("card__title")], [icon("check", h), h.span([], ["Accepted"])]),
-          actorRow(
-            acceptance.actor,
-            acceptance.at,
-            state.generatedAt,
-            `accepted with ${acceptance.authority} authority (declared identity)`,
+          h.span([h.Class("card__title")], [icon({ name: "check", h }), h.span([], ["Accepted"])]),
+          actorRow({
+            actor: acceptance.actor,
+            at: acceptance.at,
+            nowIso: state.generatedAt,
+            verb: `accepted with ${acceptance.authority} authority (declared identity)`,
             h,
-          ),
+          }),
         ],
       ),
       h.p([h.Class("card__text")], [acceptance.reason]),
@@ -164,7 +209,15 @@ const acceptanceCard = (
   );
 };
 
-const lineageCard = (reason: string, invalidationReasons: ReadonlyArray<string>, h: HtmlBuilder<Message>): Html =>
+const lineageCard = ({
+  reason,
+  invalidationReasons,
+  h,
+}: {
+  readonly reason: string;
+  readonly invalidationReasons: ReadonlyArray<string>;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.section(
     [h.Class("card card--lineage")],
     [
@@ -183,7 +236,15 @@ const lineageCard = (reason: string, invalidationReasons: ReadonlyArray<string>,
     ],
   );
 
-const guidance = (finding: ReviewFindingPayload, model: Model, h: HtmlBuilder<Message>): Html => {
+const guidance = ({
+  finding,
+  model,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly model: Model;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   const { checks, examples, references } = finding.guidance;
   const hasBody = checks.length > 0 || examples.length > 0 || references.length > 0;
   if (!hasBody) return h.span([], []);
@@ -196,7 +257,12 @@ const guidance = (finding: ReviewFindingPayload, model: Model, h: HtmlBuilder<Me
     [
       h.summary(
         [h.Class("guidance__summary")],
-        [icon("chevron", h), h.span([], ["Rule guidance"]), ...kbd(["G"], h), h.code([], [finding.ruleId])],
+        [
+          icon({ name: "chevron", h }),
+          h.span([], ["Rule guidance"]),
+          ...kbd({ keys: ["G"], h }),
+          h.code([], [finding.ruleId]),
+        ],
       ),
       h.div(
         [h.Class("guidance__body")],
@@ -222,7 +288,7 @@ const guidance = (finding: ReviewFindingPayload, model: Model, h: HtmlBuilder<Me
                       ...(example.description === null ? [] : [h.p([], [example.description])]),
                       h.pre(
                         [h.Class("example__code")],
-                        highlightedLines(example.code, finding.file).map((markup) =>
+                        highlightedLines({ source: example.code, file: finding.file }).map((markup) =>
                           h.code([h.Class("example__line"), h.InnerHTML(markup)], []),
                         ),
                       ),
@@ -245,7 +311,11 @@ const guidance = (finding: ReviewFindingPayload, model: Model, h: HtmlBuilder<Me
                         )
                       : h.a(
                           [h.Href(href), h.Target("_blank"), h.Rel("noopener noreferrer"), h.Class("ref")],
-                          [h.span([], [reference.label]), h.code([], [reference.target]), icon("external", h)],
+                          [
+                            h.span([], [reference.label]),
+                            h.code([], [reference.target]),
+                            icon({ name: "external", h }),
+                          ],
                         );
                   }),
                 ),
@@ -256,12 +326,17 @@ const guidance = (finding: ReviewFindingPayload, model: Model, h: HtmlBuilder<Me
   );
 };
 
-const editorMenu = (
-  state: ReviewStatePayload,
-  finding: ReviewFindingPayload,
-  model: Model,
-  h: HtmlBuilder<Message>,
-): Html =>
+const editorMenu = ({
+  state,
+  finding,
+  model,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly finding: ReviewFindingPayload;
+  readonly model: Model;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.div(
     [h.Id("editor-menu"), h.Class("popover popover--menu"), h.Popover("auto")],
     [
@@ -276,22 +351,28 @@ const editorMenu = (
             h.Class(`menu-item${model.preferredApplication === application.id ? " menu-item--active" : ""}`),
           ],
           [
-            appIcon(application.id, h),
+            appIcon({ application: application.id, h }),
             h.span([], [application.label]),
-            ...(model.preferredApplication === application.id ? [icon("check", h)] : []),
+            ...(model.preferredApplication === application.id ? [icon({ name: "check", h })] : []),
           ],
         ),
       ),
     ],
   );
 
-const detailBar = (
-  state: ReviewStatePayload,
-  finding: ReviewFindingPayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html => {
+const detailBar = ({
+  state,
+  finding,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly finding: ReviewFindingPayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   const previous = derived.selectedIndex > 0 ? derived.visible[derived.selectedIndex - 1] : undefined;
   const next = derived.visible[derived.selectedIndex + 1];
   const canOpen = finding.editor !== null && state.applications.length > 0;
@@ -303,27 +384,27 @@ const detailBar = (
       h.div(
         [h.Class("detail__nav")],
         [
-          iconButton(
-            "Previous",
-            [
+          iconButton({
+            label: "Previous",
+            attributes: [
               h.Disabled(previous === undefined),
               ...(previous === undefined ? [] : [h.OnClick(Message.SelectedFinding({ findingId: previous.id }))]),
               h.Class("icon-btn icon-btn--flip"),
             ],
-            "arrow",
+            name: "arrow",
             h,
-            ["K"],
-          ),
-          iconButton(
-            "Next",
-            [
+            keys: ["K"],
+          }),
+          iconButton({
+            label: "Next",
+            attributes: [
               h.Disabled(next === undefined),
               ...(next === undefined ? [] : [h.OnClick(Message.SelectedFinding({ findingId: next.id }))]),
             ],
-            "arrow",
+            name: "arrow",
             h,
-            ["J"],
-          ),
+            keys: ["J"],
+          }),
         ],
       ),
       h.span([h.Class("detail__spacer")], []),
@@ -332,10 +413,10 @@ const detailBar = (
             h.div(
               [h.Class("split")],
               [
-                tip(
-                  preferred === undefined ? "Open in an application" : `Open in ${preferred.label}`,
-                  ["E"],
-                  h.button(
+                tip({
+                  label: preferred === undefined ? "Open in an application" : `Open in ${preferred.label}`,
+                  keys: ["E"],
+                  trigger: h.button(
                     [
                       h.Type("button"),
                       h.Class("btn btn--secondary btn--sm split__main"),
@@ -344,12 +425,14 @@ const detailBar = (
                         : [h.OnClick(Message.ClickedOpenFinding({ findingId: finding.id }))]),
                     ],
                     [
-                      preferred === undefined ? icon("external", h) : appIcon(preferred.id, h),
+                      preferred === undefined
+                        ? icon({ name: "external", h })
+                        : appIcon({ application: preferred.id, h }),
                       h.span([], [preferred === undefined ? "Open in…" : preferred.label]),
                     ],
                   ),
                   h,
-                ),
+                }),
                 h.button(
                   [
                     h.Type("button"),
@@ -357,47 +440,58 @@ const detailBar = (
                     h.Popovertarget("editor-menu"),
                     h.AriaLabel("Choose application"),
                   ],
-                  [icon("chevron", h)],
+                  [icon({ name: "chevron", h })],
                 ),
               ],
             ),
-            editorMenu(state, finding, model, h),
+            editorMenu({ state, finding, model, h }),
           ]
         : []),
-      tip(
-        "Copy finding context for your agent",
-        ["C"],
-        button("Copy context", Message.ClickedCopyFindingContext({ findingId: finding.id }), "secondary", h, {
-          icon: "copy",
-          size: "sm",
+      tip({
+        label: "Copy finding context for your agent",
+        keys: ["C"],
+        trigger: button({
+          label: "Copy context",
+          message: Message.ClickedCopyFindingContext({ findingId: finding.id }),
+          variant: "secondary",
+          h,
+          options: {
+            icon: "copy",
+            size: "sm",
+          },
         }),
         h,
-      ),
+      }),
     ],
   );
 };
 
-export const detail = (
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html => {
+export const detail = ({
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   const finding = derived.selected;
   if (finding === undefined) {
     return h.main([h.Class("detail detail--empty")], [h.p([], ["Select a finding."])]);
   }
-  const status = statusFor(derived, finding);
+  const status = statusFor({ derived, finding });
   const canOpen = finding.editor !== null && state.applications.length > 0;
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
-  const hidden = independentHidden(model, finding.id);
-  const proposal = hidden ? null : proposalCard(finding, state, h);
+  const hidden = independentHidden({ model, findingId: finding.id });
+  const proposal = hidden ? null : proposalCard({ finding, state, h });
   const acceptance =
-    !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard(finding, state, h) : null;
+    !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard({ finding, state, h }) : null;
   return h.main(
     [h.Class("detail")],
     [
-      detailBar(state, finding, model, derived, h),
+      detailBar({ state, finding, model, derived, h }),
       h.header(
         [h.Class("detail__head")],
         [
@@ -405,7 +499,7 @@ export const detail = (
             [h.Class("detail__badges")],
             [
               ...(finding.authority === "human"
-                ? [h.span([h.Class("badge badge--human")], [icon("user", h), "Human decision"])]
+                ? [h.span([h.Class("badge badge--human")], [icon({ name: "user", h }), "Human decision"])]
                 : []),
               h.span(
                 [h.Class("badge")],
@@ -426,24 +520,36 @@ export const detail = (
             : []),
         ],
       ),
-      codePanel(finding.id, renderCodePanel, [
-        finding,
-        state.sources[finding.file] ?? "",
-        model.codeView,
-        canOpen,
-        preferred,
-        h,
-      ]),
+      codePanel(
+        finding.id,
+        (
+          panelFinding: ReviewFindingPayload,
+          source: string,
+          codeView: CodeView,
+          panelCanOpen: boolean,
+          panelPreferred: EditorApplication | undefined,
+          builder: HtmlBuilder<Message>,
+        ) =>
+          renderCodePanel({
+            finding: panelFinding,
+            source,
+            codeView,
+            canOpen: panelCanOpen,
+            preferred: panelPreferred,
+            h: builder,
+          }),
+        [finding, state.sources[finding.file] ?? "", model.codeView, canOpen, preferred, h],
+      ),
       ...(proposal === null ? [] : [proposal]),
       ...(acceptance === null ? [] : [acceptance]),
       ...(hidden || finding.lineageReason === null
         ? []
-        : [lineageCard(finding.lineageReason, finding.invalidationReasons, h)]),
+        : [lineageCard({ reason: finding.lineageReason, invalidationReasons: finding.invalidationReasons, h })]),
       ...(model.independentReview && !hidden
         ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
         : []),
-      decisionForm(state, finding, model, derived, h),
-      guidance(finding, model, h),
+      decisionForm({ state, finding, model, derived, h }),
+      guidance({ finding, model, h }),
     ],
   );
 };

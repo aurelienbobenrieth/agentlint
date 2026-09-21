@@ -7,7 +7,7 @@ Runs the [agentlint](../packages/agentlint/README.md) gate on a pull request and
 - one inline review comment per finding that sits inside the pull request diff, resolved automatically once the finding is accepted or disappears;
 - `/agentlint approve ...` commands that record a human acceptance, commit it as the approver, push, and re-run the gate.
 
-The action is a composite action with zero runtime dependencies: plain Node scripts, the global `fetch`, and `git`. The agentlint CLI itself is fetched with `npx` from the version you pin, or run from a checkout you built.
+The action is a composite action implemented with Node scripts, Effect, the global `fetch`, and `git`. The agentlint CLI itself is fetched with `npx` from the version you pin, or run from a checkout you built.
 
 ## Usage
 
@@ -35,14 +35,17 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout pull request
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: aurelienbobenrieth/agentlint/action@v0.1.5
+      - name: Run the agentlint gate
+        uses: aurelienbobenrieth/agentlint/action@v0.1.5
         with:
           version: "0.1.5"
           install: "true"
@@ -61,14 +64,17 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout command target
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - name: Set up command runtime
+        uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: aurelienbobenrieth/agentlint/action@v0.1.5
+      - name: Apply the agentlint command
+        uses: aurelienbobenrieth/agentlint/action@v0.1.5
         with:
           version: "0.1.5"
           install: "true"

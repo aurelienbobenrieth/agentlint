@@ -8,6 +8,7 @@ Narrow the public API to what a rule or config author needs and move the testing
 - `testRuleOnChange(rule, fixture)` accepts a `ChangeFixture` and returns `FindingRecord`s, the same shape `agentlint check` produces. `ReportedChangeFinding` is gone.
 - Removed from the root: `normalizeConfig`, `NormalizedConfig`, `compactStandard`, `normalizeGuidance`, `NormalizedGuidance`, `ruleMatches`, `ruleId`, `RuleGuidance`. `RuleAuthority`, `Position`, and the rule schemas other than the change evidence set are exported as types only.
 - `RuleContext` exposes `absolutePath`, `path`, and `source` properties instead of `getFilename()`, `getFilePath()`, and `getSourceCode()`. `getLinesAround` is removed.
+- Imperative detector callbacks receive `{ context, options }`, and testing helpers receive one named-argument object.
 - `Visitors` is `VisitorHooks & Partial<Record<TreeSitterNodeType, VisitorHandler>>`; unknown node names are no longer accepted.
 - `defineRule` and `defineConfig` throw tagged `RuleDefinitionError` and `ConfigError` with structured `reason` fields instead of plain `Error`.
 - New `Lifecycle` type. `RuleAuthority` is the single source for `"agent" | "human"`.

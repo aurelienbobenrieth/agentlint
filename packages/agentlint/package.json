@@ -91,6 +91,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/vitest": "catalog:",
     "@tanstack/intent": "catalog:",
     "@types/node": "26.6.1",
     "@types/picomatch": "4.0.3",

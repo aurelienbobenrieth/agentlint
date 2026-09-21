@@ -1,9 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, Layer } from "effect";
+import { Array as A, Effect, Layer } from "effect";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Env } from "../../config/env.js";
 import { normalizeConfig, type AgentlintConfig } from "../../domain/config.js";
 import { defineRule, type ChangeSet } from "../../domain/rule.js";
@@ -31,7 +31,7 @@ const everyChange = (binding: { include?: string[] } = {}) =>
     detector: {
       id: "change/every-file",
       version: 1,
-      detect(context) {
+      detect({ context }) {
         for (const changed of context.change.files)
           context.report({
             key: changed.path,
@@ -51,7 +51,13 @@ interface Scenario {
   readonly onChangeSet?: (include: ((path: string) => boolean) | undefined) => void;
 }
 
-async function collect(scenario: Scenario, prepare?: (cwd: string) => void) {
+async function collect({
+  scenario,
+  prepare,
+}: {
+  readonly scenario: Scenario;
+  readonly prepare?: (cwd: string) => void;
+}) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "agentlint-collect-")));
   try {
     for (const [file, content] of Object.entries(scenario.files)) {
@@ -67,27 +73,29 @@ async function collect(scenario: Scenario, prepare?: (cwd: string) => void) {
         Git.of({
           detectDefaultBranch: () => Effect.succeed("main"),
           changedFiles: () => Effect.succeed([]),
-          changeSet: (_base, include) => {
+          changeSet: ({ _base, include }: { readonly _base: string; readonly include: (path: string) => boolean }) => {
             scenario.onChangeSet?.(include);
-            return Effect.succeed({ ...change, files: change.files.filter((file) => include?.(file.path) ?? true) });
+            return Effect.succeed({ ...change, files: change.files.filter((file) => include(file.path)) });
           },
         }),
       ),
       Parser.layer,
     ).pipe(
-      Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(
-        Layer.succeed(
-          Env,
-          Env.of({
-            cwd,
-            argv: [],
-            actor: "agent:test",
-            platform: "test",
-            noColor: true,
-            isTTY: false,
-            setExitCode: () => {},
-          }),
+        Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(
+            Env,
+            Env.of({
+              cwd,
+              argv: [],
+              actor: "agent:test",
+              platform: "test",
+              noColor: true,
+              isTTY: false,
+              setExitCode: () => {},
+            }),
+          ),
         ),
       ),
     );
@@ -102,14 +110,16 @@ async function collect(scenario: Scenario, prepare?: (cwd: string) => void) {
 describe("binding scope", () => {
   it("matches dotfiles and dot directories for state rules", async () => {
     const rule = danger({ include: ["src/**"], exclude: ["src/.skipped/**"] });
-    expect(ruleEnabledForFile(rule, "src/.hidden/x.ts")).toBe(true);
+    expect(ruleEnabledForFile({ rule, file: "src/.hidden/x.ts" })).toBe(true);
     const result = await collect({
-      files: {
-        "src/.hidden/x.ts": "danger(1);\n",
-        "src/.x.ts": "danger(2);\n",
-        "src/.skipped/y.ts": "danger(3);\n",
+      scenario: {
+        files: {
+          "src/.hidden/x.ts": "danger(1);\n",
+          "src/.x.ts": "danger(2);\n",
+          "src/.skipped/y.ts": "danger(3);\n",
+        },
+        config: { rules: [rule] },
       },
-      config: { rules: [rule] },
     });
     expect(result.findings.map((finding) => finding.file)).toEqual(["src/.hidden/x.ts", "src/.x.ts"]);
   });
@@ -117,9 +127,11 @@ describe("binding scope", () => {
   it("matches dotfiles for change rules and for config ignores", async () => {
     const after = { "src/.hidden/x.ts": "a();\n", "src/.x.ts": "b();\n", "src/.generated/z.ts": "c();\n" };
     const result = await collect({
-      files: after,
-      config: { rules: [everyChange({ include: ["src/**"] })], ignores: ["src/.generated/**"] },
-      change: normalizeChangeFixture({ after }),
+      scenario: {
+        files: after,
+        config: { rules: [everyChange({ include: ["src/**"] })], ignores: ["src/.generated/**"] },
+        change: normalizeChangeFixture({ after }),
+      },
     });
     expect(result.findings.map((finding) => finding.file)).toEqual(["src/.hidden/x.ts", "src/.x.ts"]);
   });
@@ -128,14 +140,18 @@ describe("binding scope", () => {
 describe("change set selection", () => {
   it("asks Git only for files a change rule can see", async () => {
     const after = { "src/a.ts": "a();\n", "assets/huge.bin": "x", "docs/guide.md": "# guide\n" };
-    let include: ((path: string) => boolean) | undefined;
+    const observed: { include: ((path: string) => boolean) | undefined } = { include: undefined };
     await collect({
-      files: after,
-      config: { rules: [everyChange({ include: ["src/**", "assets/**"] })], ignores: ["assets/**"] },
-      change: normalizeChangeFixture({ after }),
-      onChangeSet: (predicate) => (include = predicate),
+      scenario: {
+        files: after,
+        config: { rules: [everyChange({ include: ["src/**", "assets/**"] })], ignores: ["assets/**"] },
+        change: normalizeChangeFixture({ after }),
+        onChangeSet: (predicate) => {
+          observed.include = predicate;
+        },
+      },
     });
-    expect(Object.keys(after).filter((file) => include?.(file))).toEqual(["src/a.ts"]);
+    expect(Object.keys(after).filter((file) => observed.include?.(file))).toEqual(["src/a.ts"]);
   });
 });
 
@@ -154,45 +170,53 @@ describe("line endings", () => {
 
   it("fingerprints a CRLF checkout like an LF checkout, on the same lines", async () => {
     const rule = danger();
-    const [left] = await testRuleOnSource(rule, lf, "fixture.ts");
-    const [right] = await testRuleOnSource(rule, crlf, "fixture.ts");
-    expect(left).toBeDefined();
-    expect(right?.fingerprint).toEqual(left?.fingerprint);
-    expect([right?.line, right?.column, right?.endLine]).toEqual([left?.line, left?.column, left?.endLine]);
-    expect(left?.line).toBe(6);
+    const left = A.getUnsafe(await testRuleOnSource({ rule, source: lf, file: "fixture.ts" }), 0);
+    const right = A.getUnsafe(await testRuleOnSource({ rule, source: crlf, file: "fixture.ts" }), 0);
+    expect(right.fingerprint).toEqual(left.fingerprint);
+    expect([right.line, right.column, right.endLine]).toEqual([left.line, left.column, left.endLine]);
+    expect(left.line).toBe(6);
   });
 
   it("digests a CRLF dependency like an LF dependency", async () => {
     const rule = danger({ dependencies: ["policy.txt"] });
     const run = (policy: string) =>
-      testRuleOnSources(rule, [
-        ["policy.txt", policy],
-        ["src/a.ts", "danger(1);\n"],
-      ]);
-    const [left] = await run("sandbox\nrequired\n");
-    const [right] = await run("sandbox\r\nrequired\r\n");
-    const [other] = await run("sandbox\noptional\n");
-    expect(right?.fingerprint).toEqual(left?.fingerprint);
-    expect(other?.fingerprint).not.toEqual(left?.fingerprint);
+      testRuleOnSources({
+        rule,
+        sources: [
+          ["policy.txt", policy],
+          ["src/a.ts", "danger(1);\n"],
+        ],
+      });
+    const left = A.getUnsafe(await run("sandbox\nrequired\n"), 0);
+    const right = A.getUnsafe(await run("sandbox\r\nrequired\r\n"), 0);
+    const other = A.getUnsafe(await run("sandbox\noptional\n"), 0);
+    expect(right.fingerprint).toEqual(left.fingerprint);
+    expect(other.fingerprint).not.toEqual(left.fingerprint);
   });
 
   it("gives change fixtures the same evidence for both line endings", async () => {
     const rule = everyChange();
-    const [left] = await testRuleOnChange(rule, { after: { "a.sql": "DROP TABLE a;\nSELECT 1;\n" } });
-    const [right] = await testRuleOnChange(rule, { after: { "a.sql": "DROP TABLE a;\r\nSELECT 1;\r\n" } });
-    expect(right?.fingerprint).toEqual(left?.fingerprint);
+    const left = A.getUnsafe(
+      await testRuleOnChange({ rule, fixture: { after: { "a.sql": "DROP TABLE a;\nSELECT 1;\n" } } }),
+      0,
+    );
+    const right = A.getUnsafe(
+      await testRuleOnChange({ rule, fixture: { after: { "a.sql": "DROP TABLE a;\r\nSELECT 1;\r\n" } } }),
+      0,
+    );
+    expect(right.fingerprint).toEqual(left.fingerprint);
   });
 
   it("reads scanned files from disk with normalized line endings", async () => {
-    const left = await collect({ files: { "src/a.ts": lf }, config: { rules: [danger()] } });
-    const right = await collect({ files: { "src/a.ts": crlf }, config: { rules: [danger()] } });
+    const left = await collect({ scenario: { files: { "src/a.ts": lf }, config: { rules: [danger()] } } });
+    const right = await collect({ scenario: { files: { "src/a.ts": crlf }, config: { rules: [danger()] } } });
     expect(right.findings[0]?.fingerprint).toEqual(left.findings[0]?.fingerprint);
     expect(right.sources["src/a.ts"]).toBe(lf);
   });
 
   it("fails on a fixture dependency that was not supplied", async () => {
     await expect(
-      testRuleOnSources(danger({ dependencies: ["policy.txt"] }), [["src/a.ts", "danger(1);\n"]]),
+      testRuleOnSources({ rule: danger({ dependencies: ["policy.txt"] }), sources: [["src/a.ts", "danger(1);\n"]] }),
     ).rejects.toThrow("Missing fixture dependency: policy.txt");
   });
 });
@@ -200,8 +224,10 @@ describe("line endings", () => {
 describe("incomplete scans", () => {
   it("names every unparseable file in one failure, after analysing the rest", async () => {
     const result = collect({
-      files: { "src/a.ts": "danger(", "src/b.ts": "danger(1);\n", "src/c.tsx": "const x = <div>;\n" },
-      config: { rules: [danger()] },
+      scenario: {
+        files: { "src/a.ts": "danger(", "src/b.ts": "danger(1);\n", "src/c.tsx": "const x = <div>;\n" },
+        config: { rules: [danger()] },
+      },
     });
     await expect(result).rejects.toMatchObject({
       _tag: "agentlint/UnparseableFilesError",
@@ -219,15 +245,15 @@ describe("incomplete scans", () => {
     try {
       writeFileSync(join(outside, "secret.txt"), "SECRET\n");
       await expect(
-        collect(
-          {
+        collect({
+          scenario: {
             files: { "src/a.ts": "danger(1);\n" },
             config: { rules: [danger({ dependencies: ["linked/secret.txt"] })], ignores: ["linked"] },
           },
-          (cwd) =>
+          prepare: (cwd) =>
             // A junction needs no privilege on Windows; elsewhere Node creates a directory symlink.
             symlinkSync(outside, join(cwd, "linked"), "junction"),
-        ),
+        }),
       ).rejects.toThrow("linked/secret.txt: resolves outside the repository");
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -236,29 +262,29 @@ describe("incomplete scans", () => {
 });
 
 describe("captured sources", () => {
-  it("keeps the text of files with findings and only the names of the others", async () => {
-    const capture: ScanCapture = { scanned: new Set(), sources: new Map() };
-    const sources = new Map([
-      ["src/a.ts", "danger(1);\n"],
-      ["src/b.ts", "safe();\n"],
-    ]);
-    const env = Env.of({
-      cwd: tmpdir(),
-      argv: [],
-      actor: "agent:test",
-      platform: "test",
-      noColor: true,
-      isTTY: false,
-      setExitCode: () => {},
-    });
-    await Effect.runPromise(
-      collectStateFindings([danger()], [...sources.keys()], sources, capture).pipe(
+  it.effect("keeps the text of files with findings and only the names of the others", () =>
+    Effect.gen(function* () {
+      const capture: ScanCapture = { scanned: new Set(), sources: new Map() };
+      const sources = new Map([
+        ["src/a.ts", "danger(1);\n"],
+        ["src/b.ts", "safe();\n"],
+      ]);
+      const env = Env.of({
+        cwd: tmpdir(),
+        argv: [],
+        actor: "agent:test",
+        platform: "test",
+        noColor: true,
+        isTTY: false,
+        setExitCode: () => {},
+      });
+      yield* collectStateFindings([danger()], [...sources.keys()], sources, capture).pipe(
         Effect.provide(Parser.layer),
         Effect.provide(NodeServices.layer),
         Effect.provide(Layer.succeed(Env, env)),
-      ),
-    );
-    expect([...capture.scanned]).toEqual(["src/a.ts", "src/b.ts"]);
-    expect([...capture.sources.keys()]).toEqual(["src/a.ts"]);
-  });
+      );
+      expect([...capture.scanned]).toEqual(["src/a.ts", "src/b.ts"]);
+      expect([...capture.sources.keys()]).toEqual(["src/a.ts"]);
+    }),
+  );
 });

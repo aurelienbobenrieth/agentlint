@@ -30,7 +30,7 @@ if (unknown.length) {
   process.exit(2);
 }
 
-function git(args, cwd) {
+function git({ args, cwd }) {
   const result = spawnSync("git", args, {
     cwd,
     stdio: ["ignore", "pipe", "inherit"],
@@ -47,10 +47,10 @@ for (const repo of REPOS) {
   if (selected.size && !selected.has(repo.name)) continue;
   const dir = join(root, repo.name);
   if (existsSync(join(dir, ".git"))) {
-    git(["fetch", "--quiet", "--depth=1", "origin", "HEAD"], dir);
-    git(["reset", "--quiet", "--hard", "FETCH_HEAD"], dir);
+    git({ args: ["fetch", "--quiet", "--depth=1", "origin", "HEAD"], cwd: dir });
+    git({ args: ["reset", "--quiet", "--hard", "FETCH_HEAD"], cwd: dir });
   } else {
-    git(["clone", "--quiet", "--depth=1", repo.url, dir], root);
+    git({ args: ["clone", "--quiet", "--depth=1", repo.url, dir], cwd: root });
   }
-  console.log(`${repo.name.padEnd(9)} ${git(["log", "-1", "--format=%h %cs %s"], dir)}`);
+  console.log(`${repo.name.padEnd(9)} ${git({ args: ["log", "-1", "--format=%h %cs %s"], cwd: dir })}`);
 }

@@ -39,17 +39,12 @@ export class PrError extends Schema.TaggedError<PrError>()("agentlint/PrError", 
 }) {
   override get message(): string {
     const target = this.repo ? `${this.repo}#${this.number}` : `#${this.number}`;
-    switch (this.reason) {
-      case "gh_missing":
-        return "agentlint pr needs the GitHub CLI: install gh and run gh auth login";
-      case "gh_failed":
-        return `GitHub CLI failed for ${target}: ${this.detail}`;
-      case "no_artifact":
-        return `No agentlint-review-${this.number} artifact on ${target}: the action has not uploaded one, the run is still in progress, or the artifact expired`;
-      case "foreign_artifact":
-        return `Every agentlint-review-${this.number} artifact on ${target} comes from a workflow run of another branch or repository, so none was opened`;
-      case "invalid_artifact":
-        return `The artifact for ${target} is not an agentlint review artifact: ${this.detail}`;
-    }
+    return {
+      gh_missing: "agentlint pr needs the GitHub CLI: install gh and run gh auth login",
+      gh_failed: `GitHub CLI failed for ${target}: ${this.detail}`,
+      no_artifact: `No agentlint-review-${this.number} artifact on ${target}: the action has not uploaded one, the run is still in progress, or the artifact expired`,
+      foreign_artifact: `Every agentlint-review-${this.number} artifact on ${target} comes from a workflow run of another branch or repository, so none was opened`,
+      invalid_artifact: `The artifact for ${target} is not an agentlint review artifact: ${this.detail}`,
+    }[this.reason];
   }
 }

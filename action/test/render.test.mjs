@@ -67,9 +67,9 @@ describe("render", () => {
     expect(annotations.map((annotation) => annotation.annotation_level)).toEqual(["failure", "failure", "warning"]);
     expect(annotations[0]).toMatchObject({ path: "src/vendor/legacy-parser.js", start_line: 3, end_line: 3 });
     expect(countFindings(all)).toEqual({ unresolved: 3, human: 2, agent: 1, accepted: 0 });
-    expect(renderCheckOutput("closed", all).title).toBe("Gate closed: 3 unresolved");
-    expect(renderCheckOutput("open", []).title).toBe("Gate open");
-    expect(renderCheckOutput("error", []).title).toBe("agentlint could not run");
+    expect(renderCheckOutput({ gate: "closed", findings: all }).title).toBe("Gate closed: 3 unresolved");
+    expect(renderCheckOutput({ gate: "open", findings: [] }).title).toBe("Gate open");
+    expect(renderCheckOutput({ gate: "error", findings: [] }).title).toBe("agentlint could not run");
   });
 
   it("escapes workflow command properties and data", async () => {
@@ -116,7 +116,7 @@ describe("hostile and oversized content", () => {
   it("fences a diff that contains a fence, and keeps the rest of the body prose", async () => {
     const [first] = await findings();
     if (!first?.proposal) throw new Error("fixture");
-    const diff = `+ok\n${FENCE}\n@everyone <img src=x>\n# not a heading\n${FENCE}${"`"}\n+more`;
+    const diff = `+ok\n${FENCE}\n@everyone <img src=x>\n# not a heading\n${FENCE}\`\n+more`;
     const body = renderInlineBody({
       ...first,
       message: hostileText,
@@ -183,14 +183,14 @@ describe("hostile and oversized content", () => {
   });
 
   it("fences CLI output that contains a fence", () => {
-    const reply = renderFailureReply(
-      "agentlint could not record the approval:",
-      `oops\n${FENCE}\n@everyone\n${"x".repeat(9_000)}`,
-    );
+    const reply = renderFailureReply({
+      heading: "agentlint could not record the approval:",
+      output: `oops\n${FENCE}\n@everyone\n${"x".repeat(9_000)}`,
+    });
     expect(reply.split("\n")[2]).toBe("`".repeat(4));
     expect(reply.length).toBeLessThan(6_000);
     expect(codeSpan("a`b")).toBe("`` a`b ``");
     expect(plain("a|b")).toBe("a\\|b");
-    expect(fenced("x")).toBe(`${FENCE}\nx\n${FENCE}`);
+    expect(fenced({ content: "x" })).toBe(`${FENCE}\nx\n${FENCE}`);
   });
 });

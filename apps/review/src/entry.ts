@@ -9,8 +9,8 @@ import { isDirty } from "./shared/dirty-flag";
 const application = Runtime.makeApplication({
   Model,
   init,
-  update,
-  view,
+  update: (...[model, message]) => update({ model, message }),
+  view: (...[model, h]) => view({ model, h }),
   subscriptions,
   container: document.getElementById("root"),
   devTools: { Message },

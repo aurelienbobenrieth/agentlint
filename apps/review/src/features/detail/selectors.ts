@@ -1,16 +1,29 @@
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
+import { Array as A } from "effect";
 import type { Model } from "../../model";
 import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
+import { encodePrettyJson } from "../../shared/json";
 
-export const independentHidden = (model: Model, findingId: string): boolean =>
-  model.independentReview && !model.revealedFindings.includes(findingId);
+export const independentHidden = ({
+  model,
+  findingId,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+}): boolean => model.independentReview && !model.revealedFindings.includes(findingId);
 
-const fenced = (content: string, language = ""): string => {
+const fenced = ({ content, language = "" }: { readonly content: string; readonly language?: string }): string => {
   const fence = content.includes("```") ? "````" : "```";
   return `${fence}${language}\n${content}\n${fence}`;
 };
 
-const focusedSource = (finding: ReviewFindingPayload, source: string): string => {
+const focusedSource = ({
+  finding,
+  source,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly source: string;
+}): string => {
   const lines = source.split("\n");
   const start = Math.max(0, finding.code.focus.startLine - 4);
   const end = Math.min(lines.length, finding.code.focus.endLine + 3);
@@ -23,12 +36,20 @@ const focusedSource = (finding: ReviewFindingPayload, source: string): string =>
 /**
  * Complete, paste-ready evidence for discussing one finding with another agent.
  */
-export const findingContext = (finding: ReviewFindingPayload, model: Model): string => {
+export const findingContext = ({
+  finding,
+  model,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly model: Model;
+}): string => {
   const source = model.screen._tag === "Reviewing" ? (model.screen.state.sources[finding.file] ?? "") : "";
-  const draft = draftFor(model, finding.id);
-  const hidden = independentHidden(model, finding.id);
+  const draft = draftFor({ model, findingId: finding.id });
+  const hidden = independentHidden({ model, findingId: finding.id });
   const status =
-    model.screen._tag === "Reviewing" ? effectiveFindingStatus(finding, model.screen.state, model) : finding.status;
+    model.screen._tag === "Reviewing"
+      ? effectiveFindingStatus({ finding, state: model.screen.state, model })
+      : finding.status;
   // A draft disposition is reported only while the effective status still agrees with it. In an attached
   // review the server may have dropped the decision since the draft was written.
   const dispositionHeld =
@@ -37,12 +58,15 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
   const language = finding.file.match(/\.tsx?$/u) ? "typescript" : finding.file.match(/\.jsx?$/u) ? "javascript" : "";
   const reviewInput = hidden
     ? [`Independent assessment: ${model.independentNotes[finding.id] ?? "Not yet recorded."}`]
-    : [
-        dispositionHeld ? `Disposition: ${draft.disposition}` : null,
-        draft.reason.trim().length > 0 ? `Reason or requested change: ${draft.reason.trim()}` : null,
-        draft.calibration !== "unreviewed" ? `Calibration: ${draft.calibration}` : null,
-        draft.note.trim().length > 0 ? `Calibration note: ${draft.note.trim()}` : null,
-      ].filter((line): line is string => line !== null);
+    : A.filter(
+        [
+          dispositionHeld ? `Disposition: ${draft.disposition}` : null,
+          draft.reason.trim().length > 0 ? `Reason or requested change: ${draft.reason.trim()}` : null,
+          draft.calibration !== "unreviewed" ? `Calibration: ${draft.calibration}` : null,
+          draft.note.trim().length > 0 ? `Calibration note: ${draft.note.trim()}` : null,
+        ],
+        (line): line is string => line !== null,
+      );
   const acceptance =
     finding.acceptance === null
       ? "None."
@@ -50,23 +74,23 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
   const references =
     finding.guidance.references.length === 0
       ? "None."
-      : finding.guidance.references
-          .map((reference) => `- ${reference.label} (${reference.kind}): ${reference.target}`)
-          .join("\n");
+      : A.map(
+          finding.guidance.references,
+          (reference) => `- ${reference.label} (${reference.kind}): ${reference.target}`,
+        ).join("\n");
   const examples =
     finding.guidance.examples.length === 0
       ? "None provided."
-      : finding.guidance.examples
-          .map((example) =>
+      : A.map(finding.guidance.examples, (example) =>
+          A.filter(
             [
               example.label === null ? null : `### ${example.label}`,
               example.description,
-              fenced(example.code, language),
-            ]
-              .filter((part): part is string => part !== null)
-              .join("\n\n"),
-          )
-          .join("\n\n");
+              fenced({ content: example.code, language }),
+            ],
+            (part): part is string => part !== null,
+          ).join("\n\n"),
+        ).join("\n\n");
   const identity = {
     ruleId: finding.ruleId,
     source: finding.identity.source,
@@ -97,11 +121,11 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
     "",
     "## Focused code context",
     "",
-    fenced(focusedSource(finding, source), language),
+    fenced({ content: focusedSource({ finding, source }), language }),
     "",
     "## Complete file",
     "",
-    fenced(source, language),
+    fenced({ content: source, language }),
     "",
     "## Permitted examples",
     "",
@@ -119,6 +143,6 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
     "",
     "## Stable identity",
     "",
-    fenced(JSON.stringify(identity, null, 2), "json"),
+    fenced({ content: encodePrettyJson(identity), language: "json" }),
   ].join("\n");
 };
