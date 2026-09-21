@@ -9,7 +9,7 @@ Node 22.19+ and pnpm 10+. The repository declares its package manager, so Corepa
 ```bash
 pnpm install
 pnpm build      # CLI, declarations, review UI (dist/ui), grammar WASM (dist/wasm)
-pnpm check      # typecheck, oxlint, oxfmt, skill validation, tests
+pnpm check      # typecheck (sources and tests), oxlint, oxfmt, knip, skill validation, tests
 ```
 
 Other useful commands:

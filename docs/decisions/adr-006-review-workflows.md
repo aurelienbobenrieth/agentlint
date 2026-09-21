@@ -89,7 +89,7 @@ The attached transport runs a loopback server with a session token. The server w
 
 The detached transport starts from an artifact. `agentlint check --all --review-output <path>` writes the artifact in CI. `agentlint review --from <path>` opens it locally.
 
-Detached decisions stay in the browser. The UI downloads accepted decisions as exact `AcceptanceRecord` JSONL. `agentlint acceptances import` rescans the repository and rejects a record whose finding changed, disappeared, or has different authority.
+Detached decisions stay in the browser. The UI downloads typed import decisions as JSONL, including the exact source snapshot shown to the reviewer. `agentlint acceptances import` rescans the repository and rejects a decision whose source or finding changed, disappeared, or has different authority. Only a validated import is converted to the current persisted `AcceptanceRecord` shape.
 
 Detached review cannot claim that it changed repository state. The user imports, commits, and runs CI again.
 
@@ -137,8 +137,21 @@ Provider verification can strengthen team workflows without a change to the core
 
 Version 0.2 does not resume an agent harness after review. The human pastes the copied instructions into the agent.
 
+## Review ergonomics (2026-09-07)
+
+The repository can start from explicitly chosen plugin exports with `init --preset`. The engine has no preset catalog or package installer. Harness owns optional small starting configurations.
+
+`next` runs the current gate scan and returns one unresolved obligation. Its JSON contract includes scope, authority and command arguments. A filtered empty queue does not replace the complete checkpoint.
+
+The SPA can group findings by explicit file relationships. These groups do not share acceptances. Independent review hides previous reasons and proposals until the reviewer records an assessment. This is a presentation option, not an authorization boundary.
+
+Calibration exports versioned observation reports. Combining reports deduplicates exact evidence and keeps material policy versions separate. Reports can measure observed repeated invalidations; they cannot reconstruct missing history. They do not create a durable engine database or change the gate.
+
+Review artifacts use version 3. Previous artifacts must be regenerated. The acceptance and fingerprint formats are unchanged.
+
 ## Revision history
 
 - 2026-08-10: The team proposed calibration, checkpoint review, and local acceptance as 0.2 workflows.
 - 2026-08-10: The team accepted attached and detached review through one local SPA.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+- 2026-09-07: Added explicit onboarding, next-obligation handoffs, related groups, independent review and portable calibration measurements. These additions reduce review effort without changing acceptance compatibility.

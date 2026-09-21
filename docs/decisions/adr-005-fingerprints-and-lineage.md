@@ -35,11 +35,15 @@ The acceptance key contains the complete source identity and the complete finger
 
 ## State evidence
 
-The `source-structure` scheme has version 2. It hashes these values:
+The `source-structure` scheme has version 3. It hashes these values:
 
 - The normalized repository-relative path.
-- The semantic structure of the containing file. The structure contains node types and leaf text. It excludes positions.
+- The semantic structure of the containing file. The structure is a preorder list of node types and child counts, the text of each leaf, and the source text between the children of each inner node. It excludes positions.
 - An occurrence key. The key contains a structural child path or a unique detector-owned key.
+
+A grammar can leave source text outside every node. The literal parts of a TypeScript template literal type are an example. A gap between children that contains anything other than whitespace is evidence and enters the structure verbatim. A gap that contains only whitespace is formatting and enters as an empty string.
+
+The engine converts CRLF and CR line endings to LF when it reads a source file or a binding dependency. A checkout with `core.autocrlf` and an LF checkout produce equal fingerprints.
 
 Formatting and line movement do not change the fingerprint when the node structure stays equal. A file move or a change to the containing file structure invalidates the acceptance. Explicit binding dependency contents and optional reported evidence also enter the fingerprint.
 
@@ -149,3 +153,4 @@ A fingerprint change is a documented compatibility event in the release notes.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 
 - 2026-09-05: Version 2 preserves Unicode distinctions and includes containing-file structure and declared dependencies. Regression probes showed that node-only evidence retained decisions after guard removal. Structural occurrence identity fixes lineage collisions. Partial updates preserve other exact identities even when lineage matches. Version 1 fingerprints remain readable but require new review.
+- 2026-09-20: Version 3 of `source-structure` adds the source text that lies between child nodes and reads sources and dependencies with LF line endings. A pre-release review showed that version 2 gave two template literal types with different literal text the same fingerprint, and gave one file different fingerprints on CRLF and LF checkouts. Version 2 fingerprints remain readable but require new review.

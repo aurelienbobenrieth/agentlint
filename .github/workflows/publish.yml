@@ -12,6 +12,7 @@ concurrency:
 jobs:
   publish:
     name: Publish to npm
+    environment: npm
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -31,7 +32,7 @@ jobs:
         # actions/setup-node v5. No cache input: the publish job never restores a cache, so the low-confidence audit does not apply.
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # zizmor: ignore[cache-poisoning]
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -70,9 +71,10 @@ jobs:
 
       - name: Publish package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: pnpm publish "$PACKAGE_PATH" --access public --no-git-checks --provenance
+        run: |
+          npm install --global npm@latest
+          npm publish "$PACKAGE_PATH" --access public
 
       - name: Create GitHub Release
         env:

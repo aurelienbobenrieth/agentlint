@@ -49,7 +49,7 @@ The engine compares the merge base of the selected ref with the complete working
 
 A binding selects files with `include` and `exclude` globs. A config can add repository-wide `ignores`.
 
-A state detector matches syntax with a pattern or a tree-sitter query. `createOnce` is the imperative escape hatch. The engine calls `createOnce` one time for each rule before it visits files. The visitor examines every selected file. `before(filename)` runs for each file and can return `false` to skip it. `after()` runs one time at the end. The engine drains reported findings after `after()`.
+A state detector matches syntax with a pattern or a tree-sitter query. `createOnce` is the imperative escape hatch. The engine calls `createOnce` one time for each rule before it visits files. The visitor examines every selected file. `before(path)` runs for each file with the absolute path of the file and can return `false` to skip it. `after()` runs one time at the end. The engine drains reported findings after `after()`.
 
 A change detector inspects the change set directly. It can parse changed content with its own logic. Do not use `createOnce` for change rules.
 
@@ -84,7 +84,7 @@ A detector can declare `mustReport` and `mustStaySilent` fixtures. A state fixtu
 
 Fixtures are regression evidence. They do not prove that a detector finds all cases. A newly found missed case adds a fixture. The engine never sends fixture code to the agent as guidance.
 
-A state fingerprint uses the `source-structure` scheme. It digests the normalized path, the node structure, the captures, and a detector-owned occurrence counter. Two equal conditions in one file get different fingerprints. Line numbers are not an input.
+A state fingerprint uses the `source-structure` scheme. It digests the normalized path, the semantic structure of the containing file, the contents of the declared binding dependencies, the optional reported evidence, and an occurrence key. The occurrence key is the structural child path of the reported node or a unique detector-owned key. Two equal conditions in one file get different fingerprints. Line numbers are not an input.
 
 A change fingerprint uses the `git-change` scheme. It digests the detector `evidence`, the before and after paths, the file operation, and the detector `key`. [ADR-005](./adr-005-fingerprints-and-lineage.md) defines the schemes.
 
@@ -123,3 +123,4 @@ The fingerprint design supports state and change evidence with separate schemes.
 - 2026-08-10: The team accepted one discriminated `defineRule` API.
 - 2026-08-10: The team completed the state and change pipelines for 0.2.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+- 2026-09-20: Aligned the `before` hook argument and the state fingerprint inputs with the implementation.

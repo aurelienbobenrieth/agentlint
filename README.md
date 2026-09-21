@@ -6,7 +6,7 @@
 
 **Deterministic findings and explicit judgment gates for coding agents.**
 
-Linters reject code that is mechanically wrong. Prompts ask agents to remember concerns. agentlint covers the space between them: it deterministically finds the places that need judgment, gives the reviewer the applicable standard, and keeps the gate closed until the evidence changes or someone with enough authority records an acceptance.
+Your `AGENTS.md` rules are followed most of the time, AI reviewers say something different on every run, and large diffs get approved because the tests are green. Linters reject code that is mechanically wrong; prompts only ask agents to remember. agentlint covers the space between them: it deterministically finds the places that need judgment, gives the reviewer the applicable standard, and keeps the gate closed until the evidence changes or someone with enough authority records an acceptance. Every exception is a committed, reviewable record: an `eslint-disable` that needs a reason, an authority, and a new review when the code moves.
 
 ```text
 repository evidence -> deterministic detector -> finding
@@ -33,6 +33,8 @@ pnpm agentlint init          # creates .agentlint/config.ts
 pnpm agentlint rules test    # proves each detector against its fixtures
 pnpm agentlint check --all   # runs the gate
 ```
+
+Or tell your coding agent to install the package and follow its `setup` skill: it suggests rules for your stack, calibrates before enforcing, and installs the Claude Code or Codex hook so a finished turn means an open gate.
 
 A rule is one `defineRule` value:
 

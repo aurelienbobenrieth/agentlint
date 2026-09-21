@@ -136,3 +136,4 @@ Future harness work starts from demonstrated needs.
 - 2026-08-10: The team proposed one application path and thin adapters.
 - 2026-08-10: The team selected the CLI and the local SPA as the only 0.2 application surfaces.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation. Recorded the `testing` and `contract` subpaths.
+- 2026-09-19: Added a `setup` skill with a copyable Claude Code and Codex hook script. It is documentation over the CLI exit code: the engine gains no command, protocol, or harness-specific contract, so the decision stands.
