@@ -5,10 +5,8 @@ import type { Message } from "../../message";
 
 export type IconName =
   | "arrow"
-  | "book"
   | "check"
   | "chevron"
-  | "code"
   | "copy"
   | "external"
   | "file"
@@ -25,13 +23,8 @@ type AbsoluteSvgPath = `M${string}`;
 
 const iconPaths: Record<IconName, ReadonlyArray<AbsoluteSvgPath>> = {
   arrow: ["M5 12h14", "M13 6l6 6-6 6"],
-  book: [
-    "M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z",
-    "M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z",
-  ],
   check: ["M5 12l4 4L19 6"],
   chevron: ["M8 10l4 4 4-4"],
-  code: ["M8 9l-3 3 3 3", "M16 9l3 3-3 3"],
   copy: ["M8 8h11v11H8z", "M5 16H4V5h11v1"],
   external: ["M14 4h6v6", "M20 4l-9 9", "M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"],
   file: ["M6 3h8l4 4v14H6z", "M14 3v5h5"],

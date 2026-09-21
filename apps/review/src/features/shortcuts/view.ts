@@ -16,18 +16,15 @@ export const helpDialog = (model: Model, h: HtmlBuilder<Message>): Html => {
       ],
     );
   return h.dialog(
-    [h.Class("help"), h.AriaLabel("Keyboard shortcuts")],
+    [h.Class("help"), h.AriaLabel("Keyboard shortcuts"), h.OnCancel(Message.ClosedHelp())],
     [
-      h.div([h.Class("help__backdrop"), h.OnClick(Message.ToggledHelp())], []),
+      h.div([h.Class("help__backdrop"), h.OnClick(Message.ClosedHelp())], []),
       h.div(
         [h.Class("help__panel")],
         [
           h.div(
             [h.Class("help__head")],
-            [
-              h.h2([], ["Keyboard shortcuts"]),
-              iconButton("Close", [h.OnClick(Message.ToggledHelp())], "x", h, ["Esc"]),
-            ],
+            [h.h2([], ["Keyboard shortcuts"]), iconButton("Close", [h.OnClick(Message.ClosedHelp())], "x", h, ["Esc"])],
           ),
           h.div(
             [h.Class("help__columns")],

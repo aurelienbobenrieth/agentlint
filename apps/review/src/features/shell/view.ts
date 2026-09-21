@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import { type Model, SIDEBAR_MAX, SIDEBAR_MIN } from "../../model";
 import { deriveReview } from "../../shared/selectors";
 import { button, iconButton } from "../../shared/ui/controls";
 import { detail } from "../detail/view";
@@ -60,13 +60,34 @@ const topbar = (
               : `${openCount} unresolved`,
         ],
       ),
-      iconButton("Keyboard shortcuts", [h.OnClick(Message.ToggledHelp())], "keyboard", h, ["?"]),
-      button("Finish", Message.ClickedFinish(), "primary", h, {
+      ...(model.refreshFailed
+        ? [button("Reload review", Message.ClickedReloadReview(), "secondary", h, { size: "sm" })]
+        : []),
+      iconButton("Keyboard shortcuts", [h.Id("help-trigger"), h.OnClick(Message.ToggledHelp())], "keyboard", h, ["?"]),
+      button(model.finishing ? "Finishing…" : "Finish", Message.ClickedFinish(), "primary", h, {
         size: "sm",
-        disabled: model.busyFindingId !== null || (undecidedCount > 0 && state.mode === "review"),
+        disabled: model.finishing || model.busyFindingId !== null || (undecidedCount > 0 && state.mode === "review"),
       }),
     ],
   );
+
+const RESIZE_STEP = 16;
+
+/** The window-splitter keys: arrows step, Home and End jump to the limits. */
+const resizeTarget = (key: string, width: number): number | null => {
+  switch (key) {
+    case "ArrowLeft":
+      return width - RESIZE_STEP;
+    case "ArrowRight":
+      return width + RESIZE_STEP;
+    case "Home":
+      return SIDEBAR_MIN;
+    case "End":
+      return SIDEBAR_MAX;
+    default:
+      return null;
+  }
+};
 
 export const reviewView = (state: ReviewStatePayload, model: Model, h: HtmlBuilder<Message>): Html => {
   const derived = deriveReview(state, model);
@@ -86,6 +107,15 @@ export const reviewView = (state: ReviewStatePayload, model: Model, h: HtmlBuild
               h.Class("resizer"),
               h.Role("separator"),
               h.AriaLabel("Resize list"),
+              h.AriaOrientation("vertical"),
+              h.AriaValuenow(model.sidebarWidth),
+              h.AriaValuemin(SIDEBAR_MIN),
+              h.AriaValuemax(SIDEBAR_MAX),
+              h.Tabindex(0),
+              h.OnKeyDownPreventDefault((key) => {
+                const width = resizeTarget(key, model.sidebarWidth);
+                return width === null ? Option.none() : Option.some(Message.NudgedSidebar({ width }));
+              }),
               h.OnPointerDown((_pointerType, pointerButton) =>
                 pointerButton === 0 ? Option.some(Message.StartedSidebarResize()) : Option.none(),
               ),

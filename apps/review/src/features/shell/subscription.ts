@@ -4,7 +4,11 @@ import { Subscription } from "foldkit";
 import { Message } from "../../message";
 import type { SubscriptionEntry } from "../../shared/subscription";
 
-/** Pointer tracking only runs while a resize drag is active. */
+const ended = (type: "pointerup" | "pointercancel") =>
+  Subscription.fromEvent({ target: () => window, type, toMessage: () => Message.EndedSidebarResize() });
+
+/** Pointer tracking only runs while a resize drag is active. `pointercancel` (touch scroll takeover, a
+ *  system gesture) ends the drag too; without it no `pointerup` follows and the drag would stick. */
 export const sidebarResize = (entry: SubscriptionEntry) =>
   entry(
     { resizing: S.Boolean },
@@ -13,16 +17,12 @@ export const sidebarResize = (entry: SubscriptionEntry) =>
       dependenciesToStream: ({ resizing }) =>
         Stream.when(
           Stream.merge(
-            Subscription.fromEvent<PointerEvent, Message>({
+            Subscription.fromEvent({
               target: () => window,
               type: "pointermove",
               toMessage: (event) => Message.ResizedSidebar({ width: event.clientX }),
             }),
-            Subscription.fromEvent<PointerEvent, Message>({
-              target: () => window,
-              type: "pointerup",
-              toMessage: () => Message.EndedSidebarResize(),
-            }),
+            Stream.merge(ended("pointerup"), ended("pointercancel")),
           ),
           Effect.sync(() => resizing),
         ),

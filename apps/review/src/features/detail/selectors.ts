@@ -1,6 +1,9 @@
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import type { Model } from "../../model";
-import { draftFor } from "../../shared/selectors";
+import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
+
+export const independentHidden = (model: Model, findingId: string): boolean =>
+  model.independentReview && !model.revealedFindings.includes(findingId);
 
 const fenced = (content: string, language = ""): string => {
   const fence = content.includes("```") ? "````" : "```";
@@ -21,19 +24,23 @@ const focusedSource = (finding: ReviewFindingPayload, source: string): string =>
 export const findingContext = (finding: ReviewFindingPayload, model: Model): string => {
   const source = model.screen._tag === "Reviewing" ? (model.screen.state.sources[finding.file] ?? "") : "";
   const draft = draftFor(model, finding.id);
+  const hidden = independentHidden(model, finding.id);
   const status =
-    draft.disposition === "accept"
-      ? "accepted"
-      : draft.disposition === "request_changes"
-        ? "changes_requested"
-        : finding.status;
+    model.screen._tag === "Reviewing" ? effectiveFindingStatus(finding, model.screen.state, model) : finding.status;
+  // A draft disposition is reported only while the effective status still agrees with it. In an attached
+  // review the server may have dropped the decision since the draft was written.
+  const dispositionHeld =
+    (draft.disposition === "accept" && status === "accepted") ||
+    (draft.disposition === "request_changes" && status === "changes_requested");
   const language = finding.file.match(/\.tsx?$/u) ? "typescript" : finding.file.match(/\.jsx?$/u) ? "javascript" : "";
-  const reviewInput = [
-    draft.disposition !== "none" ? `Disposition: ${draft.disposition}` : null,
-    draft.reason.trim().length > 0 ? `Reason or requested change: ${draft.reason.trim()}` : null,
-    draft.calibration !== "unreviewed" ? `Calibration: ${draft.calibration}` : null,
-    draft.note.trim().length > 0 ? `Calibration note: ${draft.note.trim()}` : null,
-  ].filter((line): line is string => line !== null);
+  const reviewInput = hidden
+    ? [`Independent assessment: ${model.independentNotes[finding.id] ?? "Not yet recorded."}`]
+    : [
+        dispositionHeld ? `Disposition: ${draft.disposition}` : null,
+        draft.reason.trim().length > 0 ? `Reason or requested change: ${draft.reason.trim()}` : null,
+        draft.calibration !== "unreviewed" ? `Calibration: ${draft.calibration}` : null,
+        draft.note.trim().length > 0 ? `Calibration note: ${draft.note.trim()}` : null,
+      ].filter((line): line is string => line !== null);
   const acceptance =
     finding.acceptance === null
       ? "None."
@@ -104,8 +111,8 @@ export const findingContext = (finding: ReviewFindingPayload, model: Model): str
     "",
     "## Current review evidence",
     "",
-    `Acceptance: ${acceptance}`,
-    `Prior lineage reasoning: ${finding.lineageReason ?? "None."}`,
+    hidden ? "Prior decisions and proposals hidden for independent review." : `Acceptance: ${acceptance}`,
+    ...(hidden ? [] : [`Prior lineage reasoning: ${finding.lineageReason ?? "None."}`]),
     ...(reviewInput.length > 0 ? ["", ...reviewInput] : []),
     "",
     "## Stable identity",

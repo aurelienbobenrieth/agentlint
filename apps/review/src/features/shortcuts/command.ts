@@ -3,15 +3,19 @@ import { Command } from "foldkit";
 
 import { Message } from "../../message";
 
-/** DOM side effects behind keyboard shortcuts. They never change the model. */
+/** DOM side effects behind keyboard shortcuts. They never change the model. Focus waits for the next
+ *  frame because the target may only exist once the model change that asked for it has rendered. */
 export const FocusElement = Command.define("FocusElement", {
   args: { selector: S.String },
   messages: [Message.PerformedDomEffect],
   execute: ({ selector }) =>
     Effect.sync(() => {
-      const element = document.querySelector<HTMLElement>(selector);
-      element?.focus();
-      if (element instanceof HTMLTextAreaElement) element.setSelectionRange(element.value.length, element.value.length);
+      requestAnimationFrame(() => {
+        const element = document.querySelector<HTMLElement>(selector);
+        element?.focus();
+        if (element instanceof HTMLTextAreaElement)
+          element.setSelectionRange(element.value.length, element.value.length);
+      });
       return Message.PerformedDomEffect();
     }),
 });

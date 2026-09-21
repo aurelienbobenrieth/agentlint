@@ -1,7 +1,7 @@
 import { evo } from "foldkit/struct";
 
 import type { Model } from "../../model";
-import { findingById } from "../../shared/selectors";
+import { draftFor, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";
 import { enqueueToast } from "../toasts/update";
@@ -10,6 +10,26 @@ import type { fields } from "./messages";
 import { findingContext } from "./selectors";
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
+  ToggledIndependentReview: () => ({
+    model: evo(model, {
+      independentReview: (active) => !active,
+      revealedFindings: () => [],
+      independentNotes: () => ({}),
+    }),
+  }),
+  UpdatedIndependentNote: ({ findingId, value }) => ({
+    model: evo(model, { independentNotes: (notes) => ({ ...notes, [findingId]: value }) }),
+  }),
+  RevealedPriorDecision: ({ findingId }) => {
+    const note = model.independentNotes[findingId]?.trim();
+    if (!note) return { model };
+    return persistChange(model, (current) =>
+      evo(current, {
+        revealedFindings: (ids) => [...new Set([...ids, findingId])],
+        drafts: (drafts) => ({ ...drafts, [findingId]: { ...draftFor(current, findingId), reason: note } }),
+      }),
+    );
+  },
   SelectedCodeView: ({ codeView }) => persistChange(model, (current) => evo(current, { codeView: () => codeView })),
   ToggledGuidance: () => persistChange(model, (current) => evo(current, { guidanceOpen: (open) => !open })),
   SetGuidanceOpen: ({ open }) =>

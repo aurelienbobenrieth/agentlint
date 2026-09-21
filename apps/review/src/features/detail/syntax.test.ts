@@ -29,4 +29,20 @@ describe("syntax highlighting", () => {
     expect(lines[1]).toContain("hljs-comment");
     expect(highlightedLines(source, "src/example.ts")).toBe(lines);
   });
+
+  it("keeps literal span markup in the source escaped and the fragments balanced", () => {
+    const source =
+      'const a = "</span>";\nconst b = `<span class="x">\n</span>`;\n// </span><span class="hljs-keyword">';
+    const lines = highlightedLines(source, "src/markup.ts");
+
+    expect(lines).toHaveLength(4);
+    for (const line of lines) {
+      expect(line).not.toContain('<span class="x">');
+      const opened = line.match(/<span /gu)?.length ?? 0;
+      const closed = line.match(/<\/span>/gu)?.length ?? 0;
+      expect(closed).toBe(opened);
+    }
+    expect(lines.join("\n")).toContain("&lt;/span&gt;");
+    expect(lines.join("\n")).toContain("&lt;span class=&quot;x&quot;&gt;");
+  });
 });

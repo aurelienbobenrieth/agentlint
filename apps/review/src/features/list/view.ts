@@ -1,9 +1,10 @@
-import type { Html, HtmlBuilder } from "foldkit/html";
+import { calibrationPanel } from "../calibration/view";
+import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
 import type { Model, StatusFacet, View } from "../../model";
-import { facetCount, type ReviewDerivation, statusFacet, statusFor } from "../../shared/selectors";
+import { facetCount, type FindingGroup, type ReviewDerivation, statusFacet } from "../../shared/selectors";
 import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 import { relativeTime } from "../../shared/ui/labels";
@@ -15,16 +16,23 @@ const statusDot = (status: StatusFacet, authority: ReviewFindingPayload["authori
     [],
   );
 
+/** What a row reads besides its finding. Every field is referentially stable across renders that do not
+ *  change it, so the group memo below holds through toasts, typing and resizing. */
+interface RowContext {
+  readonly statusOf: ReviewDerivation["statusOf"];
+  readonly view: View;
+  readonly byRule: boolean;
+  readonly generatedAt: string;
+}
+
 const findingRow = (
   finding: ReviewFindingPayload,
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
+  selected: boolean,
+  context: RowContext,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const selected = derived.selected?.id === finding.id;
-  const status = statusFacet(statusFor(derived, finding));
-  const trailing = model.view === "decisions" ? (finding.acceptance?.at ?? null) : null;
+  const status = statusFacet(context.statusOf.get(finding.id) ?? finding.status);
+  const trailing = context.view === "decisions" ? (finding.acceptance?.at ?? null) : null;
   return h.keyed("button")(
     finding.id,
     [
@@ -39,28 +47,66 @@ const findingRow = (
         [h.Class("row__body")],
         [
           h.span([h.Class("row__title")], [finding.message]),
-          h.span(
-            [h.Class("row__meta")],
-            [model.groupBy === "rule" && model.view === "queue" ? finding.file : finding.ruleTitle],
-          ),
+          h.span([h.Class("row__meta")], [context.byRule ? finding.file : finding.ruleTitle]),
         ],
       ),
       h.span(
         [h.Class("row__trailing")],
-        [trailing === null ? `L${finding.line}` : relativeTime(trailing, state.generatedAt)],
+        [trailing === null ? `L${finding.line}` : relativeTime(trailing, context.generatedAt)],
       ),
     ],
   );
 };
 
-const groupList = (
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
+const renderGroup = (
+  group: FindingGroup,
+  selectedId: string | null,
+  statusOf: RowContext["statusOf"],
+  view: View,
+  byRule: boolean,
+  generatedAt: string,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.keyed("section")(
+    group.key,
+    [h.Class("group"), h.Role("group"), h.AriaLabel(group.label)],
+    [
+      h.div(
+        [
+          h.Class("group__head"),
+          h.Title(
+            group.key.startsWith("related:")
+              ? [...new Set(group.findings.flatMap((finding) => finding.relatedFiles))].join(", ")
+              : group.label,
+          ),
+        ],
+        [
+          h.span([h.Class("group__title")], [group.label]),
+          h.span([h.Class("group__count")], [String(group.findings.length)]),
+        ],
+      ),
+      ...group.findings.map((finding) =>
+        findingRow(finding, finding.id === selectedId, { statusOf, view, byRule, generatedAt }, h),
+      ),
+    ],
+  );
+
+/** One memo slot per group: moving the selection re-renders the group it left and the one it entered,
+ *  not the whole queue. Keys are group keys, bounded by the review. Rendering every row is still linear
+ *  in the queue on the first paint; virtualising the list is a follow-up. */
+const lazyGroup = createKeyedLazy();
+
+const renderGroupList = (
+  groups: ReviewDerivation["groups"],
+  selectedId: string | null,
+  statusOf: RowContext["statusOf"],
+  view: View,
+  byRule: boolean,
+  filtered: boolean,
+  generatedAt: string,
   h: HtmlBuilder<Message>,
 ): Html => {
-  if (derived.visible.length === 0) {
-    const filtered = model.query.trim().length > 0 || facetCount(model.facets) > 0;
+  if (groups.length === 0) {
     return h.div(
       [h.Class("empty")],
       [
@@ -70,7 +116,7 @@ const groupList = (
           [
             filtered
               ? "Nothing matches these filters."
-              : model.view === "decisions"
+              : view === "decisions"
                 ? "No accepted findings yet."
                 : "Nothing left to decide.",
           ],
@@ -79,35 +125,35 @@ const groupList = (
       ],
     );
   }
-  const byRule = model.groupBy === "rule" && model.view === "queue";
-  const keyOf = (finding: ReviewFindingPayload) => (byRule ? finding.ruleId : finding.file);
-  const groups = new Map<string, ReviewFindingPayload[]>();
-  for (const finding of derived.visible) {
-    const key = keyOf(finding);
-    const members = groups.get(key);
-    if (members === undefined) groups.set(key, [finding]);
-    else members.push(finding);
-  }
   return h.div(
-    [h.Class("list"), h.Role("list")],
-    [...groups].map(([key, findings]) =>
-      h.keyed("section")(
-        key,
-        [h.Class("group")],
-        [
-          h.div(
-            [h.Class("group__head")],
-            [
-              h.span([h.Class("group__title")], [byRule ? (findings[0]?.ruleTitle ?? key) : key]),
-              h.span([h.Class("group__count")], [String(findings.length)]),
-            ],
-          ),
-          ...findings.map((finding) => findingRow(finding, state, model, derived, h)),
-        ],
-      ),
+    [h.Class("list")],
+    groups.map((group) =>
+      lazyGroup(group.key, renderGroup, [
+        group,
+        group.findings.some(({ id }) => id === selectedId) ? selectedId : null,
+        statusOf,
+        view,
+        byRule,
+        generatedAt,
+        h,
+      ]),
     ),
   );
 };
+
+const lazyGroupList = createLazy();
+
+const groupList = (state: ReviewStatePayload, model: Model, derived: ReviewDerivation, h: HtmlBuilder<Message>): Html =>
+  lazyGroupList(renderGroupList, [
+    derived.groups,
+    derived.selected?.id ?? null,
+    derived.statusOf,
+    model.view,
+    model.groupBy === "rule" && model.view === "queue",
+    model.query.trim().length > 0 || facetCount(model.facets) > 0,
+    state.generatedAt,
+    h,
+  ]);
 
 export const sidebar = (
   state: ReviewStatePayload,
@@ -138,8 +184,25 @@ export const sidebar = (
         [h.Class("tabs")],
         [tab("queue", "Queue", derived.queueCount, "1"), tab("decisions", "Decisions", derived.decisionsCount, "2")],
       ),
+      ...(state.mode === "review"
+        ? [
+            h.button(
+              [
+                h.Type("button"),
+                h.Class("independent-toggle"),
+                h.AriaPressed(model.independentReview ? "true" : "false"),
+                h.OnClick(Message.ToggledIndependentReview()),
+                h.Title(
+                  "Write your own assessment before revealing existing justifications. Session-only presentation mode.",
+                ),
+              ],
+              [model.independentReview ? "Independent review · on" : "Independent review"],
+            ),
+          ]
+        : []),
       searchBar(state, model, derived, h),
       ...(chips === null ? [] : [chips]),
+      ...(state.mode === "calibration" ? [calibrationPanel(state, model, h)] : []),
       groupList(state, model, derived, h),
     ],
   );

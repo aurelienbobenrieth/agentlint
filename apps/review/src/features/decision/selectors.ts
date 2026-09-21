@@ -1,6 +1,7 @@
-import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
+import { currentCalibrationReport } from "../calibration/selectors";
+import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import type { Model } from "../../model";
-import { draftFor } from "../../shared/selectors";
+import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
 
 /** Accepting an agent proposal without a note records the proposal itself as the reason. */
 export const effectiveReason = (model: Model, finding: ReviewFindingPayload): string => {
@@ -9,19 +10,24 @@ export const effectiveReason = (model: Model, finding: ReviewFindingPayload): st
   return finding.proposal === null ? "" : `Accepted the agent proposal: ${finding.proposal.summary}`;
 };
 
-const carriesFeedback = (model: Model, finding: ReviewFindingPayload): boolean => {
+/** Goes through the effective status: in an attached review a stale local draft must not hand the agent
+ *  a change request the server no longer holds. */
+const carriesFeedback = (model: Model, state: ReviewStatePayload, finding: ReviewFindingPayload): boolean => {
   const draft = draftFor(model, finding.id);
-  if (model.screen._tag === "Reviewing" && model.screen.state.mode === "calibration")
-    return draft.disposition === "accept";
-  return draft.disposition === "request_changes" || draft.note.length > 0 || draft.calibration !== "unreviewed";
+  return (
+    effectiveFindingStatus(finding, state, model) === "changes_requested" ||
+    draft.note.length > 0 ||
+    draft.calibration !== "unreviewed"
+  );
 };
 
+/** The detector's message is labelled as such, never passed off as the reviewer's instruction. */
 const findingInstruction = (finding: ReviewFindingPayload, model: Model): string => {
-  const draft = draftFor(model, finding.id);
-  if (model.screen._tag === "Reviewing" && model.screen.state.mode === "calibration") {
-    return `- ${finding.ruleId} at ${finding.file}:${finding.line}: ${draft.calibration}. ${draft.note}`;
-  }
-  return `- ${finding.ruleId} at ${finding.file}:${finding.line}: ${draft.reason || finding.message}`;
+  const reason = draftFor(model, finding.id).reason.trim();
+  const location = `${finding.ruleId} at ${finding.file}:${finding.line}`;
+  return reason.length > 0
+    ? `- ${location}: ${reason}`
+    : `- ${location}: the reviewer left no instruction. The detector reported: ${finding.message}`;
 };
 
 /** The handoff a coding agent applies: every change request, note, and calibration label. */
@@ -30,8 +36,22 @@ export const agentInstructions = (model: Model): string => {
     return model.screen.feedback.length > 0 ? model.screen.feedback : "No changes were requested.";
   }
   if (model.screen._tag !== "Reviewing") return "No open review instructions.";
-  const lines = model.screen.state.findings
-    .filter((finding) => carriesFeedback(model, finding))
+  if (model.screen.state.mode === "calibration") {
+    const observations = currentCalibrationReport(model.screen.state, model).observations;
+    return observations.length === 0
+      ? "No review feedback has been recorded yet."
+      : [
+          "Refine the rules using these saved calibration labels:",
+          "",
+          ...observations.map(
+            (item) =>
+              `- ${item.ruleId} at ${item.file}: ${item.classification}${item.reason ? ` (${item.reason})` : ""}. ${item.note}`,
+          ),
+        ].join("\n");
+  }
+  const state = model.screen.state;
+  const lines = state.findings
+    .filter((finding) => carriesFeedback(model, state, finding))
     .map((finding) => findingInstruction(finding, model));
   return lines.length === 0
     ? "No review feedback has been recorded yet."
@@ -50,12 +70,17 @@ export const detachedOutput = (model: Model, acceptedAt: string): DetachedOutput
     return { summary: "Review complete.", feedback: "", acceptanceOutput: "" };
   }
   const state = model.screen.state;
-  const feedback = state.findings.some((finding) => carriesFeedback(model, finding)) ? agentInstructions(model) : "";
+  const hasFeedback =
+    state.mode === "calibration"
+      ? currentCalibrationReport(state, model).observations.length > 0
+      : state.findings.some((finding) => carriesFeedback(model, state, finding));
+  const feedback = hasFeedback ? agentInstructions(model) : "";
   const acceptances = state.findings.flatMap((finding) =>
     draftFor(model, finding.id).disposition === "accept" && state.mode === "review"
       ? [
           {
             schemaVersion: 1,
+            type: "accept",
             source: finding.identity.source,
             fingerprint: finding.identity.fingerprint,
             ...(finding.identity.lineageKey === null ? {} : { lineageKey: finding.identity.lineageKey }),
@@ -63,6 +88,7 @@ export const detachedOutput = (model: Model, acceptedAt: string): DetachedOutput
             authority: "human",
             actor: "local-review",
             acceptedAt,
+            reviewedSource: state.sources[finding.file] ?? "",
           },
         ]
       : [],
@@ -80,6 +106,7 @@ export const detachedOutput = (model: Model, acceptedAt: string): DetachedOutput
                   fingerprint: finding.identity.fingerprint,
                   expectedAcceptedAt: finding.acceptance.at,
                   expectedReason: finding.acceptance.reason,
+                  reviewedSource: state.sources[finding.file] ?? "",
                 },
               ]
             : [];

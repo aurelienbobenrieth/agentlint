@@ -109,7 +109,7 @@ const renderFilterPopover = (
                 h.span([h.Class("popover__label")], ["Group by"]),
                 h.div(
                   [h.Class("segment segment--sm")],
-                  (["file", "rule"] as const).map((option) =>
+                  (["file", "rule", "related"] as const).map((option) =>
                     h.button(
                       [
                         h.Type("button"),
@@ -117,7 +117,7 @@ const renderFilterPopover = (
                         h.Class(`segment__item${groupBy === option ? " segment__item--active" : ""}`),
                         h.AriaPressed(groupBy === option ? "true" : "false"),
                       ],
-                      [option === "file" ? "File" : "Rule"],
+                      [option === "file" ? "File" : option === "rule" ? "Rule" : "Related"],
                     ),
                   ),
                 ),

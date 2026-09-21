@@ -1,23 +1,17 @@
+import { postJson, responseMessage } from "../../shared/browser-request";
 import { Effect, Schema as S } from "effect";
 import { Command } from "foldkit";
 
-import { EditorApplicationId, ReviewActionResult } from "@aurelienbbn/agentlint/contract";
+import { EditorApplicationId, ReviewOpenRequest } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
+import { ExportKind } from "../../model";
 
-const decodeActionResult = S.decodeUnknownEffect(ReviewActionResult);
-
-/** Server bodies are `{ ok, message }`; anything else falls back to a caller-provided message. */
-export const responseMessage = (response: Response, fallback: string): Effect.Effect<string> =>
-  Effect.promise(() => response.json()).pipe(
-    Effect.flatMap(decodeActionResult),
-    Effect.map((result) => result.message),
-    Effect.orElseSucceed(() => fallback),
-  );
+const encodeOpenRequest = S.encodeSync(S.fromJsonString(ReviewOpenRequest));
 
 export const CopyText = Command.define("CopyText", {
-  args: { content: S.String, successMessage: S.optional(S.String) },
-  messages: [Message.CompletedUtility],
-  execute: ({ content, successMessage }) =>
+  args: { content: S.String, successMessage: S.optional(S.String), kind: S.optional(ExportKind) },
+  messages: [Message.CompletedUtility, Message.ExportedOutput],
+  execute: ({ content, successMessage, kind }) =>
     Effect.tryPromise(async () => {
       try {
         await navigator.clipboard.writeText(content);
@@ -39,7 +33,11 @@ export const CopyText = Command.define("CopyText", {
         if (!copied) throw new Error("Browser clipboard access is unavailable.");
       }
     }).pipe(
-      Effect.as(Message.CompletedUtility({ message: successMessage ?? "Agent instructions copied.", tone: "success" })),
+      Effect.as(
+        kind === undefined
+          ? Message.CompletedUtility({ message: successMessage ?? "Agent instructions copied.", tone: "success" })
+          : Message.ExportedOutput({ kind, message: successMessage ?? "Agent instructions copied." }),
+      ),
       Effect.catch(() =>
         Effect.succeed(
           Message.CompletedUtility({ message: "Copy failed. Select the text and copy it manually.", tone: "danger" }),
@@ -53,13 +51,7 @@ export const OpenEditor = Command.define("OpenEditor", {
   messages: [Message.CompletedUtility],
   execute: ({ findingId, application }) =>
     Effect.gen(function* () {
-      const response = yield* Effect.promise(() =>
-        fetch("/api/open", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ findingId, application }),
-        }),
-      );
+      const response = yield* postJson("/api/open", encodeOpenRequest({ findingId, application }));
       const message = yield* responseMessage(
         response,
         response.ok ? "Opening the finding…" : "Could not open the finding.",

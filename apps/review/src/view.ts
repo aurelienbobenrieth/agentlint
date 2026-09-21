@@ -12,6 +12,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
     Loading: () => loadingView(h),
     LoadFailed: ({ message }) => loadFailedView(message, h),
     Reviewing: ({ state }) => reviewView(state, model, h),
-    Finished: ({ summary, feedback, acceptanceOutput }) => finishedView(summary, feedback, acceptanceOutput, h),
+    Finished: ({ summary, feedback, acceptanceOutput, calibrationOutput }) =>
+      finishedView(summary, feedback, acceptanceOutput, calibrationOutput, h),
   }),
 });

@@ -1,33 +1,32 @@
+import { BrowserRequestError, errorMessage, postJson, responseMessage } from "../../shared/browser-request";
 import { Effect, Schema as S } from "effect";
 import { Command } from "foldkit";
 
 import { ReviewActionRequest } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { responseMessage } from "../detail/command";
 import { fetchState } from "../session/command";
 
 const encodeActionRequest = S.encodeSync(S.fromJsonString(ReviewActionRequest));
 
-const errorMessage = (value: unknown): string =>
-  value instanceof Error ? value.message : "The review service returned an unexpected response.";
-
-/** Attached sessions: post the decision, then refetch the server truth. */
+/** Attached sessions: post the decision, then refetch the server truth. Once the POST succeeded the
+ *  decision is on disk, so a failing refetch is reported as a stale screen, never as a failed decision. */
 export const SubmitAction = Command.define("SubmitAction", {
   args: { request: ReviewActionRequest },
-  messages: [Message.CompletedAction, Message.FailedAction],
+  messages: [Message.CompletedAction, Message.RecordedActionRefreshFailed, Message.FailedAction],
   execute: ({ request }) =>
     Effect.gen(function* () {
-      const response = yield* Effect.promise(() =>
-        fetch("/api/action", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: encodeActionRequest(request),
-        }),
-      );
+      const response = yield* postJson("/api/action", encodeActionRequest(request));
       const message = yield* responseMessage(response, `Action failed (${response.status}).`);
-      if (!response.ok) return yield* Effect.fail(new Error(message));
-      const state = yield* fetchState;
-      return Message.CompletedAction({ findingId: request.findingId, state, message });
+      if (!response.ok)
+        return yield* Effect.fail(new BrowserRequestError({ operation: "Decision rejected", detail: message }));
+      return yield* fetchState.pipe(
+        Effect.map((state) => Message.CompletedAction({ findingId: request.findingId, state, message })),
+        Effect.catch((error) =>
+          Effect.succeed(
+            Message.RecordedActionRefreshFailed({ findingId: request.findingId, message: errorMessage(error) }),
+          ),
+        ),
+      );
     }).pipe(
       Effect.catch((error) =>
         Effect.succeed(Message.FailedAction({ findingId: request.findingId, message: errorMessage(error) })),

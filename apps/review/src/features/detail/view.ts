@@ -1,3 +1,4 @@
+import { independentHidden } from "./selectors";
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type { EditorApplication, ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
@@ -161,7 +162,7 @@ const acceptanceCard = (
   );
 };
 
-const lineageCard = (reason: string, h: HtmlBuilder<Message>): Html =>
+const lineageCard = (reason: string, invalidationReasons: ReadonlyArray<string>, h: HtmlBuilder<Message>): Html =>
   h.section(
     [h.Class("card card--lineage")],
     [
@@ -169,9 +170,13 @@ const lineageCard = (reason: string, h: HtmlBuilder<Message>): Html =>
         [h.Class("card__head")],
         [
           h.span([h.Class("card__title")], ["Earlier decision on this lineage"]),
-          h.span([h.Class("card__hint")], ["No longer applies — the evidence changed"]),
+          h.span(
+            [h.Class("card__hint")],
+            [invalidationReasons.length > 0 ? "No longer applies" : "No longer applies — the evidence changed"],
+          ),
         ],
       ),
+      ...invalidationReasons.map((invalidation) => h.p([h.Class("card__note")], [invalidation])),
       h.p([h.Class("card__text")], [reason]),
     ],
   );
@@ -383,8 +388,10 @@ export const detail = (
   const status = statusFor(derived, finding);
   const canOpen = finding.editor !== null && state.applications.length > 0;
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
-  const proposal = proposalCard(finding, state, h);
-  const acceptance = status === "accepted" || finding.acceptance !== null ? acceptanceCard(finding, state, h) : null;
+  const hidden = independentHidden(model, finding.id);
+  const proposal = hidden ? null : proposalCard(finding, state, h);
+  const acceptance =
+    !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard(finding, state, h) : null;
   return h.main(
     [h.Class("detail")],
     [
@@ -407,9 +414,14 @@ export const detail = (
                 : []),
             ],
           ),
-          h.h1([], [finding.ruleTitle]),
+          // Keyed and focusable: keyboard navigation focuses the heading, and a fresh element per finding
+          // makes a screen reader announce it even when two findings share a rule title.
+          h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
           h.p([h.Class("detail__lead")], [finding.message]),
           h.p([h.Class("detail__standard")], [finding.guidance.standard]),
+          ...(finding.relatedFiles.length > 1
+            ? [h.p([h.Class("related-files")], ["Review together: ", finding.relatedFiles.join(", ")])]
+            : []),
         ],
       ),
       codePanel(finding.id, renderCodePanel, [
@@ -422,7 +434,12 @@ export const detail = (
       ]),
       ...(proposal === null ? [] : [proposal]),
       ...(acceptance === null ? [] : [acceptance]),
-      ...(finding.lineageReason === null ? [] : [lineageCard(finding.lineageReason, h)]),
+      ...(hidden || finding.lineageReason === null
+        ? []
+        : [lineageCard(finding.lineageReason, finding.invalidationReasons, h)]),
+      ...(model.independentReview && !hidden
+        ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
+        : []),
       decisionForm(state, finding, model, derived, h),
       guidance(finding, model, h),
     ],

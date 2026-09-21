@@ -5,7 +5,7 @@ import { Message } from "../../message";
 import type { Shortcut } from "../../model";
 import type { SubscriptionEntry } from "../../shared/subscription";
 
-export const isEditable = (target: EventTarget | null): boolean =>
+const isEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
@@ -65,7 +65,7 @@ export const keyboard = (entry: SubscriptionEntry) =>
   entry(
     {},
     Subscription.persistent(
-      Subscription.fromEventFilterMap<KeyboardEvent, Message>({
+      Subscription.fromEventFilterMap({
         target: () => window,
         type: "keydown",
         toMessage: (event) => {

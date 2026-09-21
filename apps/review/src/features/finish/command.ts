@@ -1,46 +1,49 @@
+import { BrowserRequestError, errorMessage, postJson, responseJson } from "../../shared/browser-request";
 import { Clock, Effect, Schema as S } from "effect";
 import { Command } from "foldkit";
 
 import { ReviewFinishResult } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
+import { ExportKind } from "../../model";
+import { hasEmbeddedState } from "../session/command";
 
 const decodeFinishResult = S.decodeUnknownEffect(ReviewFinishResult);
-
-const errorMessage = (value: unknown): string =>
-  value instanceof Error ? value.message : "The review service returned an unexpected response.";
 
 export const FinishReview = Command.define("FinishReview", {
   messages: [Message.CompletedFinish, Message.FailedFinish],
   execute: Effect.gen(function* () {
-    const response = yield* Effect.promise(() => fetch("/api/finish", { method: "POST" }));
+    const response = yield* postJson("/api/finish", "{}");
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`Could not finish the review (${response.status}).`));
+      return yield* Effect.fail(
+        new BrowserRequestError({ operation: "Finish rejected", detail: `HTTP ${response.status}` }),
+      );
     }
-    const result = yield* Effect.promise(() => response.json()).pipe(Effect.flatMap(decodeFinishResult));
-    Reflect.set(window, "__AGENTLINT_REVIEW_DIRTY__", false);
+    const result = yield* responseJson(response).pipe(Effect.flatMap(decodeFinishResult));
     return Message.CompletedFinish({
       summary: result.summary,
       feedback: result.feedback,
-      acceptanceOutput: result.acceptanceOutput,
+      acceptanceOutput: "",
     });
   }).pipe(Effect.catch((error) => Effect.succeed(Message.FailedFinish({ message: errorMessage(error) })))),
 });
 
-/** Detached reviews finish in the browser; the server call only lets a local host shut down. */
+/** Detached reviews finish in the browser; the server call only lets a local host shut down. A page that
+ *  embeds its state is a standalone artifact: whatever origin serves it is not a review server, so
+ *  nothing is posted there. */
 export const PrepareDetachedFinish = Command.define("PrepareDetachedFinish", {
   messages: [Message.PreparedDetachedFinish],
   execute: Effect.gen(function* () {
     const milliseconds = yield* Clock.currentTimeMillis;
-    yield* Effect.promise(() => fetch("/api/finish", { method: "POST" })).pipe(Effect.ignore);
-    Reflect.set(window, "__AGENTLINT_REVIEW_DIRTY__", false);
+    if (!hasEmbeddedState()) yield* postJson("/api/finish", "{}").pipe(Effect.ignore);
     return Message.PreparedDetachedFinish({ acceptedAt: new Date(milliseconds).toISOString() });
   }),
 });
 
+/** With a `kind`, success is reported as `ExportedOutput` so the finished screen knows what is still owed. */
 export const DownloadText = Command.define("DownloadText", {
-  args: { content: S.String, filename: S.String },
-  messages: [Message.CompletedUtility],
-  execute: ({ content, filename }) =>
+  args: { content: S.String, filename: S.String, kind: S.optional(ExportKind) },
+  messages: [Message.CompletedUtility, Message.ExportedOutput],
+  execute: ({ content, filename, kind }) =>
     Effect.sync(() => {
       const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
       const anchor = document.createElement("a");
@@ -48,6 +51,9 @@ export const DownloadText = Command.define("DownloadText", {
       anchor.download = filename;
       anchor.click();
       URL.revokeObjectURL(url);
-      return Message.CompletedUtility({ message: `${filename} downloaded.`, tone: "success" });
+      const message = `${filename} downloaded.`;
+      return kind === undefined
+        ? Message.CompletedUtility({ message, tone: "success" })
+        : Message.ExportedOutput({ kind, message });
     }),
 });

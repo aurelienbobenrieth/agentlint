@@ -1,3 +1,4 @@
+import { independentHidden } from "../detail/selectors";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
@@ -21,7 +22,41 @@ export const decisionForm = (
   const status = statusFor(derived, finding);
   const reasonId = `reason-${finding.id}`;
   const empty = draft.reason.trim().length === 0 && finding.proposal === null;
+  const reasonInput = ({ placeholder, label }: { placeholder: string; label: string }): Html =>
+    h.textarea([
+      h.Id(reasonId),
+      h.Class("textarea"),
+      h.Value(draft.reason),
+      h.OnInput((value) => Message.UpdatedReason({ findingId: finding.id, value })),
+      h.Placeholder(placeholder),
+      h.AriaLabel(label),
+      h.Rows(2),
+    ]);
 
+  if (state.mode === "review" && independentHidden(model, finding.id)) {
+    return h.section(
+      [h.Class("decision")],
+      [
+        h.p(
+          [],
+          [
+            "Review the standard and code first. Previous reasons and proposals remain hidden until you write your assessment.",
+          ],
+        ),
+        h.textarea([
+          h.Class("textarea"),
+          h.AriaLabel("Independent assessment"),
+          h.Placeholder("Your assessment of the code against this standard"),
+          h.Rows(3),
+          h.Value(model.independentNotes[finding.id] ?? ""),
+          h.OnInput((value) => Message.UpdatedIndependentNote({ findingId: finding.id, value })),
+        ]),
+        button("Reveal prior decisions", Message.RevealedPriorDecision({ findingId: finding.id }), "secondary", h, {
+          disabled: !model.independentNotes[finding.id]?.trim(),
+        }),
+      ],
+    );
+  }
   if (state.mode === "calibration") {
     const choices = [
       ["applies", "Applies"],
@@ -45,6 +80,32 @@ export const decisionForm = (
             ),
           ),
         ),
+        ...(draft.calibration === "does_not_apply"
+          ? [
+              h.div(
+                [h.Class("calibration-reasons"), h.Role("group"), h.AriaLabel("Why does this not apply?")],
+                (
+                  [
+                    ["scope", "Wrong scope"],
+                    ["detector", "Wrong match"],
+                    ["guidance", "Unclear standard"],
+                    ["valid_exception", "Valid exception"],
+                    ["other", "Other"],
+                  ] as const
+                ).map(([reason, label]) =>
+                  h.button(
+                    [
+                      h.Type("button"),
+                      h.Class(`chip${draft.calibrationReason === reason ? " chip--active" : ""}`),
+                      h.AriaPressed(draft.calibrationReason === reason ? "true" : "false"),
+                      h.OnClick(Message.SelectedCalibrationReason({ findingId: finding.id, reason })),
+                    ],
+                    [label],
+                  ),
+                ),
+              ),
+            ]
+          : []),
         h.textarea([
           h.Id(`note-${finding.id}`),
           h.Class("textarea"),
@@ -62,7 +123,12 @@ export const decisionForm = (
               Message.ClickedSaveCalibration({ findingId: finding.id }),
               "primary",
               h,
-              { disabled: busy || draft.calibration === "unreviewed" },
+              {
+                disabled:
+                  busy ||
+                  draft.calibration === "unreviewed" ||
+                  (draft.calibration === "does_not_apply" && draft.calibrationReason === null),
+              },
             ),
           ],
         ),
@@ -75,15 +141,7 @@ export const decisionForm = (
     return h.section(
       [h.Class("decision")],
       [
-        h.textarea([
-          h.Id(reasonId),
-          h.Class("textarea"),
-          h.Value(draft.reason),
-          h.OnInput((value) => Message.UpdatedReason({ findingId: finding.id, value })),
-          h.Placeholder("What should change?"),
-          h.AriaLabel("Requested correction"),
-          h.Rows(2),
-        ]),
+        reasonInput({ placeholder: "What should change?", label: "Requested correction" }),
         h.div(
           [h.Class("decision__actions")],
           [
@@ -108,19 +166,13 @@ export const decisionForm = (
   return h.section(
     [h.Class("decision")],
     [
-      h.textarea([
-        h.Id(reasonId),
-        h.Class("textarea"),
-        h.Value(draft.reason),
-        h.OnInput((value) => Message.UpdatedReason({ findingId: finding.id, value })),
-        h.Placeholder(
+      reasonInput({
+        placeholder:
           finding.proposal === null
             ? "Why is this acceptable? (required to accept)"
             : "Optional note — accepting records the proposal as the reason",
-        ),
-        h.AriaLabel("Reason or requested change"),
-        h.Rows(2),
-      ]),
+        label: "Reason or requested change",
+      }),
       h.div(
         [h.Class("decision__actions")],
         [

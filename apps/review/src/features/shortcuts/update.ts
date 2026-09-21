@@ -3,10 +3,11 @@ import { evo } from "foldkit/struct";
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
 import type { Model, Shortcut } from "../../model";
-import { deriveReview } from "../../shared/selectors";
+import { deriveReview, draftFor } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { effectiveReason } from "../decision/selectors";
 import { submit } from "../decision/update";
+import { selectFinding } from "../list/selection";
 import { persistChange } from "../session/update";
 import { dismissToast } from "../toasts/update";
 import { BlurActive, FocusElement, RevealSelectedRow, ShowHelp, TogglePopover } from "./command";
@@ -14,11 +15,14 @@ import type { fields } from "./messages";
 
 type Update = (model: Model, message: Message) => UpdateReturn;
 
+const DETAIL_HEADING = ".detail__head h1";
+const HELP_TRIGGER = "#help-trigger";
+
 /** Keyboard shortcuts resolve against what the reviewer currently sees. Several re-enter the root
  *  `update` with the click Message they stand for, so the root passes itself in. */
 const pressedShortcut = (model: Model, action: Shortcut, update: Update): UpdateReturn => {
   if (action === "escape") {
-    if (model.helpOpen) return update(model, Message.ToggledHelp());
+    if (model.helpOpen) return update(model, Message.ClosedHelp());
     return { model, commands: [BlurActive()] };
   }
   if (action === "help") return update(model, Message.ToggledHelp());
@@ -28,15 +32,18 @@ const pressedShortcut = (model: Model, action: Shortcut, update: Update): Update
   const select = (finding: ReviewFindingPayload | undefined): UpdateReturn =>
     finding === undefined
       ? { model }
-      : appendCommands(
-          persistChange(model, (current) => evo(current, { selectedFindingId: () => finding.id })),
-          [RevealSelectedRow()],
+      : // Focus follows the selection so a screen reader announces the finding that is now shown.
+        appendCommands(
+          persistChange(model, (current) => selectFinding(current, finding.id)),
+          [RevealSelectedRow(), FocusElement({ selector: DETAIL_HEADING })],
         );
   const decide = (kind: "accept" | "request_changes"): UpdateReturn => {
     if (selected === undefined || state.mode === "calibration") return { model };
-    if (kind === "accept" && effectiveReason(model, selected).length === 0) {
-      return { model, commands: [FocusElement({ selector: ".decision textarea" })] };
-    }
+    // A decision key acts only on the finding the reviewer selected, never on the first-row fallback,
+    // and not while the selection has just moved on its own: a double tap must not decide the next one.
+    if (selected.id !== model.selectedFindingId || !model.selectionSettled) return { model };
+    const reason = kind === "accept" ? effectiveReason(model, selected) : draftFor(model, selected.id).reason.trim();
+    if (reason.length === 0) return { model, commands: [FocusElement({ selector: ".decision textarea" })] };
     return submit(model, kind, selected.id);
   };
   switch (action) {
@@ -73,11 +80,17 @@ const pressedShortcut = (model: Model, action: Shortcut, update: Update): Update
   }
 };
 
+/** Idempotent: Escape reaches us both as a keydown and as the dialog's native `cancel`. The dialog leaves
+ *  the DOM on close, so focus returns to its trigger instead of falling to `<body>`. */
+const closeHelp = (model: Model): UpdateReturn =>
+  model.helpOpen
+    ? { model: evo(model, { helpOpen: () => false }), commands: [FocusElement({ selector: HELP_TRIGGER })] }
+    : { model };
+
 export const cases = (model: Model, update: Update): Handlers<keyof typeof fields> => ({
   PressedShortcut: ({ action }) => pressedShortcut(model, action, update),
-  ToggledHelp: () => ({
-    model: evo(model, { helpOpen: (open) => !open }),
-    commands: model.helpOpen ? [] : [ShowHelp()],
-  }),
+  ToggledHelp: () =>
+    model.helpOpen ? closeHelp(model) : { model: evo(model, { helpOpen: () => true }), commands: [ShowHelp()] },
+  ClosedHelp: () => closeHelp(model),
   PerformedDomEffect: () => ({ model }),
 });
