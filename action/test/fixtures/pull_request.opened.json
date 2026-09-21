@@ -1,0 +1,27 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "state": "open",
+    "title": "Vendor the legacy formula parser",
+    "user": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" },
+    "draft": false,
+    "head": {
+      "ref": "feature/gate",
+      "sha": "abcdef1234567890abcdef1234567890abcdef12",
+      "repo": { "full_name": "aurelienbobenrieth/agentlint", "fork": false }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "repo": { "full_name": "aurelienbobenrieth/agentlint" }
+    }
+  },
+  "repository": {
+    "full_name": "aurelienbobenrieth/agentlint",
+    "name": "agentlint",
+    "owner": { "login": "aurelienbobenrieth" }
+  },
+  "sender": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreWorkspaces": ["examples/*"],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.{mjs,js}"],
+      "ignoreDependencies": ["npm"]
+    },
+    "packages/agentlint": {
+      "entry": ["scripts/*.mjs", "skills/**/*.mjs"],
+      "ignore": ["src/__fixtures__/**"],
+      "ignoreDependencies": ["@effect/platform-node-shared", "@tanstack/intent", "tree-sitter-wasms"]
+    },
+    "action": {
+      "entry": ["test/fixtures/cli-stub.mjs"]
+    }
+  }
+}

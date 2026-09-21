@@ -1,0 +1,106 @@
+{
+  "name": "@aurelienbbn/agentlint",
+  "version": "0.1.5",
+  "description": "Deterministic findings and explicit judgment gates for coding agents",
+  "keywords": [
+    "agent",
+    "ai",
+    "code-review",
+    "guardrails",
+    "judgment",
+    "tanstack-intent",
+    "tree-sitter"
+  ],
+  "homepage": "https://github.com/aurelienbobenrieth/agentlint/tree/main/packages/agentlint",
+  "bugs": {
+    "url": "https://github.com/aurelienbobenrieth/agentlint/issues"
+  },
+  "license": "MIT",
+  "author": "Aurelien Bobenrieth",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aurelienbobenrieth/agentlint",
+    "directory": "packages/agentlint"
+  },
+  "bin": {
+    "agentlint": "dist/bin.mjs"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "dist",
+    "skills",
+    "!skills/_artifacts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.mts",
+      "import": "./dist/testing.mjs"
+    },
+    "./contract": {
+      "source": "./src/features/review/contract.ts",
+      "types": "./dist/contract.d.mts",
+      "import": "./dist/contract.mjs"
+    },
+    "./calibration": {
+      "source": "./src/features/calibration/report.ts",
+      "types": "./dist/calibration.d.mts",
+      "import": "./dist/calibration.mjs"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "import": "./dist/index.mjs"
+      },
+      "./testing": {
+        "types": "./dist/testing.d.mts",
+        "import": "./dist/testing.mjs"
+      },
+      "./contract": {
+        "types": "./dist/contract.d.mts",
+        "import": "./dist/contract.mjs"
+      },
+      "./calibration": {
+        "types": "./dist/calibration.d.mts",
+        "import": "./dist/calibration.mjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown && pnpm --filter @agentlint/review build",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --coverage.include=src/**/*.ts --coverage.exclude=**/*.test.ts --coverage.exclude=src/__fixtures__/**"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "effect": "catalog:",
+    "jiti": "2.7.0",
+    "picomatch": "4.0.7",
+    "web-tree-sitter": "0.25.10"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@tanstack/intent": "catalog:",
+    "@types/node": "26.6.1",
+    "@types/picomatch": "4.0.3",
+    "@vitest/coverage-v8": "5.0.1",
+    "tree-sitter-wasms": "0.1.13",
+    "tsdown": "0.23.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

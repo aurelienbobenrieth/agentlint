@@ -1,0 +1,31 @@
+{
+  "action": "created",
+  "comment": {
+    "id": 9002,
+    "in_reply_to_id": 8001,
+    "path": "src/vendor/legacy-parser.js",
+    "line": 3,
+    "body": "/agentlint approve The formula surface is fixed by the customer allowlist upstream",
+    "user": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" }
+  },
+  "pull_request": {
+    "number": 42,
+    "state": "open",
+    "head": {
+      "ref": "feature/gate",
+      "sha": "abcdef1234567890abcdef1234567890abcdef12",
+      "repo": { "full_name": "aurelienbobenrieth/agentlint", "fork": false }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "repo": { "full_name": "aurelienbobenrieth/agentlint" }
+    }
+  },
+  "repository": {
+    "full_name": "aurelienbobenrieth/agentlint",
+    "name": "agentlint",
+    "owner": { "login": "aurelienbobenrieth" }
+  },
+  "sender": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" }
+}

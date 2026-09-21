@@ -1,0 +1,5 @@
+---
+"@aurelienbbn/agentlint": patch
+---
+
+Upgrade the review SPA to FoldKit 0.154 (`defineMessageUnion`, `defineTaggedUnion`, record-shaped update returns) and share the review wire contract instead of mirroring it: `packages/agentlint/src/features/review/contract.ts` is now schema-first (`ReviewStatePayload`, `ReviewActionRequest`, `ReviewFinishResult`, `ReviewArtifact`, and friends are Effect Schemas) and is published as the `@aurelienbbn/agentlint/contract` subpath, which the SPA decodes every server response with. The SPA is reorganised by feature (session, list, filters, detail, decision, shortcuts, toasts, finish, shell) around one Model, Message, update, and view. Rendering derives the finding status map, visible list, and facet counts once per model change, memoises the filter popover and per-finding code panel, keys toast, row, group, and code-block elements for stable DOM diffs, highlights each source file once instead of per line per render, and debounces localStorage writes while typing a reason, note, or search query.
