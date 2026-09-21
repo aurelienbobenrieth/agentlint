@@ -9,7 +9,6 @@ export class CheckCommand extends Schema.TaggedClass<CheckCommand>()("CheckComma
   rules: Schema.Array(Schema.String),
   base: Schema.UndefinedOr(Schema.String),
   files: Schema.Array(Schema.String),
-  format: Schema.Literals(["text", "jsonl"]),
 }) {}
 
 export const CheckLineage = Schema.Struct({

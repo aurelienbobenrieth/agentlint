@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixtureHunks } from "./change-hunks.js";
-import { normalizeChangeFixture } from "./rule-tester.js";
+import { normalizeChangeFixture } from "./change-fixture.js";
 
 describe("normalized fixture evidence", () => {
   it("leaves an unchanged destructive operation as context", () => {

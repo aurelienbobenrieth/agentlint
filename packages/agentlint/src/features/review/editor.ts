@@ -1,12 +1,14 @@
 /** Safe, allowlisted launch adapters for live review sessions. @module @since 0.2.0 */
 
-import { execFile } from "node:child_process";
-import { posix, win32 } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, posix, relative, win32 } from "node:path";
 import type { EditorApplication, EditorApplicationId } from "./contract.js";
 
 interface Invocation {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
+  readonly timeoutMs?: number;
 }
 
 type Runner = (invocation: Invocation) => Promise<string>;
@@ -60,12 +62,26 @@ const APPLICATIONS: ReadonlyArray<ApplicationSpec> = [
  * `explorer.exe` reports exit code 1 even when it opened the target, so only a
  * failed spawn counts as an error there.
  */
-const run: Runner = ({ command, args }) =>
+const run: Runner = ({ command, args, timeoutMs }) =>
   new Promise((settle, reject) => {
-    execFile(command, [...args], { windowsHide: true }, (error, stdout) => {
+    execFile(command, [...args], { windowsHide: true, timeout: timeoutMs }, (error, stdout) => {
       const spawnFailed = error !== null && "code" in error && error.code === "ENOENT";
       if (error && (spawnFailed || !command.endsWith("explorer.exe"))) reject(error);
       else settle(stdout);
+    });
+  });
+
+/**
+ * Start an application without waiting for it. A launcher that is the editor binary itself lives as long as the editor,
+ * so the request settles once the process started, and the editor survives the review server.
+ */
+const launch: Runner = ({ command, args }) =>
+  new Promise((settle, reject) => {
+    const child = spawn(command, [...args], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      settle("");
     });
   });
 
@@ -126,10 +142,28 @@ export function editorInvocation(
       : { command: "xdg-open", args: [uri] };
 }
 
+/**
+ * `where.exe <name>` searches the current directory, which is the reviewed repository, before PATH.
+ * The `$PATH:<name>` form searches PATH only.
+ */
+function lookupInvocation(name: string, platform: string): Invocation {
+  return platform === "win32" ? { command: "where.exe", args: [`$PATH:${name}`] } : { command: "which", args: [name] };
+}
+
+/** A launcher inside the reviewed repository is content under review, never an installed editor. */
+async function isOutsideRepository(launcher: string, repository: string): Promise<boolean> {
+  try {
+    const fromRepository = relative(await realpath(repository), await realpath(launcher));
+    return fromRepository.split(/[\\/]/u)[0] === ".." || isAbsolute(fromRepository);
+  } catch {
+    return false;
+  }
+}
+
 function detectionInvocation(application: ApplicationSpec, platform: string): Invocation | undefined {
   if (application.id === "explorer") {
     return platform === "win32"
-      ? { command: "where.exe", args: ["explorer.exe"] }
+      ? lookupInvocation("explorer.exe", platform)
       : platform === "darwin"
         ? { command: "which", args: ["open"] }
         : { command: "which", args: ["xdg-open"] };
@@ -161,6 +195,7 @@ export function launcherFromLookup(
 export async function detectEditorApplications(
   platform: string,
   runner: Runner = run,
+  repository?: string,
 ): Promise<ReadonlyArray<EditorApplication>> {
   launchers.clear();
   const detected = await Promise.all(
@@ -169,7 +204,7 @@ export async function detectEditorApplications(
       if (!invocation) return undefined;
       let viaScheme = false;
       try {
-        const output = await runner(invocation);
+        const output = await runner({ ...invocation, timeoutMs: 5_000 });
         viaScheme = !(platform === "linux" && application.id !== "explorer" && output.trim() === "");
       } catch {
         viaScheme = false;
@@ -177,13 +212,9 @@ export async function detectEditorApplications(
       let viaCli = false;
       if (application.cli) {
         try {
-          const output = await runner(
-            platform === "win32"
-              ? { command: "where.exe", args: [application.cli] }
-              : { command: "which", args: [application.cli] },
-          );
+          const output = await runner({ ...lookupInvocation(application.cli, platform), timeoutMs: 5_000 });
           const launcher = launcherFromLookup(application, platform, output);
-          if (launcher) {
+          if (launcher && (repository === undefined || (await isOutsideRepository(launcher, repository)))) {
             launchers.set(application.id, launcher);
             viaCli = true;
           }
@@ -205,7 +236,7 @@ export async function openInEditor(
   file: string,
   line: number,
   column: number,
-  runner: Runner = run,
+  runner: Runner = launch,
 ): Promise<void> {
   await runner(editorInvocation(application, platform, file, line, column, launchers.get(application)));
 }

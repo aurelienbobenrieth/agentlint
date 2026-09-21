@@ -26,6 +26,8 @@
     "agentlint": "dist/bin.mjs"
   },
   "files": [
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
     "dist",
     "skills",
     "!skills/_artifacts"
@@ -44,6 +46,11 @@
       "source": "./src/features/review/contract.ts",
       "types": "./dist/contract.d.mts",
       "import": "./dist/contract.mjs"
+    },
+    "./calibration": {
+      "source": "./src/features/calibration/report.ts",
+      "types": "./dist/calibration.d.mts",
+      "import": "./dist/calibration.mjs"
     }
   },
   "publishConfig": {
@@ -59,15 +66,20 @@
       "./contract": {
         "types": "./dist/contract.d.mts",
         "import": "./dist/contract.mjs"
+      },
+      "./calibration": {
+        "types": "./dist/calibration.d.mts",
+        "import": "./dist/calibration.mjs"
       }
     }
   },
   "scripts": {
     "build": "tsdown && pnpm --filter @agentlint/review build",
     "prepack": "pnpm run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --coverage.include=src/**/*.ts --coverage.exclude=**/*.test.ts --coverage.exclude=src/__fixtures__/**"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
@@ -80,10 +92,11 @@
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@tanstack/intent": "catalog:",
-    "@types/node": "26.4.0",
+    "@types/node": "26.6.1",
     "@types/picomatch": "4.0.3",
+    "@vitest/coverage-v8": "5.0.1",
     "tree-sitter-wasms": "0.1.13",
-    "tsdown": "0.22.14",
+    "tsdown": "0.23.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

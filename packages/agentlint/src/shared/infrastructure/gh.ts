@@ -25,14 +25,17 @@ export class GhError extends Schema.TaggedError<GhError>()("agentlint/GhError", 
   }
 }
 
+/** An artifact download is the longest call. A stalled `gh` must not hold the command open. */
+const GH_TIMEOUT_MS = 120_000;
+
 const isMissingBinary = (error: { readonly code?: string | number | undefined }): boolean => error.code === "ENOENT";
 
 const ghCommand = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<Buffer, GhError> =>
-  Effect.callback<Buffer, GhError>((resume) => {
+  Effect.callback<Buffer, GhError>((resume, signal) => {
     execFile(
       "gh",
       [...args],
-      { cwd, encoding: "buffer", maxBuffer: 256 * 1024 * 1024, windowsHide: true },
+      { cwd, encoding: "buffer", maxBuffer: 256 * 1024 * 1024, windowsHide: true, signal, timeout: GH_TIMEOUT_MS },
       (error, stdout, stderr) => {
         if (error) {
           const detail = stderr.toString("utf8").trim() || error.message;

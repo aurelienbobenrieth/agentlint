@@ -6,7 +6,7 @@
  * agent's work next to the evidence instead of rediscovering it.
  *
  * @module
- * @since 0.3.0
+ * @since 0.2.0
  */
 
 import { Schema } from "effect";

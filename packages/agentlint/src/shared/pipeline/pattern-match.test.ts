@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { defineRule, type RuleMatch } from "../../domain/rule.js";
-import { testRuleFixtures, testRuleOnSource } from "../../testing.js";
+import { testRuleFixtures, testRuleOnSource, testRuleOnSources } from "../../testing.js";
 
-const patternRule = (match: RuleMatch) =>
+const patternRule = (match: RuleMatch | ReadonlyArray<RuleMatch>) =>
   defineRule({
     lifecycle: "state",
     standard: { id: "test/standard", revision: 1, title: "Test standard", guidance: "Test standard." },
@@ -74,5 +74,92 @@ describe("structural pattern matching", () => {
     const report = await testRuleFixtures(rule);
     expect(report.total).toBe(3);
     expect(report.failures).toMatchObject([{ expectation: "mustReport", index: 1 }]);
+  });
+});
+
+describe("deep and long code", () => {
+  it("matches a 3000-term binary expression without exhausting the stack", async () => {
+    const sum = Array.from({ length: 3000 }, () => "'a'").join(" + ");
+    const source = `const s = ${sum};
+danger(s);
+same([${sum}, ${sum}]);`;
+    const run = (match: RuleMatch) => testRuleOnSource(patternRule(match), source, "deep.ts");
+
+    const calls = await run({ pattern: "danger($A)", where: { notHas: "missing" }, message: "danger" });
+    expect(calls.map((finding) => finding.line)).toEqual([2]);
+
+    const constrained = await run({
+      pattern: "const s = $A",
+      where: { has: "'a'", notHas: "missing" },
+      message: "sum",
+    });
+    expect(constrained).toHaveLength(1);
+
+    const sums = await run({ pattern: "$A + $B", message: "sum" });
+    expect(sums).toHaveLength(2999 * 3);
+    expect(new Set(sums.map((finding) => finding.fingerprint.digest)).size).toBe(sums.length);
+
+    expect(await run({ pattern: "[$A, $A]", message: "same" })).toHaveLength(1);
+  });
+
+  it("does not grow cubically with nesting: a 400-link call chain with a constraint stays far below a second", async () => {
+    const source = `x${".f()".repeat(400)};`;
+    const rule = patternRule({ pattern: "$F($$$ARGS)", where: { notHas: "missing" }, message: "call" });
+    await testRuleOnSource(rule, "warm.up()", "chain.ts");
+    const started = performance.now();
+    const findings = await testRuleOnSource(rule, source, "chain.ts");
+    // Generous for a slow machine. The cubic implementation took over three seconds here.
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect(findings).toHaveLength(400);
+  });
+});
+
+describe("bindings that cover several languages", () => {
+  const evalRule = patternRule({ pattern: "eval($$$ARGS)", where: { notHas: "safe" }, message: "eval" });
+
+  it("applies a pattern only to the files whose grammar can read it", async () => {
+    const findings = await testRuleOnSources(evalRule, [
+      ["package.json", '{ "name": "x" }'],
+      ["src/run.ts", "eval(input as string)"],
+      ["legacy.js", "eval(input)"],
+    ]);
+    expect(findings.map((finding) => finding.file).toSorted()).toEqual(["legacy.js", "src/run.ts"]);
+
+    const typed = patternRule({ pattern: "$A as unknown as $T", message: "double cast" });
+    const casts = await testRuleOnSources(typed, [
+      ["legacy.js", "run(input)"],
+      ["src/run.ts", "run(input as unknown as Request)"],
+    ]);
+    expect(casts.map((finding) => finding.file)).toEqual(["src/run.ts"]);
+  });
+
+  it("applies each match of a rule where it compiles", async () => {
+    const mixed = patternRule([
+      { pattern: '{ "private": false }', message: "public package" },
+      { query: "(call_expression function: (identifier) @fn) @match", message: "call @fn" },
+    ]);
+    const findings = await testRuleOnSources(mixed, [
+      ["package.json", '{ "private": false }'],
+      ["src/run.ts", "run()"],
+    ]);
+    expect(findings.map((finding) => `${finding.file}: ${finding.message}`).toSorted()).toEqual([
+      "package.json: public package",
+      "src/run.ts: call run",
+    ]);
+  });
+
+  it("still fails when no grammar in scope can read the pattern", async () => {
+    await expect(
+      testRuleOnSources(evalRule, [
+        ["package.json", "{}"],
+        ["tsconfig.json", "{}"],
+      ]),
+    ).rejects.toThrow("pattern does not parse as json");
+    await expect(
+      testRuleOnSources(patternRule({ pattern: "eval(((", message: "x" }), [
+        ["package.json", "{}"],
+        ["src/run.ts", "run()"],
+      ]),
+    ).rejects.toThrow("pattern does not parse");
   });
 });

@@ -31,6 +31,7 @@ export type SelectorCachePayload = Schema.Schema.Type<typeof SelectorCachePayloa
 
 const CACHE_PATH = [".agentlint", ".cache", "last-check.json"] as const;
 const PayloadDecoder = Schema.decodeUnknownSync(SelectorCachePayload);
+const decodePayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SelectorCachePayload));
 
 export class SelectorCache extends Context.Service<
   SelectorCache,
@@ -55,7 +56,7 @@ export class SelectorCache extends Context.Service<
             Effect.flatMap((exists) => {
               if (!exists) return Effect.succeed({ version: 1 as const, findings: [] });
               return fs.readFileString(cachePath).pipe(
-                Effect.map((content) => PayloadDecoder(JSON.parse(content))),
+                Effect.flatMap(decodePayload),
                 Effect.orElseSucceed(() => ({ version: 1 as const, findings: [] })),
               );
             }),

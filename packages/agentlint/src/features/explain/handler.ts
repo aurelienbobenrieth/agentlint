@@ -1,7 +1,7 @@
 /** Finding and rule explanation handler. @module @since 0.2.0 */
 
 import { Effect } from "effect";
-import { findLineage, invalidationReasons, findingState } from "../../domain/acceptance.js";
+import { findLineage, invalidationReasons, lookupAcceptance } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
 import type { AgentlintRule } from "../../domain/rule.js";
@@ -66,7 +66,7 @@ export const explainHandler = Effect.fn("explainHandler")(function* (command: Ex
   const rule = config.rulesById.get(finding.ruleId);
   if (!rule) return new ExplainResult({ output: `Unknown rule: ${finding.ruleId}`, found: false });
   const snapshot = yield* (yield* AcceptanceStore).read();
-  const state = findingState(finding, snapshot.records);
+  const state = lookupAcceptance(snapshot, finding) ? "accepted" : "unresolved";
   const lineage = findLineage(snapshot.records, finding);
   const lines = [`# ${rule.standard.title}`, "", `${finding.file}:${finding.line}:${finding.column}`, ""];
   lines.push(finding.message, "", "```", finding.sourceSnippet, "```", "");

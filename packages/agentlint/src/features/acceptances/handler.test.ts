@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Env } from "../../config/env.js";
-import { AcceptanceRecord, AcceptanceRevocation, type AcceptanceDecision } from "../../domain/acceptance.js";
+import { AcceptanceImport, AcceptanceRevocation, type AcceptanceDecision } from "../../domain/acceptance.js";
 import { normalizeConfig } from "../../domain/config.js";
 import { Fingerprint } from "../../domain/fingerprint.js";
 import type { FindingRecord } from "../../domain/finding.js";
@@ -60,7 +60,7 @@ const TestLayer = Layer.mergeAll(TestConfig, TestGit, Parser.layer, AcceptanceSt
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(TestEnv),
 );
-const run = <A, E>(effect: Effect.Effect<A, E, Layer.Layer.Success<typeof TestLayer>>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof TestLayer>>) =>
   Effect.runPromise(effect.pipe(Effect.provide(TestLayer)));
 
 const writeSource = (source: string) =>
@@ -76,11 +76,12 @@ const cleanup = Effect.gen(function* () {
 const storedRecords = Effect.gen(function* () {
   return (yield* (yield* AcceptanceStore).read()).records;
 });
-const checkAll = checkHandler(new CheckCommand({ all: true, rules: [], base: undefined, files: [], format: "text" }));
+const checkAll = checkHandler(new CheckCommand({ all: true, rules: [], base: undefined, files: [] }));
 
 function decision(finding: FindingRecord, authority: "agent" | "human", digest = finding.fingerprint.digest) {
-  return new AcceptanceRecord({
+  return new AcceptanceImport({
     schemaVersion: 1,
+    type: "accept",
     source: finding.source,
     fingerprint: new Fingerprint({ ...finding.fingerprint, digest }),
     lineageKey: finding.lineageKey,
@@ -88,6 +89,7 @@ function decision(finding: FindingRecord, authority: "agent" | "human", digest =
     authority,
     actor: "human:reviewer",
     acceptedAt: "2026-08-20T10:00:00.000Z",
+    reviewedSource: 'danger("x")\nrisky("y")\n',
   });
 }
 
@@ -113,6 +115,7 @@ describe("acceptances import", () => {
       fingerprint: accepted.fingerprint,
       expectedAcceptedAt: accepted.acceptedAt,
       expectedReason: accepted.reason,
+      reviewedSource: accepted.reviewedSource,
     });
     expect((await run(importCommand([revoked]))).exitCode).toBe(0);
     expect(await run(storedRecords)).toEqual([]);
@@ -162,6 +165,17 @@ describe("acceptances import", () => {
     expect(result.exitCode).toBe(2);
     expect(result.importedCount).toBe(0);
     expect(result.rejectedCount).toBe(1);
+    expect(await run(storedRecords)).toEqual([]);
+  });
+
+  it("rejects a decision whose displayed source differs from the current evidence", async () => {
+    const check = await run(checkAll);
+    const danger = check.unresolved.find((finding) => finding.ruleId === "security/danger");
+    if (!danger) throw new Error("expected the agent-authority finding");
+
+    const tampered = new AcceptanceImport({ ...decision(danger, "human"), reviewedSource: 'safe("x")\n' });
+    const result = await run(importCommand([tampered]));
+    expect(result).toMatchObject({ exitCode: 2, importedCount: 0, rejectedCount: 1 });
     expect(await run(storedRecords)).toEqual([]);
   });
 });

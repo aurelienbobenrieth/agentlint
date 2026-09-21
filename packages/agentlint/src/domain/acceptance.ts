@@ -6,6 +6,7 @@
  */
 
 import { Schema } from "effect";
+import { compareStrings } from "./compare.js";
 import type { FindingRecord } from "./finding.js";
 import {
   Fingerprint,
@@ -23,19 +24,44 @@ export type Authority = RuleAuthority;
 
 const NonEmptyString = Schema.String.check(Schema.isPattern(/\S/));
 
+/** The UTC form `Date#toISOString` writes. Lineage orders records by this string, so no other spelling is accepted. */
+const IsoTimestamp = Schema.String.check(
+  Schema.makeFilter((value) => {
+    const time = Date.parse(value);
+    return (
+      (!Number.isNaN(time) && new Date(time).toISOString() === value) ||
+      "Expected an ISO-8601 UTC timestamp such as 2026-01-31T12:00:00.000Z"
+    );
+  }),
+);
+
 /** The only persisted finding outcome. */
 export class AcceptanceRecord extends Schema.Class<AcceptanceRecord>("AcceptanceRecord")({
   schemaVersion: Schema.Literal(1),
   source: FindingSource,
   fingerprint: Fingerprint,
-  lineageKey: Schema.UndefinedOr(Schema.String),
+  lineageKey: Schema.optional(Schema.String),
   reason: NonEmptyString,
   authority: Authority,
-  actor: Schema.UndefinedOr(Schema.String),
-  acceptedAt: NonEmptyString,
+  actor: Schema.optional(Schema.String),
+  acceptedAt: IsoTimestamp,
 }) {}
 
-/** An imported revocation targets the reviewed decision, never a later replacement. Not persisted in the store. */
+/** A detached acceptance carries the exact source the reviewer saw. It is verified at import and never persisted. */
+export class AcceptanceImport extends Schema.Class<AcceptanceImport>("AcceptanceImport")({
+  schemaVersion: Schema.Literal(1),
+  type: Schema.Literal("accept"),
+  source: FindingSource,
+  fingerprint: Fingerprint,
+  lineageKey: Schema.optional(Schema.String),
+  reason: NonEmptyString,
+  authority: Authority,
+  actor: Schema.optional(Schema.String),
+  acceptedAt: IsoTimestamp,
+  reviewedSource: Schema.String,
+}) {}
+
+/** An imported revocation targets both the reviewed source and decision, never a later replacement. */
 export class AcceptanceRevocation extends Schema.Class<AcceptanceRevocation>("AcceptanceRevocation")({
   schemaVersion: Schema.Literal(1),
   type: Schema.Literal("revoke"),
@@ -43,9 +69,10 @@ export class AcceptanceRevocation extends Schema.Class<AcceptanceRevocation>("Ac
   fingerprint: Fingerprint,
   expectedAcceptedAt: NonEmptyString,
   expectedReason: NonEmptyString,
+  reviewedSource: Schema.String,
 }) {}
 
-export const AcceptanceDecision = Schema.Union([AcceptanceRecord, AcceptanceRevocation]);
+export const AcceptanceDecision = Schema.Union([AcceptanceImport, AcceptanceRevocation]);
 export type AcceptanceDecision = Schema.Schema.Type<typeof AcceptanceDecision>;
 
 /** Explain compatibility changes without claiming to reconstruct historical source. */
@@ -71,10 +98,6 @@ export function invalidationReasons(prior: AcceptanceRecord, current: FindingRec
   return reasons;
 }
 
-/** Gate state is derived, not persisted. */
-export const FindingState = Schema.Literals(["unresolved", "accepted"]);
-export type FindingState = Schema.Schema.Type<typeof FindingState>;
-
 /** Exact persisted identity key. */
 export function acceptanceKey(record: Pick<AcceptanceRecord, "source" | "fingerprint">): string {
   return findingIdentityKey(record.source, record.fingerprint);
@@ -99,9 +122,26 @@ export function acceptanceSatisfies(
   );
 }
 
-/** Resolve binary gate state from a current acceptance collection. */
-export function findingState(finding: FindingRecord, records: ReadonlyArray<AcceptanceRecord>): FindingState {
-  return records.some((record) => acceptanceSatisfies(record, finding)) ? "accepted" : "unresolved";
+/** Current records with their exact identity index. */
+export interface AcceptanceSnapshot {
+  readonly records: ReadonlyArray<AcceptanceRecord>;
+  readonly byKey: ReadonlyMap<string, AcceptanceRecord>;
+}
+
+export function acceptanceSnapshot(records: ReadonlyArray<AcceptanceRecord>): AcceptanceSnapshot {
+  return { records, byKey: new Map(records.map((record) => [acceptanceKey(record), record])) };
+}
+
+/**
+ * Find the acceptance that opens the gate for `finding`, using the exact
+ * identity index. Equivalent to scanning `records` with `acceptanceSatisfies`.
+ */
+export function lookupAcceptance(
+  acceptances: AcceptanceSnapshot,
+  finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
+): AcceptanceRecord | undefined {
+  const record = acceptances.byKey.get(acceptanceKey(finding));
+  return record !== undefined && acceptanceSatisfies(record, finding) ? record : undefined;
 }
 
 function isRelated(record: AcceptanceRecord, finding: FindingRecord): boolean {
@@ -121,16 +161,5 @@ export function findLineage(
 ): AcceptanceRecord | undefined {
   return records
     .filter((record) => isRelated(record, finding) && !acceptanceSatisfies(record, finding))
-    .toSorted((left, right) => right.acceptedAt.localeCompare(left.acceptedAt))[0];
-}
-
-/** Test whether two records refer to the same detector-owned lineage. */
-export function sameLineage(left: AcceptanceRecord, right: AcceptanceRecord): boolean {
-  return (
-    left.lineageKey !== undefined &&
-    left.lineageKey === right.lineageKey &&
-    left.source.standardId === right.source.standardId &&
-    left.source.detectorId === right.source.detectorId &&
-    left.source.bindingId === right.source.bindingId
-  );
+    .toSorted((left, right) => compareStrings(right.acceptedAt, left.acceptedAt))[0];
 }

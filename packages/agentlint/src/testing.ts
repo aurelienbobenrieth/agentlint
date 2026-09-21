@@ -1,3 +1,5 @@
+import { normalizeChangeFixture } from "./shared/pipeline/change-fixture.js";
+import type { FixtureReport } from "./domain/fixture-report.js";
 /**
  * Promise-based testing helpers for rule and plugin authors.
  *
@@ -23,17 +25,10 @@ import { Env } from "./config/env.js";
 import type { FindingRecord } from "./domain/finding.js";
 import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule.js";
 import { Parser } from "./shared/infrastructure/parser.js";
-import {
-  normalizeChangeFixture,
-  runRuleFixtures,
-  runRuleOnChange,
-  runRuleOnSource,
-  runRuleOnSources,
-  type FixtureReport,
-} from "./shared/pipeline/rule-tester.js";
+import { runRuleFixtures, runRuleOnChange, runRuleOnSource, runRuleOnSources } from "./shared/pipeline/rule-tester.js";
 
 export { normalizeChangeFixture };
-export type { FixtureFailure, FixtureReport } from "./shared/pipeline/rule-tester.js";
+export type { FixtureFailure, FixtureReport } from "./domain/fixture-report.js";
 
 const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
 

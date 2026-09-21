@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defineRule } from "../../domain/rule.js";
 import { testRuleFixtures, testRuleOnChange } from "../../testing.js";
-import { normalizeChangeFixture } from "./rule-tester.js";
+import { normalizeChangeFixture } from "./change-fixture.js";
 
 const standard = {
   id: "database/safe-change",
@@ -11,6 +11,30 @@ const standard = {
 } as const;
 
 describe("rule fixtures", () => {
+  it("dispatches JSON document visitors", async () => {
+    const rule = defineRule({
+      lifecycle: "state",
+      standard,
+      binding: { id: "json/document", authority: "agent", include: ["**/*.json"] },
+      detector: {
+        id: "json/document",
+        version: 1,
+        scan: "file",
+        createOnce(context) {
+          return {
+            document(node) {
+              if (node.text.includes('"review"')) context.report({ node, message: "Review JSON contract." });
+            },
+          };
+        },
+        fixtures: {
+          mustReport: [{ file: "config.json", source: '{"review":true}' }],
+          mustStaySilent: [{ file: "config.json", source: '{"safe":true}' }],
+        },
+      },
+    });
+    await expect(testRuleFixtures(rule)).resolves.toMatchObject({ total: 2, failures: [] });
+  });
   it("checks state mustReport and mustStaySilent fixtures", async () => {
     const rule = defineRule({
       lifecycle: "state",
@@ -84,7 +108,6 @@ describe("rule fixtures", () => {
       lifecycle: "change",
       authority: "human",
       file: "migration.sql",
-      absolutePath: "migration.sql",
       message: "Review data removal.",
       sourceSnippet: "ALTER TABLE users DROP COLUMN email;",
     });

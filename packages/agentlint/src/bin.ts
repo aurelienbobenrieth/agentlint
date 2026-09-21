@@ -16,6 +16,10 @@ import { checkHandler } from "./features/check/handler.js";
 import { CheckCommand, type CheckResult } from "./features/check/request.js";
 import { explainHandler } from "./features/explain/handler.js";
 import { ExplainCommand } from "./features/explain/request.js";
+import { nextHandler } from "./features/next/handler.js";
+import { NextCommand } from "./features/next/request.js";
+import { calibrationHandler } from "./features/calibration/handler.js";
+import { CalibrationCommand } from "./features/calibration/request.js";
 import { initHandler } from "./features/init/handler.js";
 import { InitCommand } from "./features/init/request.js";
 import { prHandler } from "./features/pr/handler.js";
@@ -45,7 +49,7 @@ const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage or c
 // ---------------------------------------------------------------------------
 
 const optionalString = (name: string, metavar: string, description: string) =>
-  Flag.string(name).pipe(
+  Flag.String(name).pipe(
     Flag.withMetavar(metavar),
     Flag.withDescription(description),
     Flag.optional,
@@ -54,23 +58,23 @@ const optionalString = (name: string, metavar: string, description: string) =>
 
 const baseFlag = optionalString("base", "ref", "Git ref used as the change baseline (merge base)");
 
-const ruleFlag = Flag.string("rule").pipe(
+const ruleFlag = Flag.String("rule").pipe(
   Flag.withMetavar("id"),
   Flag.withDescription("Restrict to a rule id; repeat or comma-separate for several"),
   Flag.atLeast(0),
   Flag.map(ruleIds),
 );
 
-const filesArgument = Argument.string("files").pipe(
+const filesArgument = Argument.String("files").pipe(
   Argument.withDescription("Files or directories to inspect"),
   Argument.variadic(),
 );
 
-const selectorArgument = Argument.string("selector").pipe(
+const selectorArgument = Argument.String("selector").pipe(
   Argument.withDescription("Finding number from the last check or a full finding key"),
 );
 
-const portFlag = Flag.integer("port").pipe(
+const portFlag = Flag.Int("port").pipe(
   Flag.withDescription("Local server port (0 picks a free port)"),
   Flag.withDefault(0),
   Flag.filter(
@@ -79,7 +83,7 @@ const portFlag = Flag.integer("port").pipe(
   ),
 );
 
-const openFlag = Flag.boolean("open").pipe(
+const openFlag = Flag.Boolean("open").pipe(
   Flag.withDescription("Open the browser; pass --no-open to only print the URL"),
   Flag.withDefault(true),
 );
@@ -116,7 +120,7 @@ const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (
     transport: "detached",
     source: path.basename(absolute),
   });
-  const artifact: ReviewArtifact = { version: 2, state };
+  const artifact: ReviewArtifact = { version: 3, state };
   yield* fs.makeDirectory(path.dirname(absolute), { recursive: true });
   yield* fs.writeFileString(absolute, `${JSON.stringify(artifact, null, 2)}\n`);
   return absolute;
@@ -156,20 +160,20 @@ const check = Command.make(
   "check",
   {
     files: filesArgument,
-    all: Flag.boolean("all").pipe(
+    all: Flag.Boolean("all").pipe(
       Flag.withDescription("Inspect the whole repository instead of the changed files"),
       Flag.withDefault(false),
     ),
     base: baseFlag,
     rules: ruleFlag,
-    format: Flag.choice("format", ["text", "jsonl"]).pipe(
+    format: Flag.Literals("format", ["text", "jsonl"]).pipe(
       Flag.withDescription("Output format"),
       Flag.withDefault("text"),
     ),
     reviewOutput: optionalString("review-output", "path", "Write a detached review artifact to this path"),
   },
   Effect.fn("check")(function* ({ files, all, base, rules, format, reviewOutput }) {
-    const command = new CheckCommand({ all, rules, base, files: [...files], format });
+    const command = new CheckCommand({ all, rules, base, files: [...files] });
     const result = yield* checkHandler(command);
     if (result.noMatchingRules) {
       yield* Console.error(`No matching rules. Available: ${result.availableRules.join(", ") || "none"}`);
@@ -198,12 +202,47 @@ const check = Command.make(
   }),
 ).pipe(Command.withDescription("Run the gate: report unresolved findings and exit 1 while any remain"));
 
+const next = Command.make(
+  "next",
+  {
+    base: baseFlag,
+    rules: ruleFlag,
+    format: Flag.Literals("format", ["text", "json"]).pipe(Flag.withDefault("text")),
+  },
+  Effect.fn("next")(function* ({ base, rules, format }) {
+    const result = yield* nextHandler(new NextCommand({ base, rules }));
+    if (format === "json") yield* Console.log(JSON.stringify(result, null, 2));
+    else {
+      yield* Console.log(
+        result.finding
+          ? [
+              `${result.remaining} unresolved · ${result.scope} scan`,
+              `${result.finding.ruleTitle} · ${result.finding.file}:${result.finding.line}`,
+              result.finding.message,
+              result.finding.guidance.standard,
+              `Required authority: ${result.finding.authority}`,
+              ...result.actions.map(
+                (action) =>
+                  `${action.purpose}: agentlint argv=${JSON.stringify(action.argv.map((arg) => (arg === result.finding?.id ? (result.selector ?? arg) : arg)))}${action.requiredInput ? ` + ${action.requiredInput}` : ""}`,
+              ),
+            ].join("\n")
+          : result.status === "no_matching_rules"
+            ? "No matching rules. Configure a rule before using the gate."
+            : `No unresolved findings in this ${result.scope} scan.${result.scope === "partial" ? " Run check --all for the complete checkpoint." : ""}`,
+      );
+    }
+    yield* setExitCode(result.exitCode);
+  }),
+).pipe(
+  Command.withDescription("Return one current obligation with evidence, authority and executable argument arrays"),
+);
+
 const decisionCommand = (name: "accept" | "approve", authority: "agent" | "human", description: string) =>
   Command.make(
     name,
     {
       selector: selectorArgument,
-      reason: Flag.string("reason").pipe(Flag.withDescription("Why this finding satisfies its standard")),
+      reason: Flag.String("reason").pipe(Flag.withDescription("Why this finding satisfies its standard")),
       base: baseFlag,
     },
     Effect.fn(name)(function* ({ selector, reason, base }) {
@@ -220,7 +259,7 @@ const propose = Command.make(
   "propose",
   {
     selector: selectorArgument,
-    summary: Flag.string("summary").pipe(Flag.withDescription("What the agent did or suggests for this finding")),
+    summary: Flag.String("summary").pipe(Flag.withDescription("What the agent did or suggests for this finding")),
     diffFile: optionalString("diff-file", "path", "Attach the unified diff stored in this file"),
     base: baseFlag,
   },
@@ -238,7 +277,7 @@ const propose = Command.make(
 const explain = Command.make(
   "explain",
   {
-    selector: Argument.string("rule-id|selector").pipe(
+    selector: Argument.String("rule-id|selector").pipe(
       Argument.withDescription("A rule id, a finding number from the last check, or a full finding key"),
     ),
   },
@@ -253,7 +292,7 @@ const review = Command.make(
   "review",
   {
     base: baseFlag,
-    mode: Flag.choice("mode", ["review", "calibration"]).pipe(
+    mode: Flag.Literals("mode", ["review", "calibration"]).pipe(
       Flag.withDescription("Review current findings or calibrate rule fixtures"),
       Flag.withDefault("review"),
     ),
@@ -269,7 +308,6 @@ const review = Command.make(
       open,
       mode: artifact?.state.mode ?? mode,
       artifact: artifact?.state,
-      artifactSource: artifact?.source,
     });
   }),
 ).pipe(Command.withDescription("Open the local review UI for human decisions"));
@@ -277,9 +315,9 @@ const review = Command.make(
 const pr = Command.make(
   "pr",
   {
-    number: Argument.integer("number").pipe(Argument.withDescription("Pull request number")),
+    number: Argument.Int("number").pipe(Argument.withDescription("Pull request number")),
     repo: optionalString("repo", "owner/name", "GitHub repository; defaults to the one gh resolves here"),
-    artifactOnly: Flag.boolean("artifact-only").pipe(
+    artifactOnly: Flag.Boolean("artifact-only").pipe(
       Flag.withDescription("Download the review artifact and print its path instead of opening it"),
       Flag.withDefault(false),
     ),
@@ -294,7 +332,6 @@ const pr = Command.make(
       open,
       mode: result.artifact.state.mode,
       artifact: result.artifact.state,
-      artifactSource: result.artifactPath,
     });
   }),
 ).pipe(Command.withDescription("Open the review artifact the GitHub action uploaded for a pull request"));
@@ -329,7 +366,7 @@ const rulesScan = Command.make(
     files: filesArgument,
     rules: ruleFlag,
     base: baseFlag,
-    review: Flag.boolean("review").pipe(
+    review: Flag.Boolean("review").pipe(
       Flag.withDescription("Open the calibration UI on the scan results"),
       Flag.withDefault(false),
     ),
@@ -339,13 +376,39 @@ const rulesScan = Command.make(
     yield* Console.log(result.fixtureMessage);
     if (result.exitCode !== 0) return yield* setExitCode(result.exitCode);
     yield* Console.log(`${result.findings.length} calibration candidate${result.findings.length === 1 ? "" : "s"}.`);
-    if (openReview) yield* runReviewSession({ base, port: 0, open: true, mode: "calibration" });
+    if (openReview)
+      yield* openReviewSession({ base, rules, files: [...files], port: 0, open: true, mode: "calibration" });
   }),
 ).pipe(Command.withDescription("Run the rules without the gate to calibrate them"));
 
+const calibration = Command.make(
+  "calibration",
+  {
+    reports: Argument.String("reports").pipe(Argument.variadic({ min: 1 })),
+    format: Flag.Literals("format", ["text", "json"]).pipe(Flag.withDefault("text")),
+  },
+  Effect.fn("calibration")(function* ({ reports, format }) {
+    const result = yield* calibrationHandler(new CalibrationCommand({ files: [...reports] }));
+    yield* Console.log(
+      format === "json"
+        ? JSON.stringify(result, null, 2)
+        : result.rules.length === 0
+          ? "No calibration observations."
+          : result.rules
+              .map(
+                (rule) =>
+                  `${rule.project} / ${rule.ruleId} (standard ${rule.standardRevision}, detector ${rule.detectorVersion})\n  ${rule.reviewed} reviewed: ${rule.applies} applies, ${rule.doesNotApply} does not apply, ${rule.unsure} unsure\n  Applicability: ${rule.applicabilityRate === null ? "not measured" : Math.round(rule.applicabilityRate * 100) + "%"}\n  Reasons: ${JSON.stringify(rule.reasons)}\n  ${rule.invalidatedEvidence} distinct invalidated observations; ${rule.repeatedInvalidationLineages} repeatedly invalidated lineages`,
+              )
+              .join("\n"),
+    );
+  }),
+).pipe(
+  Command.withDescription("Combine exported calibration reports; later reports replace labels for the same evidence"),
+);
+
 const rules = Command.make("rules").pipe(
   Command.withDescription("Inspect, test, and calibrate the repository rules"),
-  Command.withSubcommands([rulesList, rulesTest, rulesScan]),
+  Command.withSubcommands([rulesList, rulesTest, rulesScan, calibration]),
 );
 
 const acceptancesList = Command.make(
@@ -370,7 +433,7 @@ const acceptancesClean = Command.make(
 const acceptancesImport = Command.make(
   "import",
   {
-    file: Argument.string("decisions.jsonl").pipe(
+    file: Argument.String("decisions.jsonl").pipe(
       Argument.withDescription("Decisions exported from a detached review session"),
     ),
     base: baseFlag,
@@ -396,16 +459,21 @@ const acceptances = Command.make("acceptances").pipe(
 
 const init = Command.make(
   "init",
-  {},
-  Effect.fn("init")(function* () {
-    const result = yield* initHandler(new InitCommand({}));
+  {
+    presets: Flag.String("preset").pipe(
+      Flag.atLeast(0),
+      Flag.withDescription("Chosen package#export; repeat to compose presets"),
+    ),
+  },
+  Effect.fn("init")(function* ({ presets }) {
+    const result = yield* initHandler(new InitCommand({ presets }));
     yield* Console.log(result.message);
   }),
 ).pipe(Command.withDescription("Create .agentlint/config.ts in this repository"));
 
 const agentlint = Command.make("agentlint").pipe(
   Command.withDescription(`${TAGLINE}\n\n${EXIT_CODES}`),
-  Command.withSubcommands([check, accept, approve, propose, explain, review, pr, rules, acceptances, init]),
+  Command.withSubcommands([check, next, accept, approve, propose, explain, review, pr, rules, acceptances, init]),
 );
 
 // ---------------------------------------------------------------------------

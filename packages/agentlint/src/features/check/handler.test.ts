@@ -12,6 +12,7 @@ import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { Git } from "../../shared/infrastructure/git.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
+import { normalizeChangeFixture } from "../../shared/pipeline/change-fixture.js";
 import { checkHandler } from "./handler.js";
 import { CheckCommand } from "./request.js";
 
@@ -46,7 +47,7 @@ const TestLayer = Layer.mergeAll(TestConfig, TestGit, Parser.layer, AcceptanceSt
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(TestEnv),
 );
-const command = new CheckCommand({ all: true, rules: [], base: undefined, files: [], format: "text" });
+const command = new CheckCommand({ all: true, rules: [], base: undefined, files: [] });
 
 const writeSource = (source: string) =>
   Effect.gen(function* () {
@@ -89,6 +90,85 @@ describe("binary check and acceptance loop", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.scannedFiles).toEqual(["src/demo.ts"]);
     expect(result.scope).toBe("partial");
+  });
+
+  it("does not replace the complete-scan selector cache from a partial scan", async () => {
+    await Effect.runPromise(writeSource('danger("x")'));
+    const cached = [
+      {
+        selector: "1",
+        hash: "previous-finding",
+        ruleId: "security/previous",
+        file: "src/previous.ts",
+        line: 1,
+        column: 1,
+      },
+    ];
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const selectors = yield* SelectorCache;
+        yield* selectors.write(cached);
+        const checked = yield* checkHandler(new CheckCommand({ ...command, rules: [rule.binding.id] }));
+        return { checked, cache: yield* selectors.read() };
+      }).pipe(Effect.provide(TestLayer)),
+    );
+
+    expect(result.checked.scope).toBe("partial");
+    expect(result.checked.unresolved[0]?.selector).toMatch(/^[0-9a-f]{12}$/);
+    expect(result.cache.findings).toEqual(cached);
+  });
+
+  it("applies change rules to explicit files in every path form the state resolver accepts", async () => {
+    const dropColumn = defineRule({
+      lifecycle: "change",
+      standard: { id: "database/safe-migration", revision: 1, title: "Migrations", guidance: "Review drops." },
+      detector: {
+        id: "sql/drop",
+        version: 1,
+        detect(context) {
+          for (const changed of context.change.files)
+            context.report({
+              key: changed.path,
+              file: changed.path,
+              message: "Review this migration.",
+              evidence: { statement: changed.after?.content ?? "" },
+            });
+        },
+      },
+      binding: { id: "database/safe-migration", authority: "human", include: ["migrations/**"] },
+    });
+    const layers = Layer.mergeAll(
+      Layer.succeed(
+        ConfigLoader,
+        ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [dropColumn] })) }),
+      ),
+      Layer.succeed(
+        Git,
+        Git.of({
+          detectDefaultBranch: () => Effect.succeed("main"),
+          changedFiles: () => Effect.succeed(["migrations/1.sql"]),
+          changeSet: () =>
+            Effect.succeed(normalizeChangeFixture({ before: {}, after: { "migrations/1.sql": "DROP TABLE users;" } })),
+        }),
+      ),
+    );
+    const findingsFor = async (files: ReadonlyArray<string>) =>
+      (
+        await Effect.runPromise(
+          checkHandler(new CheckCommand({ ...command, all: false, files })).pipe(
+            Effect.provide(layers),
+            Effect.provide(TestLayer),
+          ),
+        )
+      ).findings.map((finding) => finding.file);
+
+    const forms = ["migrations/1.sql", "./migrations/1.sql", "migrations\\1.sql", "migrations", "migrations/*.sql"];
+    const reported = await Promise.all(forms.map((form) => findingsFor([form])));
+    expect(Object.fromEntries(forms.map((form, index) => [form, reported[index]]))).toEqual(
+      Object.fromEntries(forms.map((form) => [form, ["migrations/1.sql"]])),
+    );
+    expect(await findingsFor([join(cwd, "migrations", "1.sql")])).toEqual(["migrations/1.sql"]);
+    expect(await findingsFor(["other"])).toEqual([]);
   });
 
   it("does not load change snapshots for file-local state detectors", async () => {
@@ -206,9 +286,9 @@ describe("binary check and acceptance loop", () => {
     await Effect.runPromise(writeSource('danger("x", "new evidence")\n'));
 
     const partialCommands = [
-      new CheckCommand({ all: true, rules: ["security/danger"], base: undefined, files: [], format: "text" }),
-      new CheckCommand({ all: true, rules: [], base: undefined, files: ["src/demo.ts"], format: "text" }),
-      new CheckCommand({ all: false, rules: [], base: undefined, files: ["src/demo.ts"], format: "text" }),
+      new CheckCommand({ all: true, rules: ["security/danger"], base: undefined, files: [] }),
+      new CheckCommand({ all: true, rules: [], base: undefined, files: ["src/demo.ts"] }),
+      new CheckCommand({ all: false, rules: [], base: undefined, files: ["src/demo.ts"] }),
     ];
     const partialRuns = await Effect.runPromise(
       Effect.forEach(partialCommands, (partial) =>

@@ -1,6 +1,7 @@
 /** Rule listing, fixture testing, and calibration handlers. @module @since 0.2.0 */
 
 import { Effect } from "effect";
+import { compareStrings } from "../../domain/compare.js";
 import type { AgentlintRule } from "../../domain/rule.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { collectFindings, ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
@@ -35,14 +36,14 @@ export const rulesListHandler = Effect.fn("rulesListHandler")(function* (command
         detector: `${rule.detector.id}@${rule.detector.version}`,
         enabled: file ? ruleEnabledForFile(rule, file) : true,
       }))
-      .toSorted((left, right) => left.id.localeCompare(right.id)),
+      .toSorted((left, right) => compareStrings(left.id, right.id)),
   });
 });
 
 export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command: RulesTestCommand) {
   const config = yield* (yield* ConfigLoader).load();
   const rules = selectRules(config.rules, command.rules).toSorted((left, right) =>
-    left.binding.id.localeCompare(right.binding.id),
+    compareStrings(left.binding.id, right.binding.id),
   );
   if (rules.length === 0) {
     return new RulesTestResult({

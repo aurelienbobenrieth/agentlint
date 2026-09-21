@@ -32,6 +32,8 @@ export class Env extends Context.Service<
     readonly argv: ReadonlyArray<string>;
     /** Actor inferred for acceptance records. */
     readonly actor: string;
+    /** Captured child-process environment. Infrastructure may narrow or override it per command. */
+    readonly variables?: Readonly<NodeJS.ProcessEnv>;
     /** Node `process.platform` value (e.g. `win32`, `darwin`, `linux`). */
     readonly platform: string;
     /** `true` when ANSI colour codes should be suppressed (`NO_COLOR` or non-TTY). */
@@ -65,6 +67,7 @@ export class Env extends Context.Service<
       cwd: process.cwd(),
       argv: process.argv.slice(2),
       actor,
+      variables: { ...rawEnv },
       platform: process.platform,
       noColor: !!process.env["NO_COLOR"] || !isTTY,
       isTTY,

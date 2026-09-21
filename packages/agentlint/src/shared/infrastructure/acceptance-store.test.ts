@@ -78,7 +78,7 @@ describe("acceptance current-state reconciliation", () => {
             ...fs,
             rename: () =>
               Effect.fail(
-                new PlatformError.BadArgument({
+                PlatformError.badArgument({
                   module: "FileSystem",
                   method: "rename",
                   description: "simulated replacement failure",
@@ -93,6 +93,32 @@ describe("acceptance current-state reconciliation", () => {
           expect(failed._tag).toBe("Failure");
           expect((yield* store.read()).records).toEqual([record("original")]);
           expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
+        }).pipe(Effect.provide(layer)),
+      );
+    } finally {
+      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
+    }
+  });
+
+  it("removes a lock abandoned by a stopped process and keeps waiting on a recent one", async () => {
+    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+    const layer = testLayer(cwd);
+    const lock = join(cwd, ".agentlint", "acceptances.lock");
+    const write = Effect.flatMap(AcceptanceStore, (store) => store.write([record("kept")]));
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
+
+          yield* fs.writeFileString(lock, `${Date.now() - 60_000}\n`);
+          yield* write;
+          expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
+
+          yield* fs.writeFileString(lock, `${Date.now()}\n`);
+          const blocked = yield* Effect.flip(write);
+          expect(blocked.message).toContain("locked");
+          expect(yield* fs.exists(lock)).toBe(true);
         }).pipe(Effect.provide(layer)),
       );
     } finally {

@@ -1,21 +1,21 @@
+import { normalizeChangeFixture } from "./change-fixture.js";
+import type { FixtureReport, FixtureFailure } from "../../domain/fixture-report.js";
 /** Detector fixture runners. @module @since 0.2.0 */
 
-import { fixtureHunks } from "./change-hunks.js";
-import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
+import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import {
   type AgentlintRule,
   type ChangeFixture,
   type ChangeRule,
   type ChangeSet,
-  type ChangedFile,
   type StateFixture,
   type StateRule,
 } from "../../domain/rule.js";
 import { grammarForExtension } from "./language-map.js";
-import { PatternError } from "./pattern-match.js";
+import { PatternError } from "../../domain/pattern-error.js";
 import { collectStateFindings } from "./collect-findings.js";
 
 /** Run one state detector against an in-memory repository. */
@@ -50,56 +50,15 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
  * absolute path is the fixture path itself.
  */
 export function runRuleOnChange(rule: ChangeRule, change: ChangeSet): ReadonlyArray<FindingRecord> {
-  const context = new ChangeRuleContextImpl(rule, change, (file) => file);
+  const context = new ChangeRuleContextImpl(rule, change);
   rule.detector.detect(context, rule.binding.options);
   return context.findings;
-}
-
-/** Same digest as the Git change source, so fixture snapshots match real evidence. */
-function snapshot(content: string): { readonly content: string; readonly digest: string } {
-  return { content, digest: createHash("sha256").update(content).digest("hex") };
-}
-
-/** Normalize a compact before-and-after fixture to the public change contract. */
-export function normalizeChangeFixture(fixture: ChangeFixture): ChangeSet {
-  if ("change" in fixture) return fixture.change;
-  const before = fixture.before ?? {};
-  const after = fixture.after ?? {};
-  const paths = [...new Set([...Object.keys(before), ...Object.keys(after)])].toSorted();
-  const files: ChangedFile[] = [];
-  for (const path of paths) {
-    const oldContent = before[path];
-    const newContent = after[path];
-    if (oldContent === newContent) continue;
-    const status = oldContent === undefined ? "added" : newContent === undefined ? "deleted" : "modified";
-    files.push({
-      status,
-      path: path.replace(/\\/g, "/"),
-      before: oldContent === undefined ? null : snapshot(oldContent),
-      after: newContent === undefined ? null : snapshot(newContent),
-      hunks: fixtureHunks(oldContent, newContent),
-    });
-  }
-  return { baseline: { kind: "git", ref: "fixture" }, files };
-}
-
-export interface FixtureFailure {
-  readonly expectation: "mustReport" | "mustStaySilent";
-  readonly index: number;
-  readonly label?: string | undefined;
-  readonly findingCount: number;
-}
-
-export interface FixtureReport {
-  readonly ruleId: string;
-  readonly total: number;
-  readonly failures: ReadonlyArray<FixtureFailure>;
 }
 
 function stateFiles(fixture: StateFixture): ReadonlyArray<readonly [string, string]> {
   if (typeof fixture === "string") return [["fixture.tsx", fixture]];
   if ("source" in fixture) return [[fixture.file ?? "fixture.tsx", fixture.source]];
-  return Object.entries(fixture.files).toSorted(([left], [right]) => left.localeCompare(right));
+  return Object.entries(fixture.files).toSorted(([left], [right]) => compareStrings(left, right));
 }
 
 function fixtureLabel(fixture: StateFixture | ChangeFixture): string | undefined {

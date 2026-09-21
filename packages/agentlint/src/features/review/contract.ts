@@ -102,6 +102,8 @@ export const ReviewFindingPayload = Schema.Struct({
   line: Schema.Number,
   column: Schema.Number,
   message: Schema.String,
+  relatedFiles: Schema.Array(Schema.String),
+  invalidationReasons: Schema.Array(Schema.String),
   /** Present only when the live localhost session can safely resolve this finding in its repository. */
   editor: Schema.NullOr(Schema.Struct({ canOpen: Schema.Literal(true) })),
   code: Schema.Struct({
@@ -121,8 +123,37 @@ export const ReviewFindingPayload = Schema.Struct({
 });
 export type ReviewFindingPayload = Schema.Schema.Type<typeof ReviewFindingPayload>;
 
+export const CalibrationReason = Schema.Literals(["scope", "detector", "guidance", "valid_exception", "other"]);
+export type CalibrationReason = Schema.Schema.Type<typeof CalibrationReason>;
+
+export const ReviewCalibration = Schema.Literals(["applies", "does_not_apply", "unsure"]);
+export type ReviewCalibration = Schema.Schema.Type<typeof ReviewCalibration>;
+
+/** Portable observations, separate from acceptance state. Reports never open a gate. */
+export const CalibrationObservation = Schema.Struct({
+  findingId: Schema.String,
+  identity: FindingIdentity,
+  ruleId: Schema.String,
+  file: Schema.String,
+  classification: ReviewCalibration,
+  reason: Schema.NullOr(CalibrationReason),
+  note: Schema.String,
+  invalidationReasons: Schema.Array(Schema.String),
+});
+export type CalibrationObservation = Schema.Schema.Type<typeof CalibrationObservation>;
+
+export const CalibrationReport = Schema.Struct({
+  version: Schema.Literal(1),
+  project: Schema.String,
+  base: Schema.String,
+  generatedAt: Schema.String,
+  candidates: Schema.Array(Schema.Struct({ ruleId: Schema.String, count: Schema.Number })),
+  observations: Schema.Array(CalibrationObservation),
+});
+export type CalibrationReport = Schema.Schema.Type<typeof CalibrationReport>;
+
 export const ReviewStatePayload = Schema.Struct({
-  version: Schema.Literal(2),
+  version: Schema.Literal(3),
   sources: Schema.Record(Schema.String, Schema.String),
   coverage: Schema.Struct({
     scope: Schema.Literals(["partial", "complete"]),
@@ -137,10 +168,10 @@ export const ReviewStatePayload = Schema.Struct({
   /** Applications detected by the live localhost server. Always empty in detached artifacts. */
   applications: Schema.Array(EditorApplication),
   findings: Schema.Array(ReviewFindingPayload),
+  calibration: Schema.Array(CalibrationObservation),
   detached: Schema.NullOr(
     Schema.Struct({
       source: Schema.String,
-      canPersistAcceptances: Schema.Boolean,
     }),
   ),
 });
@@ -152,9 +183,6 @@ export const ReviewOpenRequest = Schema.Struct({
 });
 export type ReviewOpenRequest = Schema.Schema.Type<typeof ReviewOpenRequest>;
 
-export const ReviewCalibration = Schema.Literals(["applies", "does_not_apply", "unsure"]);
-export type ReviewCalibration = Schema.Schema.Type<typeof ReviewCalibration>;
-
 /** `POST /api/action` body. The `type` discriminant selects the fields the server reads. */
 export const ReviewActionRequest = Schema.Union([
   Schema.Struct({ type: Schema.Literal("accept"), findingId: Schema.String, reason: Schema.String }),
@@ -164,6 +192,7 @@ export const ReviewActionRequest = Schema.Union([
     type: Schema.Literal("calibrate"),
     findingId: Schema.String,
     calibration: ReviewCalibration,
+    reason: Schema.NullOr(CalibrationReason),
     note: Schema.String,
   }),
 ]);
@@ -179,28 +208,13 @@ export const ReviewFinishResult = Schema.Struct({
   ok: Schema.Boolean,
   summary: Schema.String,
   feedback: Schema.String,
-  acceptanceOutput: Schema.String,
 });
 export type ReviewFinishResult = Schema.Schema.Type<typeof ReviewFinishResult>;
 
-/** Wire form of an `AcceptanceRecord` carried inside a detached artifact. */
-export const ReviewArtifactAcceptance = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
-  source: ReviewFindingSource,
-  fingerprint: ReviewFingerprint,
-  lineageKey: Schema.optional(Schema.String),
-  reason: Schema.String,
-  authority: Schema.Literals(["agent", "human"]),
-  actor: Schema.optional(Schema.String),
-  acceptedAt: Schema.String,
-});
-export type ReviewArtifactAcceptance = Schema.Schema.Type<typeof ReviewArtifactAcceptance>;
-
 /** Detached artifact format written by `check --review-output` and read by `review --from`. */
 export const ReviewArtifact = Schema.Struct({
-  version: Schema.Literal(2),
+  version: Schema.Literal(3),
   state: ReviewStatePayload,
-  acceptances: Schema.optional(Schema.Array(ReviewArtifactAcceptance)),
 });
 export type ReviewArtifact = Schema.Schema.Type<typeof ReviewArtifact>;
 
@@ -219,5 +233,28 @@ export interface CalibrationFeedback {
   readonly ruleId: string;
   readonly file: string;
   readonly classification: ReviewCalibration;
+  readonly reason: CalibrationReason | null;
   readonly note: string;
 }
+
+export const NextResult = Schema.Struct({
+  version: Schema.Literal(1),
+  status: Schema.Literals(["unresolved", "clear", "no_matching_rules"]),
+  scope: Schema.Literals(["partial", "complete"]),
+  base: Schema.NullOr(Schema.String),
+  remaining: Schema.Number,
+  selector: Schema.NullOr(Schema.String),
+  executedBindings: Schema.Array(Schema.String),
+  finding: Schema.NullOr(ReviewFindingPayload),
+  source: Schema.NullOr(Schema.String),
+  excerpt: Schema.NullOr(Schema.String),
+  actions: Schema.Array(
+    Schema.Struct({
+      purpose: Schema.String,
+      argv: Schema.Array(Schema.String),
+      requiredInput: Schema.NullOr(Schema.String),
+    }),
+  ),
+  exitCode: Schema.Literals([0, 1, 2]),
+});
+export type NextResult = Schema.Schema.Type<typeof NextResult>;

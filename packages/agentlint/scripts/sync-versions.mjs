@@ -4,7 +4,8 @@
  * Sync every copy of the package version with package.json:
  *
  * - `library_version` in skills/**\/SKILL.md
- * - the `version` input default in <repo>/action/action.yml, when present
+ * - the `version` input default in <repo>/action/action.yml and its fallback in action/src/inputs.mjs
+ * - the `agentlint/action@v<version>` references and `version` values in the action and package READMEs
  *
  * Run automatically after `changeset version` via scripts/version.sh.
  */
@@ -43,12 +44,26 @@ function syncActionVersion(content) {
   return head + tail.replace(/^(\s+default:\s*")\d+\.\d+\.\d+[^"]*(")/m, `$1${version}$2`);
 }
 
+/** Replace every pinned action reference and documented `version` value. */
+function syncDocumentedVersion(content) {
+  return content
+    .replace(/(agentlint\/action@v)\d+\.\d+\.\d+[\w.-]*/g, `$1${version}`)
+    .replace(/^(\s+version:\s*")\d+\.\d+\.\d+[^"]*(")/gm, `$1${version}$2`)
+    .replace(/^(\| `version`\s*\| `)\d+\.\d+\.\d+[^`]*(`)/m, `$1${version}$2`);
+}
+
 const targets = [
   ...findSkillFiles(join(root, "skills")).map((file) => ({
     file,
-    sync: (content) => content.replace(/^(library_version:\s*").+(")/m, `$1${version}$2`),
+    sync: (content) => content.replace(/^(\s*library_version:\s*").+(")/m, `$1${version}$2`),
   })),
   { file: join(repoRoot, "action", "action.yml"), sync: syncActionVersion },
+  {
+    file: join(repoRoot, "action", "src", "inputs.mjs"),
+    sync: (content) => content.replace(/(input\(env, "version", ")\d+\.\d+\.\d+[^"]*(")/, `$1${version}$2`),
+  },
+  { file: join(repoRoot, "action", "README.md"), sync: syncDocumentedVersion },
+  { file: join(root, "README.md"), sync: syncDocumentedVersion },
 ];
 
 let updated = 0;

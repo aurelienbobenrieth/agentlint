@@ -3,15 +3,18 @@
  *
  * Determines which files to scan by applying the filter pipeline:
  * 1. Candidate files (positional paths and globs, all files, or Git-changed files)
- * 2. Config ignores
+ * 2. Config ignores and the tool's own cache
  * 3. Files with an extension
+ * 4. Regular files whose real path stays inside the repository and outside `.git`
  *
  * @module
  */
 
-import { Effect, FileSystem, HashSet, Path, Schema } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
+import type { PlatformError } from "effect";
 import { Env } from "../../config/env.js";
 import picomatch from "picomatch";
+import { compareStrings } from "../../domain/compare.js";
 
 /**
  * Raised when candidate files cannot be enumerated.
@@ -20,16 +23,11 @@ import picomatch from "picomatch";
  * @category errors
  */
 export class FileResolverError extends Schema.TaggedError<FileResolverError>()("agentlint/FileResolverError", {
-  reason: Schema.Literals(["git", "filesystem"]),
+  reason: Schema.Literal("filesystem"),
   detail: Schema.String,
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "git":
-        return `Git error: ${this.detail}`;
-      case "filesystem":
-        return `Cannot list files: ${this.detail}`;
-    }
+    return `Cannot list files: ${this.detail}`;
   }
 }
 
@@ -53,34 +51,133 @@ export const ResolveOptions = Schema.Struct({
 /** @since 0.1.0 */
 export type ResolveOptions = Schema.Schema.Type<typeof ResolveOptions>;
 
-const SKIP_DIRS: HashSet.HashSet<string> = HashSet.make(
-  "node_modules",
-  ".git",
-  "dist",
-  "coverage",
-  ".cache",
-  ".agents",
-);
+/** Directories the walk never enters when Git cannot list the repository. */
+const WALK_SKIP_DIRS: ReadonlySet<string> = new Set(["node_modules", ".git"]);
+
+/** agentlint's own disposable cache. `init` gitignores it; it stays out of every scan even without that entry. */
+const OWN_CACHE_PREFIX = ".agentlint/.cache/";
 
 const LIST_CONCURRENCY = 16;
+
+const filesystemError = (error: unknown): FileResolverError =>
+  error instanceof FileResolverError
+    ? error
+    : new FileResolverError({ reason: "filesystem", detail: error instanceof Error ? error.message : String(error) });
 
 function hasGlobSyntax(value: string): boolean {
   return /[*?[\]{}()!+@]/.test(value);
 }
 
+/**
+ * Compile globs into one predicate. Dotfiles match like any other path, so `src/**` covers `src/.hidden/x.ts`.
+ * Every glob agentlint evaluates goes through here.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function compileGlobs(patterns: ReadonlyArray<string> | undefined): ((file: string) => boolean) | undefined {
+  return patterns?.length ? picomatch([...patterns], { dot: true }) : undefined;
+}
+
+/**
+ * Rewrite native separators to `/`. Only Windows separates with a backslash; elsewhere it is a legal file-name
+ * character and must survive.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function toRepositoryPath(value: string, separator: string): string {
+  return separator === "\\" ? value.replace(/\\/g, "/") : value;
+}
+
+/**
+ * Whether `candidate` is `root` or lies below it. Both are absolute; resolve links first when that matters.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function isInside(path: Path.Path, root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+}
+
 function toProjectPath(file: string, cwd: string, path: Path.Path): string {
   const resolved = path.resolve(cwd, file);
-  const relative = path.relative(cwd, resolved);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+  if (!isInside(path, cwd, resolved))
     throw new FileResolverError({ reason: "filesystem", detail: `Path outside the repository: ${file}` });
-  return relative.replace(/\\/g, "/");
+  return toRepositoryPath(path.relative(cwd, resolved), path.sep);
+}
+
+/**
+ * What a repository path is on disk. `linkTarget` is set when the path itself is a symbolic link.
+ *
+ * @since 0.2.0
+ * @category models
+ */
+export type RepositoryEntry =
+  | { readonly _tag: "Missing" }
+  | { readonly _tag: "Escapes"; readonly linkTarget: string | undefined }
+  | { readonly _tag: "Inside"; readonly realPath: string; readonly linkTarget: string | undefined };
+
+/**
+ * Resolve links before anything reads a repository path. A path whose real location is outside the canonical
+ * repository root, or inside `.git`, `Escapes`: a committed `leak.ts -> ../.git/config` is never read as source.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function inspectRepositoryEntry(
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  canonicalRoot: string,
+  file: string,
+): Effect.Effect<RepositoryEntry, PlatformError.PlatformError> {
+  return Effect.gen(function* () {
+    const lexical = path.resolve(canonicalRoot, file);
+    const real = yield* fs.realPath(lexical).pipe(
+      Effect.map((value): string | undefined => value),
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.succeed(undefined),
+      ),
+    );
+    // Only a path that does not resolve to itself can be a link; regular files skip the extra call.
+    const linkTarget =
+      real === lexical ? undefined : yield* fs.readLink(lexical).pipe(Effect.orElseSucceed(() => undefined));
+    if (real === undefined) return linkTarget === undefined ? { _tag: "Missing" } : { _tag: "Escapes", linkTarget };
+    if (!isInside(path, canonicalRoot, real) || isInside(path, path.resolve(canonicalRoot, ".git"), real))
+      return { _tag: "Escapes", linkTarget };
+    return { _tag: "Inside", realPath: real, linkTarget };
+  });
+}
+
+/**
+ * Match change-set paths against explicit CLI files with the same meaning the state resolver gives them: a glob is a
+ * pattern, a literal is one repository path or a directory prefix. The comparison is lexical because a change can name a
+ * deleted file. A typed argument may use either separator on every platform.
+ *
+ * @since 0.2.0
+ * @category constructors
+ */
+export function explicitPathMatcher(
+  files: ReadonlyArray<string>,
+  cwd: string,
+  path: Path.Path,
+): (projectPath: string) => boolean {
+  const typed = files.map((file) => file.replace(/\\/g, "/"));
+  const globMatcher = compileGlobs(typed.filter(hasGlobSyntax).map((file) => file.replace(/^\.\//, "")));
+  const literals = typed.filter((file) => !hasGlobSyntax(file)).map((file) => toProjectPath(file, cwd, path));
+  return (projectPath) =>
+    globMatcher?.(projectPath) === true ||
+    literals.some((literal) => literal === "" || projectPath === literal || projectPath.startsWith(`${literal}/`));
 }
 
 /**
  * Recursively list all files under `dir`, returning paths relative to `base`.
  *
- * Skips `node_modules`, `.git`, and build output directories. Any entry that cannot be inspected (permission denied, dangling link) fails
- * the listing, so an incomplete scan cannot authorize acceptance cleanup.
+ * The fallback for a directory Git cannot list. Skips only `node_modules` and `.git`. Any entry that cannot be
+ * inspected (permission denied, dangling link) fails the listing, so an incomplete scan cannot authorize acceptance
+ * cleanup.
  *
  * @since 0.1.0
  * @category internals
@@ -90,55 +187,32 @@ function listAllFiles(
   base: string,
   fs: FileSystem.FileSystem,
   path: Path.Path,
-  ignored: (file: string) => boolean = () => false,
+  ignored: (file: string) => boolean,
   ancestors: ReadonlySet<string> = new Set(),
 ): Effect.Effect<string[], FileResolverError> {
   return Effect.gen(function* () {
-    const canonical = yield* fs
-      .realPath(dir)
-      .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
-    const relative = path.relative(base, canonical);
-    if (
-      ancestors.has(canonical) ||
-      relative === ".." ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative)
-    ) {
+    const canonical = yield* fs.realPath(dir).pipe(Effect.mapError(filesystemError));
+    if (ancestors.has(canonical) || !isInside(path, base, canonical)) {
       return yield* new FileResolverError({
         reason: "filesystem",
         detail: `Directory cycle or path outside the repository: ${dir}`,
       });
     }
     const nextAncestors = new Set(ancestors).add(canonical);
-    const entries = yield* fs
-      .readDirectory(dir)
-      .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
+    const entries = yield* fs.readDirectory(dir).pipe(Effect.mapError(filesystemError));
     const listed = yield* Effect.forEach(
-      entries.filter(
-        (name) =>
-          !HashSet.has(SKIP_DIRS, name) && !ignored(path.relative(base, path.resolve(dir, name)).replace(/\\/g, "/")),
-      ),
+      entries.filter((name) => !WALK_SKIP_DIRS.has(name)),
       (name) => {
         const fullPath = path.resolve(dir, name);
+        const projectPath = toRepositoryPath(path.relative(base, fullPath), path.sep);
+        if (ignored(projectPath) || ignored(`${projectPath}/`)) return Effect.succeed<string[]>([]);
         return fs.stat(fullPath).pipe(
-          Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })),
-          Effect.flatMap((info) => {
-            if (info.type === "Directory") {
-              return listAllFiles(fullPath, base, fs, path, ignored, nextAncestors);
-            }
-            return fs.realPath(fullPath).pipe(
-              Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })),
-              Effect.flatMap((real) =>
-                Effect.try({
-                  try: () => {
-                    toProjectPath(real, base, path);
-                    return [path.relative(base, fullPath).replace(/\\/g, "/")];
-                  },
-                  catch: (error) => new FileResolverError({ reason: "filesystem", detail: String(error) }),
-                }),
-              ),
-            );
-          }),
+          Effect.mapError(filesystemError),
+          Effect.flatMap((info) =>
+            info.type === "Directory"
+              ? listAllFiles(fullPath, base, fs, path, ignored, nextAncestors)
+              : Effect.succeed([projectPath]),
+          ),
         );
       },
       { concurrency: LIST_CONCURRENCY },
@@ -148,30 +222,43 @@ function listAllFiles(
 }
 
 /**
+ * The Git queries the resolver needs. `listFiles` is optional so a caller without a repository listing, such as a
+ * test double, falls back to the directory walk.
+ *
+ * @since 0.2.0
+ * @category models
+ */
+export interface ResolverGit<E> {
+  changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, E>;
+  /** Tracked and unignored untracked paths below the working directory, or `undefined` when Git cannot list them. */
+  readonly listFiles?: (() => Effect.Effect<ReadonlyArray<string> | undefined, E>) | undefined;
+}
+
+/**
  * Determine the final set of files to lint.
  *
  * Applies the multi-layer filter pipeline described in the module header,
- * then sorts the result alphabetically for deterministic output.
+ * then sorts the result by code unit for deterministic output. Git failures pass through unwrapped.
  *
  * @since 0.1.0
  * @category constructors
  */
-export function resolveFiles(
+export function resolveFiles<E>(
   options: ResolveOptions,
-  gitService: {
-    changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, unknown>;
-  },
-): Effect.Effect<ReadonlyArray<string>, FileResolverError, FileSystem.FileSystem | Path.Path | Env> {
+  gitService: ResolverGit<E>,
+): Effect.Effect<ReadonlyArray<string>, FileResolverError | E, FileSystem.FileSystem | Path.Path | Env> {
   return Effect.gen(function* () {
     const env = yield* Env;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const cwd = yield* fs
-      .realPath(env.cwd)
-      .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
-    const ignoreMatcher = options.configIgnores?.length
-      ? picomatch([...options.configIgnores], { dot: true })
-      : undefined;
+    const cwd = yield* fs.realPath(env.cwd).pipe(Effect.mapError(filesystemError));
+    const ignoreMatcher = compileGlobs(options.configIgnores);
+    const ignored = (file: string) => file.startsWith(OWN_CACHE_PREFIX) || ignoreMatcher?.(file) === true;
+    /** Every file of the repository: what Git tracks or would add, or the walk when Git cannot say. */
+    const listRepository = Effect.gen(function* () {
+      const listed = gitService.listFiles ? yield* gitService.listFiles() : undefined;
+      return listed ?? (yield* listAllFiles(cwd, cwd, fs, path, ignored));
+    });
     let candidates: ReadonlyArray<string>;
 
     if (options.positionalFiles && options.positionalFiles.length > 0) {
@@ -181,43 +268,44 @@ export function resolveFiles(
         if (hasGlobSyntax(file)) {
           globPatterns.push(file);
         } else {
-          const target = yield* fs
-            .realPath(path.resolve(cwd, file))
-            .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
-          yield* Effect.try({
-            try: () => toProjectPath(target, cwd, path),
-            catch: (error) => new FileResolverError({ reason: "filesystem", detail: String(error) }),
-          });
-          const info = yield* fs
-            .stat(target)
-            .pipe(Effect.mapError((error) => new FileResolverError({ reason: "filesystem", detail: String(error) })));
-          if (info.type === "Directory")
-            literalFiles.push(...(yield* listAllFiles(target, cwd, fs, path, ignoreMatcher)));
+          const target = yield* fs.realPath(path.resolve(cwd, file)).pipe(Effect.mapError(filesystemError));
+          yield* Effect.try({ try: () => toProjectPath(target, cwd, path), catch: filesystemError });
+          const info = yield* fs.stat(target).pipe(Effect.mapError(filesystemError));
+          if (info.type === "Directory") literalFiles.push(...(yield* listAllFiles(target, cwd, fs, path, ignored)));
           else literalFiles.push(toProjectPath(target, cwd, path));
         }
       }
 
-      const globMatcher = globPatterns.length > 0 ? picomatch(globPatterns) : undefined;
-      const globbed = globMatcher
-        ? (yield* listAllFiles(cwd, cwd, fs, path, ignoreMatcher)).filter((file) => globMatcher(file))
-        : [];
+      const globMatcher = compileGlobs(globPatterns);
+      const globbed = globMatcher ? (yield* listRepository).filter((file) => globMatcher(file)) : [];
       if (globMatcher && globbed.length === 0)
         return yield* new FileResolverError({ reason: "filesystem", detail: "Explicit patterns matched no files" });
       candidates = [...literalFiles, ...globbed];
     } else if (options.all) {
-      candidates = yield* listAllFiles(cwd, cwd, fs, path, ignoreMatcher);
+      candidates = yield* listRepository;
     } else {
-      candidates = yield* Effect.mapError(
-        gitService.changedFiles(options.baseRef),
-        (error) => new FileResolverError({ reason: "git", detail: String(error) }),
-      );
+      candidates = yield* gitService.changedFiles(options.baseRef);
     }
 
-    const unique = new Set(candidates.map((file) => toProjectPath(file, cwd, path)));
-
-    return [...unique]
-      .filter((file) => !ignoreMatcher || !ignoreMatcher(file))
-      .filter((file) => path.extname(file).length > 0)
-      .toSorted();
+    const unique = yield* Effect.try({
+      try: () => [...new Set(candidates.map((file) => toProjectPath(file, cwd, path)))],
+      catch: filesystemError,
+    });
+    const selected = unique.filter((file) => !ignored(file) && path.extname(file).length > 0);
+    // Git also lists deleted-but-indexed paths, gitlinks, and links that leave the repository: none of them is source.
+    const present = yield* Effect.filter(
+      selected,
+      (file) =>
+        inspectRepositoryEntry(fs, path, cwd, file).pipe(
+          Effect.flatMap((entry) =>
+            entry._tag === "Inside"
+              ? Effect.map(fs.stat(entry.realPath), (info) => info.type === "File")
+              : Effect.succeed(false),
+          ),
+          Effect.mapError(filesystemError),
+        ),
+      { concurrency: LIST_CONCURRENCY },
+    );
+    return present.toSorted(compareStrings);
   });
 }

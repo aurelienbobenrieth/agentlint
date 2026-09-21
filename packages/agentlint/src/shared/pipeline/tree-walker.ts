@@ -10,7 +10,8 @@
 
 import { DetectionError } from "./detection-error.js";
 import type { Tree, TreeCursor } from "web-tree-sitter";
-import { type AgentlintNode, wrapNode } from "../../domain/node.js";
+import type { AgentlintNode } from "../../domain/node.js";
+import { wrapNode } from "../infrastructure/parsed-node.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import type { VisitorHandler, Visitors } from "../../domain/rule.js";
 import type { RuleContextImpl } from "../../domain/rule-context.js";
@@ -67,24 +68,32 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
 
   const cursor: TreeCursor = tree.walk();
   let reachedEnd = false;
+  // Child indices from the root to the cursor: the structural position of a finding reported on the visited node.
+  const position: number[] = [];
 
   try {
     while (!reachedEnd) {
       const handlers = dispatchTable.get(cursor.nodeType);
       if (handlers) {
         const wrapped: AgentlintNode = wrapNode(cursor.currentNode);
+        for (const entry of rules) entry.context.visit(wrapped, position);
         for (const handler of handlers) {
           handler(wrapped);
         }
       }
 
-      if (cursor.gotoFirstChild()) continue;
+      if (cursor.gotoFirstChild()) {
+        position.push(0);
+        continue;
+      }
       while (!cursor.gotoNextSibling()) {
         if (!cursor.gotoParent()) {
           reachedEnd = true;
           break;
         }
+        position.pop();
       }
+      if (!reachedEnd) position[position.length - 1] = (position.at(-1) ?? 0) + 1;
     }
   } finally {
     cursor.delete();

@@ -32,7 +32,13 @@ if (unknown.length) {
 }
 
 function git(args, cwd) {
-  const result = spawnSync("git", args, { cwd, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" });
+  const result = spawnSync("git", args, {
+    cwd,
+    stdio: ["ignore", "pipe", "inherit"],
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 300_000,
+  });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed in ${cwd}`);
   return result.stdout.trim();
 }

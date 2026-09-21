@@ -27,7 +27,6 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
   constructor(
     readonly rule: ChangeRule,
     change: ChangeSet,
-    private readonly absolutePath: (file: string) => string,
   ) {
     this.change = change;
     this.#sourceIdentity = findingSourceForRule(rule);
@@ -76,7 +75,6 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
             key: options.key,
           }),
         file: afterPath,
-        absolutePath: this.absolutePath(afterPath),
         line,
         column: 1,
         endLine,

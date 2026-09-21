@@ -14,7 +14,7 @@
   "jsPlugins": ["./scripts/oxlint-plugin-agentlint.js"],
   "overrides": [
     {
-      "files": ["action/**"],
+      "files": ["action/**", "packages/agentlint/skills/**"],
       "rules": {
         "agentlint/no-direct-process-access": "off",
         "agentlint/no-raw-json-parse": "off",

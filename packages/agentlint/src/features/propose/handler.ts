@@ -1,6 +1,6 @@
-/** Proposal recording handler. @module @since 0.3.0 */
+/** Proposal recording handler. @module @since 0.2.0 */
 
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { Env } from "../../config/env.js";
 import { ProposalRecord } from "../../domain/proposal.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
@@ -25,7 +25,7 @@ export const proposeHandler = Effect.fn("proposeHandler")(function* (command: Pr
       summary: command.summary.trim(),
       ...(command.diff?.trim() ? { diff: command.diff } : {}),
       actor: env.actor,
-      proposedAt: new Date().toISOString(),
+      proposedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }),
   );
   return new ProposeResult({

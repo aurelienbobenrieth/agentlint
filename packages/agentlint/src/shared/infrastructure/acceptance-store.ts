@@ -10,10 +10,18 @@
 
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { Env } from "../../config/env.js";
-import { AcceptanceDecision, AcceptanceRecord, acceptanceKey, acceptanceSatisfies } from "../../domain/acceptance.js";
+import {
+  AcceptanceDecision,
+  AcceptanceRecord,
+  acceptanceKey,
+  acceptanceSnapshot,
+  type AcceptanceSnapshot,
+} from "../../domain/acceptance.js";
 import { randomUUID } from "node:crypto";
+import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
+import { withFileLock } from "./file-lock.js";
 
 export class AcceptanceStoreError extends Schema.TaggedError<AcceptanceStoreError>()("agentlint/AcceptanceStoreError", {
   reason: Schema.Literals(["invalid_record", "duplicate_record", "invalid_acceptance", "io"]),
@@ -26,11 +34,6 @@ export class AcceptanceStoreError extends Schema.TaggedError<AcceptanceStoreErro
     }
     return `Acceptance store ${this.reason.replaceAll("_", " ")}: ${this.detail}`;
   }
-}
-
-export interface AcceptanceSnapshot {
-  readonly records: ReadonlyArray<AcceptanceRecord>;
-  readonly byKey: ReadonlyMap<string, AcceptanceRecord>;
 }
 
 export interface ReconcileInput {
@@ -70,25 +73,6 @@ export function parseDecisions(content: string): AcceptanceDecision[] {
   });
 }
 
-function snapshot(records: ReadonlyArray<AcceptanceRecord>): AcceptanceSnapshot {
-  return {
-    records,
-    byKey: new Map(records.map((record) => [acceptanceKey(record), record])),
-  };
-}
-
-/**
- * Find the acceptance that opens the gate for `finding`, using the exact
- * identity index. Equivalent to scanning `records` with `acceptanceSatisfies`.
- */
-export function lookupAcceptance(
-  acceptances: AcceptanceSnapshot,
-  finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
-): AcceptanceRecord | undefined {
-  const record = acceptances.byKey.get(findingIdentityKey(finding.source, finding.fingerprint));
-  return record !== undefined && acceptanceSatisfies(record, finding) ? record : undefined;
-}
-
 /** Parse and strictly validate a current-state JSONL file. */
 export function parseAcceptances(content: string): AcceptanceRecord[] {
   const records: AcceptanceRecord[] = [];
@@ -125,7 +109,7 @@ export function parseAcceptances(content: string): AcceptanceRecord[] {
 }
 
 /** Sort records by their complete identity, independently of insertion order. */
-export function sortAcceptances(records: ReadonlyArray<AcceptanceRecord>): AcceptanceRecord[] {
+function sortAcceptances(records: ReadonlyArray<AcceptanceRecord>): AcceptanceRecord[] {
   return sortByKey(records, keyIndex(records));
 }
 
@@ -138,7 +122,7 @@ function sortByKey(
   keys: ReadonlyMap<AcceptanceRecord, string>,
 ): AcceptanceRecord[] {
   const keyOf = (record: AcceptanceRecord) => keys.get(record) ?? acceptanceKey(record);
-  return records.toSorted((left, right) => keyOf(left).localeCompare(keyOf(right)));
+  return records.toSorted((left, right) => compareStrings(keyOf(left), keyOf(right)));
 }
 
 /** Serialize sorted current state as JSONL. */
@@ -225,26 +209,7 @@ export class AcceptanceStore extends Context.Service<
       const lock = path.resolve(directory, "acceptances.lock");
       const ioError = (error: unknown) =>
         new AcceptanceStoreError({ reason: "io", detail: String(error), line: undefined });
-      const acquire = Effect.gen(function* () {
-        yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(ioError));
-        for (let attempt = 0; attempt < 100; attempt++) {
-          const result = yield* fs
-            .writeFileString(lock, "agentlint acceptance transaction\n", { flag: "wx" })
-            .pipe(Effect.result);
-          if (result._tag === "Success") return;
-          if (result.failure.reason._tag !== "AlreadyExists") return yield* ioError(result.failure);
-          yield* Effect.sleep(20);
-        }
-        return yield* ioError(
-          `Acceptance store is locked: ${lock}. If its owning process stopped, remove this lock file and retry.`,
-        );
-      });
-      const locked = <A>(operation: Effect.Effect<A, AcceptanceStoreError>) =>
-        Effect.acquireUseRelease(
-          acquire,
-          () => operation,
-          () => fs.remove(lock).pipe(Effect.orDie),
-        );
+      const locked = withFileLock(fs, directory, lock, ioError);
 
       const readRecords = (): Effect.Effect<AcceptanceRecord[], AcceptanceStoreError> =>
         fs.exists(file).pipe(
@@ -298,11 +263,11 @@ export class AcceptanceStore extends Context.Service<
               Effect.mapError(ioError),
               Effect.ensuring(fs.remove(temporary).pipe(Effect.orElseSucceed(() => undefined))),
             );
-          return snapshot(prepared.validated);
+          return acceptanceSnapshot(prepared.validated);
         });
 
       return AcceptanceStore.of({
-        read: () => readRecords().pipe(Effect.map(snapshot)),
+        read: () => readRecords().pipe(Effect.map(acceptanceSnapshot)),
         write: (records) => locked(writeRecords(records)),
         reconcile: (input) =>
           locked(

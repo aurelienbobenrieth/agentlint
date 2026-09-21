@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, FileSystem, Layer } from "effect";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -80,7 +81,9 @@ describe("ConfigLoader", () => {
           `import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 import { testRuleFixtures } from "@aurelienbbn/agentlint/testing";
 import { ReviewArtifact } from "@aurelienbbn/agentlint/contract";
-if (typeof testRuleFixtures !== "function" || !ReviewArtifact) throw new Error("subpath alias failed");
+import { summarizeCalibration } from "@aurelienbbn/agentlint/calibration";
+if (typeof testRuleFixtures !== "function" || !ReviewArtifact || typeof summarizeCalibration !== "function")
+  throw new Error("subpath alias failed");
 export default defineConfig({
   rules: [
     defineRule({
@@ -132,5 +135,25 @@ export default defineConfig({
     });
 
     await Effect.runPromise(cleanup);
+  });
+
+  it("points a subdirectory run at the ancestor that owns the config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agentlint-config-ancestor-"));
+    try {
+      mkdirSync(join(root, ".agentlint"));
+      writeFileSync(join(root, ".agentlint", "config.ts"), "export default { rules: [] }\n");
+      const nested = join(root, "packages", "web");
+      mkdirSync(nested, { recursive: true });
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* Effect.flip((yield* ConfigLoader).load());
+        }).pipe(Effect.provide(testLayer(nested))),
+      );
+      expect(error).toMatchObject({ reason: "not_found", path: nested, ancestor: root });
+      expect(error.message).toContain(`${root} has .agentlint/config.ts: run agentlint from that directory`);
+      expect(error.message).not.toContain("Create .agentlint/config.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

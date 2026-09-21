@@ -20,6 +20,41 @@ const cleanup = Effect.gen(function* () {
 afterEach(() => Effect.runPromise(cleanup));
 
 describe("agentlint init", () => {
+  it("composes explicitly selected packages without installing or executing them", async () => {
+    const result = await Effect.runPromise(
+      initHandler(
+        new InitCommand({
+          presets: ["@example/core#starterPreset", "@example/ui#uiPreset", "@example/core#starterPreset"],
+        }),
+      ).pipe(Effect.provide(TestLayer)),
+    );
+    const text = await Effect.runPromise(
+      Effect.gen(function* () {
+        return yield* (yield* FileSystem.FileSystem).readFileString(join(cwd, ".agentlint", "config.ts"));
+      }).pipe(Effect.provide(TestLayer)),
+    );
+    expect(text).toContain('import { starterPreset as preset0 } from "@example/core"');
+    expect(text).toContain("extends: [preset0, preset1]");
+    expect(result.message).toContain("pnpm add -D @example/core @example/ui");
+    expect(text).not.toContain("preset2");
+  });
+
+  it("rejects injected imports before changing the repository", async () => {
+    const result = await Effect.runPromise(
+      initHandler(new InitCommand({ presets: ['example#x; throw Error("executed")'] })).pipe(
+        Effect.result,
+        Effect.provide(TestLayer),
+      ),
+    );
+    expect(result._tag).toBe("Failure");
+    expect(
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* (yield* FileSystem.FileSystem).exists(join(cwd, ".agentlint", "config.ts"));
+        }).pipe(Effect.provide(TestLayer)),
+      ),
+    ).toBe(false);
+  });
   it("creates the minimal config and ignores only ephemeral state", async () => {
     await Effect.runPromise(cleanup);
     const result = await Effect.runPromise(initHandler(new InitCommand({})).pipe(Effect.provide(TestLayer)));

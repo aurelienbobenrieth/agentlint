@@ -12,7 +12,7 @@ const source = new FindingSource({
   bindingId: "app-queries",
   bindingDigest: "binding-a",
 });
-const fingerprint = new Fingerprint({ scheme: "source-structure", version: 2, digest: "evidence-a" });
+const fingerprint = new Fingerprint({ scheme: "source-structure", version: 3, digest: "evidence-a" });
 
 function finding(overrides: Partial<ConstructorParameters<typeof FindingRecord>[0]> = {}) {
   return new FindingRecord({
@@ -24,7 +24,6 @@ function finding(overrides: Partial<ConstructorParameters<typeof FindingRecord>[
     fingerprint,
     lineageKey: "list-users-query",
     file: "src/query.ts",
-    absolutePath: "/repo/src/query.ts",
     line: 4,
     column: 3,
     endLine: 4,
@@ -84,7 +83,7 @@ describe("acceptance compatibility", () => {
 
   it("keeps unknown schemes and versions unresolved", () => {
     const unknownScheme = new Fingerprint({ scheme: "future-evidence", version: 1, digest: "same" });
-    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 3, digest: "same" });
+    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 4, digest: "same" });
     expect(
       acceptanceSatisfies(acceptance({ fingerprint: unknownScheme }), finding({ fingerprint: unknownScheme })),
     ).toBe(false);

@@ -32,14 +32,12 @@ export const GuidanceExample = Schema.Struct({
 
 export type GuidanceExample = Schema.Schema.Type<typeof GuidanceExample>;
 
-export const GuidanceObject = Schema.Struct({
+const GuidanceObject = Schema.Struct({
   standard: Schema.String,
   checks: Schema.optional(Schema.Array(Schema.String)),
   examples: Schema.optional(Schema.Array(GuidanceExample)),
   refs: Schema.optional(Schema.Array(GuidanceRef)),
 });
-
-export type GuidanceObject = Schema.Schema.Type<typeof GuidanceObject>;
 
 export const Guidance = Schema.Union([Schema.String, GuidanceObject]);
 

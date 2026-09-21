@@ -26,11 +26,15 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agen
   reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
   path: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
+  /** Nearest ancestor of `path` that has a config, when the working directory has none. */
+  ancestor: Schema.optional(Schema.String),
 }) {
   override get message(): string {
     switch (this.reason) {
       case "not_found":
-        return `No agentlint config found. Create .agentlint/config.ts in ${this.path}`;
+        return this.ancestor
+          ? `No agentlint config found in ${this.path}. ${this.ancestor} has .agentlint/config.ts: run agentlint from that directory.`
+          : `No agentlint config found. Create .agentlint/config.ts in ${this.path}`;
       case "import_failed":
         return `Failed to load ${this.path}: ${this.detail}`;
       case "invalid_shape":
@@ -64,6 +68,7 @@ const SELF_ENTRIES = [
   [SELF_PACKAGE, "index.mjs", "../../index.ts"],
   [`${SELF_PACKAGE}/testing`, "testing.mjs", "../../testing.ts"],
   [`${SELF_PACKAGE}/contract`, "contract.mjs", "../../features/review/contract.ts"],
+  [`${SELF_PACKAGE}/calibration`, "calibration.mjs", "../../features/calibration/report.ts"],
 ] as const;
 
 /**
@@ -101,6 +106,12 @@ const discoverConfig = (
     const candidate = path.resolve(cwd, ...CONFIG_PATH);
     if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
       return candidate;
+    }
+    // A second config scaffolded in a subdirectory would split the repository's decisions: name the existing one.
+    for (let dir = path.dirname(cwd); ; dir = path.dirname(dir)) {
+      if (yield* fs.exists(path.resolve(dir, ...CONFIG_PATH)).pipe(Effect.orElseSucceed(() => false)))
+        return yield* new ConfigLoadError({ reason: "not_found", path: cwd, ancestor: dir });
+      if (dir === path.dirname(dir)) break;
     }
     return yield* new ConfigLoadError({ reason: "not_found", path: cwd });
   });

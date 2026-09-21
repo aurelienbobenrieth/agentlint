@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { detectEditorApplications, editorInvocation, launcherFromLookup, openInEditor } from "./editor.js";
 
@@ -57,7 +60,7 @@ describe("review editor adapters", () => {
     const runner = vi.fn<
       (invocation: { readonly command: string; readonly args: ReadonlyArray<string> }) => Promise<string>
     >(async ({ args }) => {
-      if (args.some((arg) => arg.includes("vscode") || arg === "explorer.exe")) return "available";
+      if (args.some((arg) => arg.includes("vscode") || arg.endsWith("explorer.exe"))) return "available";
       throw new Error("missing");
     });
     await expect(detectEditorApplications("win32", runner)).resolves.toEqual([
@@ -65,6 +68,44 @@ describe("review editor adapters", () => {
       { id: "vscode-insiders", label: "VS Code Insiders" },
       { id: "explorer", label: "File Explorer" },
     ]);
+  });
+
+  it("looks launchers up on PATH only and never takes one from the reviewed repository", async () => {
+    const repository = mkdtempSync(join(tmpdir(), "agentlint-editor-repository-"));
+    const installed = mkdtempSync(join(tmpdir(), "agentlint-editor-installed-"));
+    try {
+      writeFileSync(join(repository, "code.exe"), "");
+      writeFileSync(join(installed, "cursor.exe"), "");
+      const lookups: string[] = [];
+      const detect = async ({ command, args }: { readonly command: string; readonly args: ReadonlyArray<string> }) => {
+        if (command !== "where.exe") return "registered";
+        lookups.push(args.join(" "));
+        if (args[0] === "$PATH:code")
+          return `${join(repository, "code.exe")}
+`;
+        if (args[0] === "$PATH:cursor")
+          return `${join(installed, "cursor.exe")}
+`;
+        throw new Error("missing");
+      };
+      await detectEditorApplications("win32", detect, repository);
+      expect(lookups.toSorted()).toEqual([
+        "$PATH:code",
+        "$PATH:code-insiders",
+        "$PATH:cursor",
+        "$PATH:explorer.exe",
+        "$PATH:zed",
+      ]);
+      const launched: string[] = [];
+      const launch = async ({ command }: { readonly command: string }) => (launched.push(command), "");
+      await openInEditor("vscode", "win32", join(repository, "a.ts"), 1, 1, launch);
+      await openInEditor("cursor", "win32", join(repository, "a.ts"), 1, 1, launch);
+      expect(launched).toEqual(["rundll32.exe", join(installed, "cursor.exe")]);
+    } finally {
+      await detectEditorApplications("test", async () => "");
+      rmSync(repository, { recursive: true, force: true });
+      rmSync(installed, { recursive: true, force: true });
+    }
   });
 
   it("passes a pure allowlisted invocation to the runner", async () => {

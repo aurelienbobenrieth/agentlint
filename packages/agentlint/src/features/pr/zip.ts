@@ -13,7 +13,7 @@ import { inflateRawSync } from "node:zlib";
 import { Schema } from "effect";
 
 /** @since 0.2.0 @category errors */
-export class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
+class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
   reason: Schema.Literals(["not_zip", "entry_missing", "unsupported_method"]),
   entry: Schema.String,
   method: Schema.optional(Schema.Number),
@@ -38,6 +38,8 @@ const CENTRAL_HEADER_SIZE = 46;
 const LOCAL_HEADER_SIZE = 30;
 const STORED = 0;
 const DEFLATE = 8;
+/** Review artifacts are a few megabytes. The cap stops a crafted archive from exhausting memory. */
+const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
 
 const findEndRecord = (archive: Buffer): number => {
   for (let offset = archive.length - END_RECORD_SIZE; offset >= 0; offset--) {
@@ -79,7 +81,7 @@ export function readZipEntry(bytes: Uint8Array, entry: string): Uint8Array {
       localOffset + LOCAL_HEADER_SIZE + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
     const data = archive.subarray(dataStart, dataStart + compressedSize);
     if (method === STORED) return data;
-    if (method === DEFLATE) return inflateRawSync(data);
+    if (method === DEFLATE) return inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES });
     throw new ZipError({ reason: "unsupported_method", entry, method });
   }
 

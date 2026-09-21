@@ -10,8 +10,8 @@
 
 export { defineConfig, ConfigError } from "./domain/config.js";
 export { defineRule, RuleDefinitionError } from "./domain/rule.js";
-export { PatternError } from "./shared/pipeline/pattern-match.js";
-export { ParserError } from "./shared/infrastructure/parser.js";
+export { PatternError } from "./domain/pattern-error.js";
+export { ParserError } from "./domain/parser-error.js";
 
 // Runtime schemas a consumer may need to construct or decode.
 export { FindingRecord, findingId } from "./domain/finding.js";

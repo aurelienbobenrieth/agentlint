@@ -72,7 +72,6 @@ function finding(options: {
     fingerprint: new Fingerprint({ scheme: "test", version: 1, digest: options.digest }),
     lineageKey: undefined,
     file: options.file,
-    absolutePath: `C:/repo/${options.file}`,
     line: options.line,
     column: 3,
     endLine: options.line,
@@ -133,7 +132,6 @@ describe("check reporter", () => {
       formatCheckText([first, second], config, "0.2.0", [
         {
           findingKey: findingKey(second),
-          acceptanceId: "acceptance-1",
           reason: "The sandbox owns this path.",
           authority: "agent",
           acceptedAt: "2026-08-11T10:00:00.000Z",

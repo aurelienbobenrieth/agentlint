@@ -78,3 +78,7 @@ Validate and calibrate:
 ```
 
 Review every current candidate. Refine detector, binding, guidance, and fixtures until the activation surface is useful. If the concern cannot be expressed usefully, remove the rule rather than leaving warning-only or candidate state behind.
+
+For an existing plugin, `init --preset <package>#<export>` scaffolds explicitly chosen presets without installing them or overwriting a config. Calibrate a small starting set before enforcing it.
+
+Export calibration reports from the review UI. Compare successive reports with `rules calibration earlier.json later.json --format json`: exact evidence is counted once, later labels replace earlier ones, and material policy versions stay separate. Applicability excludes unsure labels. Repeated invalidations count observed identities within explicit lineages, not every historical code edit. Reports never create acceptances.

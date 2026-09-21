@@ -6,7 +6,7 @@ import { bindingDigest, canonicalStringify, Fingerprint } from "./fingerprint.js
 import { findingId, FindingRecord } from "./finding.js";
 import { reconcileAcceptanceRecords } from "../shared/infrastructure/acceptance-store.js";
 import { resolveFindingSelector } from "../shared/pipeline/selectors.js";
-import { testRuleOnSource, testRuleOnSources } from "../testing.js";
+import { testRuleOnChange, testRuleOnSource, testRuleOnSources } from "../testing.js";
 
 const rule = defineRule({
   lifecycle: "state",
@@ -68,14 +68,16 @@ describe("review identity and authoring regressions", () => {
     const [guarded] = await testRuleOnSource(rule, 'function run() { if (authorized) danger("x"); }');
     const [formatted] = await testRuleOnSource(rule, '\n function run() {\n if (authorized) danger( "x" );\n }');
     const [unguarded] = await testRuleOnSource(rule, 'function run() { danger("x"); }');
-    expect(guarded?.fingerprint).toEqual(formatted?.fingerprint);
-    expect(guarded?.fingerprint).not.toEqual(unguarded?.fingerprint);
+    if (!guarded || !formatted || !unguarded) throw new Error("Expected one finding per source");
+    expect(guarded.fingerprint).toEqual(formatted.fingerprint);
+    expect(guarded.fingerprint).not.toEqual(unguarded.fingerprint);
   });
 
   it("does not transfer an acceptance when an identical sibling disappears", async () => {
     const [first] = await testRuleOnSource(rule, 'danger("x"); danger("x");');
     const [remaining] = await testRuleOnSource(rule, 'danger("x");');
-    expect(first?.fingerprint).not.toEqual(remaining?.fingerprint);
+    if (!first || !remaining) throw new Error("Expected a finding in both sources");
+    expect(first.fingerprint).not.toEqual(remaining.fingerprint);
   });
 
   it("includes explicit supporting files and requires them in fixtures", async () => {
@@ -88,14 +90,16 @@ describe("review identity and authoring regressions", () => {
       ["fixture.ts", 'danger("x")'],
       ["policy.txt", "public"],
     ]);
-    expect(before?.fingerprint).not.toEqual(after?.fingerprint);
+    if (!before || !after) throw new Error("Expected a finding for both policy contents");
+    expect(before.fingerprint).not.toEqual(after.fingerprint);
     await expect(testRuleOnSource(dependent, 'danger("x")')).rejects.toThrow("Missing fixture dependency");
   });
 
   it("keeps Unicode literals and option array ordering semantically distinct", async () => {
     const [a] = await testRuleOnSource(rule, 'danger("é")');
     const [b] = await testRuleOnSource(rule, 'danger("e\u0301")');
-    expect(a?.fingerprint).not.toEqual(b?.fingerprint);
+    if (!a || !b) throw new Error("Expected a finding for both literals");
+    expect(a.fingerprint).not.toEqual(b.fingerprint);
     expect(bindingDigest({ options: { include: ["a", "b"] } })).not.toBe(
       bindingDigest({ options: { include: ["b", "a"] } }),
     );
@@ -112,7 +116,8 @@ describe("review identity and authoring regressions", () => {
     expect(() => defineRule({ ...rule, binding: { ...rule.binding, dependencies: ["../policy"] } })).toThrow("escapes");
   });
 
-  it("composes heterogeneous typed options without casting or exposing Effect", () => {
+  it("composes heterogeneous typed options without casting or exposing Effect", async () => {
+    const received: number[] = [];
     const typed = defineRule({
       lifecycle: "change",
       standard: rule.standard,
@@ -120,12 +125,17 @@ describe("review identity and authoring regressions", () => {
         id: "typed",
         version: 1,
         detect(_context, options: { limit: number }) {
-          expect(options.limit).toBe(5);
+          received.push(options.limit);
         },
       },
       binding: { id: "typed", authority: "agent", options: { limit: 5 } },
     });
-    expect(defineConfig({ rules: [rule, typed] }).rules).toHaveLength(2);
+    expect(normalizeConfig(defineConfig({ rules: [rule, typed] })).rules.map((entry) => entry.binding.id)).toEqual([
+      "review",
+      "typed",
+    ]);
+    await testRuleOnChange(typed, { before: {}, after: { "a.ts": "export {}" } });
+    expect(received).toEqual([5]);
   });
 
   it("rejects shared digest selectors and resolves complete identity hashes", async () => {

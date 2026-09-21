@@ -17,7 +17,7 @@ sources:
 Resolve `<agentlint-cmd>` from the repository package manager: `pnpm agentlint`, `npm exec agentlint --`, `yarn agentlint`, or `bun run agentlint`.
 
 1. Run `<agentlint-cmd> check` after a coherent change and `check --all` at a completion checkpoint.
-2. Treat every unresolved finding as mandatory work. Read its standard and inspect `<agentlint-cmd> explain <selector>` when the compact output is insufficient.
+2. Use `<agentlint-cmd> next --format json` to resume one current obligation with its standard, source, authority and action argument arrays. Treat every unresolved finding as mandatory work. Read its standard and inspect `<agentlint-cmd> explain <selector>` when the compact output is insufficient.
 3. Prefer changing the evidence so the standard is clearly satisfied.
 4. For an `agent` authority finding that is already permitted, run `<agentlint-cmd> accept <selector> --reason "..."` with the concrete fact that satisfies the standard. Do not use a generic reason.
 5. Never create human authority. For a `human` finding, do the work you can, then run `<agentlint-cmd> propose <selector> --summary "..." [--diff-file path]` so the reviewer sees your change or your reason for not changing it next to the evidence. Then ask the user to run the review UI or `approve` command.
@@ -30,6 +30,7 @@ Useful commands:
 ```bash
 <agentlint-cmd> check
 <agentlint-cmd> check --all
+<agentlint-cmd> next --format json
 <agentlint-cmd> check --format jsonl
 <agentlint-cmd> explain 1
 <agentlint-cmd> accept 1 --reason "..."
@@ -39,6 +40,10 @@ Useful commands:
 ```
 
 - When the work is on a pull request that runs the agentlint GitHub action, `<agentlint-cmd> pr <number>` downloads the review artifact and opens it. Never post `/agentlint approve` yourself; it is a human command.
+
+`next` scans the complete repository by default; `--rule` narrows its scope. Its JSON `actions[].argv` contains argument arrays, not shell strings; supply the indicated required input. Exit 1 means work remains. Run `check --all` at completion even after a filtered queue is clear.
+
+Related groups organize navigation only. Independent review hides prior justifications until the reviewer writes an assessment; neither changes acceptance compatibility.
 
 The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.
 

@@ -1,4 +1,4 @@
-/** Proposal command contracts. @module @since 0.3.0 */
+/** Proposal command contracts. @module @since 0.2.0 */
 
 import { Schema } from "effect";
 

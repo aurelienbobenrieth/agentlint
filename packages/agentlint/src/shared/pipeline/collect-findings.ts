@@ -1,10 +1,10 @@
 /** Finding collection for state and change rules. @module @since 0.2.0 */
 
 import { Effect, FileSystem, Path, Schema } from "effect";
-import picomatch from "picomatch";
-import { DetectionError } from "./detection-error.js";
+import { DetectionError, UnparseableFilesError } from "./detection-error.js";
 import { Env } from "../../config/env.js";
 import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
+import { compareStrings } from "../../domain/compare.js";
 import type { NormalizedConfig } from "../../domain/config.js";
 import { FindingRecord } from "../../domain/finding.js";
 import {
@@ -16,21 +16,22 @@ import {
   type Visitors,
 } from "../../domain/rule.js";
 import { RuleContextImpl } from "../../domain/rule-context.js";
+import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git.js";
-import { Parser, ParserError } from "../infrastructure/parser.js";
-import { FileResolverError, resolveFiles } from "./file-resolver.js";
-import { grammarForExtension } from "./language-map.js";
+import { Parser } from "../infrastructure/parser.js";
 import {
-  compileMatches,
-  disposeMatches,
-  resolveWhereClauses,
-  runMatches,
-  type RunnableMatches,
-} from "./pattern-match.js";
+  compileGlobs,
+  explicitPathMatcher,
+  FileResolverError,
+  inspectRepositoryEntry,
+  resolveFiles,
+} from "./file-resolver.js";
+import { grammarForExtension } from "./language-map.js";
+import { compileMatches, disposeMatches, runMatches, type RunnableMatches } from "./pattern-match.js";
 import { visitorKeys, walkFile } from "./tree-walker.js";
 
-export const CollectResult = Schema.Struct({
+const CollectResult = Schema.Struct({
   findings: Schema.Array(FindingRecord),
   sources: Schema.Record(Schema.String, Schema.String),
   scannedFiles: Schema.Array(Schema.String),
@@ -39,7 +40,7 @@ export const CollectResult = Schema.Struct({
   scope: Schema.Literals(["partial", "complete"]),
   base: Schema.UndefinedOr(Schema.String),
 });
-export type CollectResult = Schema.Schema.Type<typeof CollectResult>;
+type CollectResult = Schema.Schema.Type<typeof CollectResult>;
 
 export const CollectOptions = Schema.Struct({
   all: Schema.Boolean,
@@ -63,8 +64,8 @@ interface StateRuleEntry {
 
 /** Compile a binding's include and exclude globs into one predicate. */
 function scopeMatcher(rule: AgentlintRule): ScopeMatcher {
-  const included = rule.binding.include?.length ? picomatch([...rule.binding.include]) : undefined;
-  const excluded = rule.binding.exclude?.length ? picomatch([...rule.binding.exclude]) : undefined;
+  const included = compileGlobs(rule.binding.include);
+  const excluded = compileGlobs(rule.binding.exclude);
   if (!included && !excluded) return () => true;
   return (file) => (included ? included(file) : true) && !(excluded ? excluded(file) : false);
 }
@@ -74,6 +75,9 @@ export function ruleEnabledForFile(rule: AgentlintRule, file: string): boolean {
   return scopeMatcher(rule)(file);
 }
 
+const readError = (file: string) => (error: { readonly message: string }) =>
+  new FileResolverError({ reason: "filesystem", detail: file ? `${file}: ${error.message}` : error.message });
+
 function filterRules(config: NormalizedConfig, requested: ReadonlyArray<string>): ReadonlyArray<AgentlintRule> {
   if (requested.length === 0) return config.rules;
   return config.rules.filter((rule) => requested.includes(rule.binding.id));
@@ -82,19 +86,25 @@ function filterRules(config: NormalizedConfig, requested: ReadonlyArray<string>)
 function sortFindings(findings: ReadonlyArray<FindingRecord>): FindingRecord[] {
   return findings.toSorted(
     (left, right) =>
-      left.file.localeCompare(right.file) ||
+      compareStrings(left.file, right.file) ||
       left.line - right.line ||
       left.column - right.column ||
-      left.ruleId.localeCompare(right.ruleId) ||
-      left.fingerprint.digest.localeCompare(right.fingerprint.digest),
+      compareStrings(left.ruleId, right.ruleId) ||
+      compareStrings(left.fingerprint.digest, right.fingerprint.digest),
   );
+}
+
+/** What a scan read. `sources` keeps only files with a finding, so a complete scan does not hold the repository in memory. */
+export interface ScanCapture {
+  readonly scanned: Set<string>;
+  readonly sources: Map<string, string>;
 }
 
 export const collectStateFindings = Effect.fn("collectStateFindings")(function* (
   rules: ReadonlyArray<StateRule>,
   files: ReadonlyArray<string>,
   fixtureSources?: ReadonlyMap<string, string>,
-  captured?: Map<string, string>,
+  capture?: ScanCapture,
 ) {
   const env = yield* Env;
   const fs = yield* FileSystem.FileSystem;
@@ -102,24 +112,29 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
   const parser = yield* Parser;
   const findings: FindingRecord[] = [];
   const entries: StateRuleEntry[] = [];
+  const unparseable: Array<{ file: string; grammar: string }> = [];
+  const root = fixtureSources ? env.cwd : yield* fs.realPath(env.cwd).pipe(Effect.mapError(readError("")));
+  /** Read one repository file for detection: never through a link that leaves the repository, line endings normalized once. */
+  const readSource = (file: string, label: string) =>
+    Effect.gen(function* () {
+      if (fixtureSources) {
+        const fixture = fixtureSources.get(file);
+        if (fixture === undefined)
+          return yield* new FileResolverError({ reason: "filesystem", detail: `Missing fixture ${label}: ${file}` });
+        return normalizeLineEndings(fixture);
+      }
+      const entry = yield* inspectRepositoryEntry(fs, path, root, file).pipe(Effect.mapError(readError(file)));
+      if (entry._tag !== "Inside")
+        return yield* new FileResolverError({
+          reason: "filesystem",
+          detail: `${file}: ${entry._tag === "Missing" ? "no such file" : "resolves outside the repository"}`,
+        });
+      return normalizeLineEndings(yield* fs.readFileString(entry.realPath).pipe(Effect.mapError(readError(file))));
+    });
   for (const rule of rules) {
     const dependencies: Record<string, string> = {};
     for (const dependency of rule.binding.dependencies ?? []) {
-      if (fixtureSources && !fixtureSources.has(dependency))
-        return yield* new FileResolverError({
-          reason: "filesystem",
-          detail: `Missing fixture dependency: ${dependency}`,
-        });
-      dependencies[dependency] = yield* (
-        fixtureSources
-          ? Effect.succeed(fixtureSources.get(dependency) ?? "")
-          : fs.readFileString(path.resolve(env.cwd, dependency))
-      ).pipe(
-        Effect.mapError(
-          (error) =>
-            new FileResolverError({ reason: "filesystem", detail: `Dependency ${dependency}: ${String(error)}` }),
-        ),
-      );
+      dependencies[dependency] = yield* readSource(dependency, "dependency");
     }
     const context = new RuleContextImpl(rule, dependencies);
     const visitors = yield* Effect.try({
@@ -139,6 +154,9 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     });
   }
 
+  /** Findings reported so far, drained or not: a file whose walk raises it produced one. */
+  const reportedCount = () => entries.reduce((total, entry) => total + entry.context.findings.length, findings.length);
+
   const disposeCompiled = Effect.sync(() => {
     for (const entry of entries) {
       for (const compiled of entry.compiledByGrammar.values()) disposeMatches(compiled);
@@ -153,11 +171,9 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       const tree = yield* parser.parse(source, grammar);
       if (tree.rootNode.hasError) {
         tree.delete();
-        return yield* new ParserError({
-          reason: "parse_failed",
-          grammar,
-          detail: `${file}: syntax is incomplete or unsupported by this grammar`,
-        });
+        // Keep analysing so one run names every broken file; the scan still fails once it ends.
+        unparseable.push({ file, grammar });
+        return;
       }
       const runnable: Array<{ ruleId: string; context: RuleContextImpl; visitors: Visitors }> = [];
 
@@ -172,12 +188,18 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
           if (entry.matches.length > 0) {
             let compiled = entry.compiledByGrammar.get(grammar);
             if (!compiled) {
-              const patterns = yield* compileMatches({
+              // A pattern is code in one language. It has to compile for some grammar the binding covers, not for all.
+              const grammars = new Set<string>();
+              for (const candidate of files) {
+                const other = entry.inScope(candidate) && grammarForExtension(path.extname(candidate).slice(1));
+                if (other) grammars.add(other);
+              }
+              compiled = yield* compileMatches({
                 ruleId: entry.rule.binding.id,
                 matches: entry.matches,
                 grammar,
+                grammars: [...grammars],
               });
-              compiled = yield* resolveWhereClauses(entry.rule.binding.id, patterns, grammar);
               entry.compiledByGrammar.set(grammar, compiled);
             }
             const runnableMatches = compiled;
@@ -201,21 +223,26 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     });
 
   yield* Effect.gen(function* () {
+    let last: readonly [file: string, source: string] | undefined;
     for (const file of files) {
       const grammar = grammarForExtension(path.extname(file).slice(1));
       if (!grammar) continue;
       const absolutePath = fixtureSources ? file : path.resolve(env.cwd, file);
       if (!entries.some((entry) => entry.inScope(file))) continue;
-      const source = yield* (
-        fixtureSources ? Effect.succeed(fixtureSources.get(file) ?? "") : fs.readFileString(absolutePath)
-      ).pipe(
-        Effect.mapError(
-          (error) => new FileResolverError({ reason: "filesystem", detail: `${file}: ${String(error)}` }),
-        ),
-      );
-      captured?.set(file, source);
+      const source = yield* readSource(file, "file");
+      capture?.scanned.add(file);
+      const reportedBefore = reportedCount();
       yield* walkOne(file, absolutePath, source, grammar);
+      if (reportedCount() > reportedBefore) capture?.sources.set(file, source);
+      last = [file, source];
     }
+    if (unparseable.length > 0)
+      return yield* new UnparseableFilesError({
+        reason: "parse_failed",
+        files: unparseable.toSorted((left, right) => compareStrings(left.file, right.file)),
+      });
+    // An `after` hook reports against the last file walked.
+    const reportedBeforeAfter = reportedCount();
     for (const entry of entries) {
       yield* Effect.try({
         try: () => entry.visitors.after?.(),
@@ -223,6 +250,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       });
       findings.push(...entry.context.drainFindings());
     }
+    if (last && reportedCount() > reportedBeforeAfter) capture?.sources.set(...last);
   }).pipe(Effect.ensuring(disposeCompiled));
 
   return findings;
@@ -234,7 +262,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   const path = yield* Path.Path;
   const git = yield* Git;
   const config = yield* configLoader.load();
-  const availableRules = config.rules.map((rule) => rule.binding.id).toSorted();
+  const availableRules = config.rules.map((rule) => rule.binding.id).toSorted(compareStrings);
   for (const requested of options.rules) {
     if (!config.rulesById.has(requested))
       return yield* new DetectionError({ ruleId: requested, cause: new Error("Unknown binding") });
@@ -259,15 +287,8 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   const stateRules = activeRules.filter((rule): rule is StateRule => rule.lifecycle === "state");
   const changeRules = activeRules.filter((rule): rule is ChangeRule => rule.lifecycle === "change");
   const findings: FindingRecord[] = [];
-  const sources = new Map<string, string>();
-  // Both lifecycles read the same comparison; resolve it at most once per run.
-  const changeSet = yield* Effect.cached(git.changeSet(requestedBase));
-  const changedPaths =
-    changeRules.length === 0
-      ? git.changedFiles(requestedBase)
-      : changeSet.pipe(
-          Effect.map((change) => change.files.filter((file) => file.status !== "deleted").map((file) => file.path)),
-        );
+  const capture: ScanCapture = { scanned: new Set(), sources: new Map() };
+  const changedPaths = yield* Effect.cached(git.changedFiles(requestedBase));
 
   if (stateRules.length > 0) {
     const repositoryScan = stateRules.some(
@@ -283,33 +304,43 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
         configIgnores: config.ignores.length ? [...config.ignores] : undefined,
         positionalFiles: !repositoryScan && options.files.length ? [...options.files] : undefined,
       },
-      { changedFiles: () => changedPaths },
+      { changedFiles: () => changedPaths, listFiles: git.listFiles },
     );
-    findings.push(...(yield* collectStateFindings(stateRules, files, undefined, sources)));
+    findings.push(...(yield* collectStateFindings(stateRules, files, undefined, capture)));
   }
 
   let selectedBase = requestedBase;
   if (changeRules.length > 0) {
-    const change = yield* changeSet;
+    const explicitMatcher = options.files.length
+      ? yield* Effect.try({
+          try: () => explicitPathMatcher(options.files, env.cwd, path),
+          catch: (error) =>
+            error instanceof FileResolverError
+              ? error
+              : new FileResolverError({ reason: "filesystem", detail: String(error) }),
+        })
+      : undefined;
+    const ignoreMatcher = compileGlobs(config.ignores);
+    const scoped = changeRules.map((rule) => [rule, scopeMatcher(rule)] as const);
+    const selected = (file: string) => !ignoreMatcher?.(file) && (!explicitMatcher || explicitMatcher(file));
+    // Git reads and diffs only what some change rule can see: an ignored file is never loaded.
+    const change = yield* git.changeSet(
+      requestedBase,
+      (file) => selected(file) && scoped.some(([, inScope]) => inScope(file)),
+    );
     selectedBase = change.baseline.ref;
-    const explicitMatcher = options.files.length ? picomatch([...options.files]) : undefined;
-    const ignoreMatcher = config.ignores.length ? picomatch([...config.ignores]) : undefined;
 
-    for (const rule of changeRules) {
-      const inScope = scopeMatcher(rule);
+    for (const [rule, inScope] of scoped) {
       const filteredChange = {
         ...change,
-        files: change.files.filter(
-          (file) =>
-            inScope(file.path) &&
-            (!ignoreMatcher || !ignoreMatcher(file.path)) &&
-            (!explicitMatcher || explicitMatcher(file.path)),
-        ),
+        files: change.files.filter((file) => inScope(file.path) && selected(file.path)),
       };
       if (filteredChange.files.length === 0) continue;
-      for (const file of filteredChange.files)
-        sources.set(file.path, file.after?.content ?? file.before?.content ?? "");
-      const context = new ChangeRuleContextImpl(rule, filteredChange, (file) => path.resolve(env.cwd, file));
+      for (const file of filteredChange.files) {
+        capture.scanned.add(file.path);
+        capture.sources.set(file.path, file.after?.content ?? file.before?.content ?? "");
+      }
+      const context = new ChangeRuleContextImpl(rule, filteredChange);
       yield* Effect.try({
         try: () => rule.detector.detect(context, rule.binding.options),
         catch: (cause) => new DetectionError({ ruleId: rule.binding.id, cause }),
@@ -320,12 +351,12 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
 
   return {
     findings: sortFindings(findings),
-    scannedFiles: [...sources.keys()].toSorted(),
+    scannedFiles: [...capture.scanned].toSorted(compareStrings),
     sources: Object.fromEntries(
-      [...new Set(findings.map((finding) => finding.file))].map((file) => [file, sources.get(file) ?? ""]),
+      [...new Set(findings.map((finding) => finding.file))].map((file) => [file, capture.sources.get(file) ?? ""]),
     ),
     noMatchingRules: false,
-    availableRules: activeRules.map((rule) => rule.binding.id).toSorted(),
+    availableRules: activeRules.map((rule) => rule.binding.id).toSorted(compareStrings),
     scope,
     base: selectedBase,
   };

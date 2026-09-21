@@ -20,14 +20,16 @@
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
     "refs:sync": "node scripts/sync-ref-repos.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && intent validate packages/agentlint/skills && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && pnpm knip && intent validate packages/agentlint/skills && pnpm test",
+    "knip": "knip"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "1.0.0",
-    "@changesets/cli": "3.0.1",
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
     "@tanstack/intent": "catalog:",
-    "oxfmt": "0.65.0",
-    "oxlint": "1.80.0"
+    "knip": "6.37.0",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0"
   },
   "engines": {
     "node": ">=22.19.0"

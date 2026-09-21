@@ -1,6 +1,6 @@
 /** Acceptance application handler. @module @since 0.2.0 */
 
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { Env } from "../../config/env.js";
 import { AcceptanceRecord, authoritySatisfies } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
@@ -49,6 +49,14 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
 ) {
   const env = yield* Env;
   const store = yield* AcceptanceStore;
+  const actor = input.actor ?? env.actor;
+  if (input.authority === "human" && !actor.startsWith("human:")) {
+    return new AcceptResult({
+      message:
+        "Human approval requires a human actor. Open agentlint review or run agentlint approve outside an agent session.",
+      exitCode: 2,
+    });
+  }
   if (!authoritySatisfies(input.authority, finding.authority)) {
     return new AcceptResult({
       message: `${finding.ruleId} requires human acceptance. Open agentlint review or run agentlint approve as a human.`,
@@ -62,8 +70,8 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
     lineageKey: finding.lineageKey,
     reason: input.reason.trim(),
     authority: input.authority,
-    actor: input.actor ?? env.actor,
-    acceptedAt: new Date().toISOString(),
+    actor,
+    acceptedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
   });
   yield* store.reconcile({ scope: "partial", current: [finding], accepted: [record] });
   return new AcceptResult({

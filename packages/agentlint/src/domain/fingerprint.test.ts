@@ -3,8 +3,10 @@ import {
   bindingDigest,
   canonicalDigest,
   canonicalStringify,
+  Fingerprint,
   fingerprintChange,
   fingerprintState,
+  isSupportedFingerprint,
   normalizeRepositoryPath,
 } from "./fingerprint.js";
 
@@ -38,6 +40,14 @@ describe("canonical fingerprints", () => {
     });
 
     expect(first).toEqual(formattedAndMoved);
+  });
+
+  it("emits and supports only the current state scheme version", () => {
+    const current = fingerprintState({ path: "src/query.ts", structure: [], occurrence: "call:0" });
+    expect(current).toMatchObject({ scheme: "source-structure", version: 3 });
+    expect(isSupportedFingerprint(current)).toBe(true);
+    expect(isSupportedFingerprint(new Fingerprint({ ...current, version: 2 }))).toBe(false);
+    expect(isSupportedFingerprint(new Fingerprint({ ...current, version: 4 }))).toBe(false);
   });
 
   it("invalidates state fingerprints for paths, captures, and duplicate occurrences", () => {

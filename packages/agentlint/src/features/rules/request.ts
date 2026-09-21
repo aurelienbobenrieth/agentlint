@@ -7,7 +7,7 @@ export class RulesListCommand extends Schema.TaggedClass<RulesListCommand>()("Ru
   file: Schema.UndefinedOr(Schema.String),
 }) {}
 
-export const RuleListItem = Schema.Struct({
+const RuleListItem = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   standardId: Schema.String,
@@ -16,7 +16,6 @@ export const RuleListItem = Schema.Struct({
   detector: Schema.String,
   enabled: Schema.Boolean,
 });
-export type RuleListItem = Schema.Schema.Type<typeof RuleListItem>;
 
 export class RulesListResult extends Schema.TaggedClass<RulesListResult>()("RulesListResult", {
   rules: Schema.Array(RuleListItem),

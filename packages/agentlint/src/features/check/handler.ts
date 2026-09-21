@@ -1,14 +1,15 @@
 /** Check application handler. @module @since 0.2.0 */
 
-import { Effect } from "effect";
-import { findLineage } from "../../domain/acceptance.js";
-import { findingKey, withSelector, type FindingRecord } from "../../domain/finding.js";
-import { AcceptanceStore, lookupAcceptance } from "../../shared/infrastructure/acceptance-store.js";
+import { Effect, Option } from "effect";
+import { findLineage, lookupAcceptance } from "../../domain/acceptance.js";
+import { findingId, findingKey, withSelector, type FindingRecord } from "../../domain/finding.js";
+import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
+import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { CheckCommand, CheckResult } from "./request.js";
 
-export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckCommand) {
+export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckCommand, updateSelectorCache = true) {
   const store = yield* AcceptanceStore;
   const selectors = yield* SelectorCache;
   const collected = yield* collectFindings(command);
@@ -42,7 +43,9 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   }
   const staleCount =
     collected.scope === "complete" ? [...snapshot.byKey.keys()].filter((key) => !currentKeys.has(key)).length : 0;
-  const selected = unresolved.map((finding, index) => withSelector(finding, String(index + 1)));
+  const selected = unresolved.map((finding, index) =>
+    withSelector(finding, collected.scope === "complete" ? String(index + 1) : findingId(finding).slice(0, 12)),
+  );
   const lineage = unresolved.flatMap((finding) => {
     const prior = findLineage(snapshot.records, finding);
     return prior
@@ -57,19 +60,26 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
       : [];
   });
 
-  yield* selectors.write(
-    selected.map((finding) => ({
-      selector: finding.selector ?? "",
-      hash: findingKey(finding),
-      ruleId: finding.ruleId,
-      file: finding.file,
-      line: finding.line,
-      column: finding.column,
-    })),
-  );
+  if (updateSelectorCache && collected.scope === "complete") {
+    yield* selectors.write(
+      selected.map((finding) => ({
+        selector: finding.selector ?? "",
+        hash: findingKey(finding),
+        ruleId: finding.ruleId,
+        file: finding.file,
+        line: finding.line,
+        column: finding.column,
+      })),
+    );
+  }
 
   if (collected.scope === "complete" && staleCount > 0) {
     yield* store.reconcile({ scope: "complete", current: collected.findings });
+  }
+  // A proposal describes one exact finding. Once a complete view no longer contains it, nobody can decide on it.
+  const proposals = yield* Effect.serviceOption(ProposalStore);
+  if (collected.scope === "complete" && Option.isSome(proposals)) {
+    yield* proposals.value.prune(collected.findings);
   }
 
   return new CheckResult({

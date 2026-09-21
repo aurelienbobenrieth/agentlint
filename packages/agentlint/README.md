@@ -1,14 +1,20 @@
 # agentlint
 
-Repository-owned review obligations and traceable decisions for coding agents.
+**Your `AGENTS.md` rules are followed most of the time. agentlint makes the important ones a gate, and keeps a committed record of every exception.**
 
-agentlint is for concerns that are too contextual for a conventional linter and too important to leave to prompt recall. It deterministically selects review points, supplies the repository standard, and blocks until the evidence changes or an acceptance with sufficient authority matches the exact finding.
+Coding agents write the mechanical part well. What goes wrong is judgment: a payment call without an idempotency key, a dropped column without a backfill, a fallback that hides a failure, an unbounded read that was fine in the fixture. A prompt asks the agent to remember. A linter can only say "always wrong". An AI reviewer says something different on every run. And when the diff is large, the human approves because the tests are green.
 
-An open gate means every current finding in the reported scan scope has a compatible recorded decision. The record states who declared the decision, the authority used, the reason, and the exact standard and evidence identity. It does not prove that the judgment was correct or that unconfigured concerns were reviewed.
+agentlint covers that gap:
 
-Skills explain how to review. The gate requires a decision at the checkpoint where the CLI is enforced. Use a complete scan as the completion or CI checkpoint.
+- **A deterministic trigger.** A rule matches a code shape or a Git change. The same code gives the same findings. No model is called.
+- **Your standard, at the moment it applies.** The finding carries the written standard, its checks, and permitted examples, so the agent does not rely on context recall.
+- **A gate the agent cannot talk past.** Each finding stays open until the code changes or someone records an acceptance with a concrete reason. You decide per rule whether an agent may accept or only a human.
+- **A reviewable record.** Acceptances live in `.agentlint/acceptances.jsonl`, bound to the exact evidence. They show in the pull request diff, and they expire when the code materially changes. It is an `eslint-disable` that needs a reason, an authority, and a new review when the code moves.
+- **A review built for it.** Humans decide in a keyboard-first local UI or in pull request threads, with the code, the standard, and the agent's proposal side by side.
 
-It does not call an AI model. It does not ship rules. Repositories and plugin packages own their standards, detectors, and policy.
+An open gate means every current finding in the reported scan scope has a compatible recorded decision. It does not prove that the judgment was correct or that unconfigured concerns were reviewed.
+
+agentlint ships no rules and prescribes no agent harness. Repositories and plugin packages own their standards, detectors, and policy.
 
 ## The model
 
@@ -28,6 +34,15 @@ A rule is the composition of:
 
 ## Install
 
+The short path is to let your coding agent do it. The package ships agent skills in `node_modules/@aurelienbbn/agentlint/skills` ([TanStack Intent](https://tanstack.com/intent) discovers them; any agent can read them):
+
+```text
+Install @aurelienbbn/agentlint and follow its setup skill
+(node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/SKILL.md).
+```
+
+The `setup` skill initializes the config, suggests plugins that match your dependencies, calibrates before enforcing, and installs the Claude Code or Codex hook. By hand:
+
 ```bash
 pnpm add -D @aurelienbbn/agentlint
 pnpm agentlint init
@@ -36,6 +51,67 @@ pnpm agentlint init
 Every command accepts `--help`. `--rule` may be repeated or comma-separated.
 
 `init` creates `.agentlint/config.ts` and ignores ephemeral selector and acceptance-transaction files. Commit the config and `.agentlint/acceptances.jsonl` when it exists.
+
+## Turn a repeated correction into a rule
+
+The best first rule is a correction you or a teammate has already made twice. Tell your agent:
+
+```text
+Use the agentlint rule-advisor skill. I keep correcting this in review: <the correction>.
+```
+
+The `rule-advisor` skill first checks whether a linter, a type, or a test is the better tool. If judgment is needed, it writes the standard, a pattern detector, and activation and silence fixtures, then calibrates the rule against your real code with `rules scan --review` before anything is enforced. A pattern rule is about twenty lines, and you review it like any other code.
+
+Keep the rule only when the review work it saves exceeds its interruptions and maintenance. [The pilot worksheet](../../docs/review-pilot.md) provides a small-team evaluation without telemetry or a central service.
+
+## Start from a plugin
+
+Rule packages are ordinary npm packages that export `defineRule` values and presets. Compose explicit package exports:
+
+```bash
+pnpm agentlint init --preset "<rule-package>#<preset-export>"
+pnpm agentlint rules test
+pnpm agentlint rules scan --review
+pnpm agentlint next --format json
+```
+
+Install compatible plugin packages before running their rules. `init` prints a `pnpm add` command to adapt to your package manager; it does not install or execute them and preserves an existing config. Repeat `--preset` to compose packages. Each value is a package name plus `#` and an exported configuration. Repositories own the resulting imports and can narrow scopes or select individual rules.
+
+Use only a package and export that are available from the repository's configured registry or workspace. The engine contains no catalog, default rules, or plugin dependency. A rule package should declare the compatible agentlint range as a peer dependency and document the judgment its preset introduces.
+
+## Wire it into your agent
+
+An instruction is a request. A hook is a checkpoint. Copy the adapter that ships with the `setup` skill and commit it:
+
+```bash
+mkdir -p .agentlint/hooks
+cp node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/agentlint-gate.mjs .agentlint/hooks/
+```
+
+Claude Code (`.claude/settings.json`) and Codex (`.codex/hooks.json`, in a trusted project) use the same shape:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node .agentlint/hooks/agentlint-gate.mjs stop" }] }]
+  }
+}
+```
+
+The agent cannot finish a turn while `check --all` reports unresolved findings: the findings and the next action come back as feedback. A finding that only a human can close interrupts once and then lets the turn end, so the agent proposes its work and hands over to `agentlint review` instead of looping. The `setup` skill also documents an optional per-edit `PostToolUse` hook. The adapter is one short script over the CLI exit code and owns no gate semantics.
+
+For any other agent, put one line in `AGENTS.md`: run `agentlint check --all` before finishing. Either way, a local hook is feedback; the required [CI check](#ci) is the gate.
+
+## Adopt gradually
+
+agentlint has no warning level, deliberately. A warning is what an agent learns to ignore, and a finding that nobody must answer leaves no record. Adoption is controlled by what you bind and where you enforce it:
+
+1. **Calibrate without enforcing.** `rules scan --review` lists the matches of a rule, creates no acceptances, and blocks nothing. Label matches, then fix the detector, scope, and guidance.
+2. **Bind a small scope.** Start `binding.include` at the directories under active work and widen it later. For a concern that should only apply to new work, write a `change` rule: it judges the diff from the merge base, so existing code creates no obligations.
+3. **Run the gate as feedback.** `check` in a hook or a non-required CI job reports findings while nothing depends on its exit code.
+4. **Enforce last.** When `check --all` exits 0, mark the CI check as required.
+
+Do not open a gate by bulk-accepting findings with a generic reason. Work the queue with `agentlint next`, or narrow the binding until the queue is one you intend to answer.
 
 ## Define a state rule
 
@@ -78,7 +154,7 @@ const boundedReads = defineRule({
 export default defineConfig({ rules: [boundedReads] });
 ```
 
-Patterns are parsed code shapes, not text searches. `$NAME` captures one node, `$_` matches one node, and `$$$ARGS` matches sibling sequences. A raw tree-sitter `query` can designate its result with `@match`. `createOnce(context)` is the imperative escape hatch for stateful and repository-wide detectors.
+Patterns are parsed code shapes, not text searches. `$NAME` captures one node, `$_` matches one node, and `$$ARGS` matches sibling sequences. A placeholder that appears twice must capture the same code: `$A === $A` matches `x === x` and not `x === y`. When several matches of one rule apply to the same node, the node is reported once, under the first declared match. A `where` constraint searches the matched code; a property constraint such as `take: $_` also accepts the shorthand `{ take }` and does not look inside the value of another property. A raw tree-sitter `query` can designate its result with `@match`. `createOnce(context)` is the imperative escape hatch for stateful and repository-wide detectors.
 
 Fixtures are focused evidence. `mustReport` proves activation. `mustStaySilent` protects valuable boundaries. They need not enumerate every possible mistake, and their code is never sent to the agent as normal guidance.
 
@@ -182,6 +258,12 @@ pnpm agentlint propose 6 --summary "Added an idempotent backfill before the drop
 
 `.agentlint/proposals.jsonl` holds one proposal per exact finding identity. A proposal is context for a human; it never opens a gate.
 
+## Resume review work
+
+`agentlint next --format json` returns a version 1 handoff: one unresolved finding, full available source, detector excerpt, guidance, explicit related file paths, required authority, remaining count, scan scope and command argument arrays. Its ordering is stable by file, line and exact identity. An agent-authority finding offers acceptance; a human-authority finding offers a proposal and human review. Required reasons and summaries are supplied separately by the caller.
+
+`next` uses a complete scan by default and the same acceptance compatibility and stale cleanup as `check --all`. `--rule` narrows the scan and reports partial coverage. Every invocation rescans; a cleared filtered queue does not replace a complete checkpoint. Exit codes are 0 for clear scope, 1 for unresolved work and 2 for invalid configuration or evidence. Decode JSON with `NextResult` from `@aurelienbbn/agentlint/contract`.
+
 ## Acceptance identity
 
 `.agentlint/acceptances.jsonl` contains current state, not an event log. An acceptance opens a gate only when all material identity agrees:
@@ -221,6 +303,26 @@ pnpm agentlint rules scan --rule data/bounded-reads --review
 
 Use it on an existing codebase to label matches as applies, does not apply, or unsure. Refine the rule, binding, guidance, and fixtures from the temporary feedback.
 
+## Related and independent review
+
+The list's Filters menu offers Related grouping. Findings are connected by their containing files and explicit state-binding dependencies, including transitive shared connections. The UI shows the related file paths; it does not infer common causes or runtime dependencies. Groups change navigation only. Every finding still needs its own compatible decision.
+
+Independent review is an optional session-only presentation mode. It hides acceptance reasons, prior lineage reasons and proposals, including in copied context. Write an assessment before revealing the prior material; the assessment becomes the editable reason for the next decision. Keyboard decision actions follow the same restriction. This reduces anchoring; it is not a confidentiality or authorization boundary, and the original data remains in the browser payload. Enable it before starting the review of a finding.
+
+## Measure detector calibration
+
+Calibration shows saved applies / does-not-apply / unsure labels and the applicability rate over decided labels. A does-not-apply label requires a category: scope, detector, guidance, valid exception or other. Notes add context. Unsubmitted edits do not enter the report.
+
+Download a version 1 calibration JSON report during the session or on completion. Save successive exports under distinct filenames and combine reports from the same repository:
+
+```bash
+pnpm agentlint rules calibration before.json after.json --format json
+```
+
+Reports are observational artifacts, never acceptance inputs. Aggregation counts each exact finding once; later input files replace labels for duplicate evidence. Standards, detector versions and material bindings stay separate. The summary includes non-applicability categories and lineages with at least two distinct observed invalidated identities. It cannot reconstruct unobserved history or prove detector recall. An absence of decided labels produces a null rate, not a perfect score. API consumers can use the schemas and pure helpers at `@aurelienbbn/agentlint/calibration`.
+
+These workflows take conceptual inspiration from desloppify by Peter O'Malley. Their implementation and contracts are original to agentlint; no code or instructions were copied.
+
 ## Detached CI review
 
 CI must not wait for a browser. It can emit a portable artifact while keeping the gate closed:
@@ -235,14 +337,14 @@ Download the artifact, then open it locally:
 pnpm agentlint review --from artifacts/agentlint-review.json
 ```
 
-The detached UI stages decisions in the browser. It exports requested changes as Markdown and decisions as JSONL. Accepted decisions use `AcceptanceRecord`. Requesting changes on an existing acceptance exports a conditional `type: "revoke"` operation targeting the exact identity, reviewed reason, and acceptance timestamp. Import rejects that revocation if the decision has since been replaced. Revocations are applied to the current store, not retained as another persisted finding outcome. Bring reviewed acceptances back through the validation path:
+The detached UI stages decisions in the browser. It exports requested changes as Markdown and decisions as JSONL. Every accepted or revoked decision includes the exact source snapshot shown to the reviewer. Import rescans the repository and rejects a decision when that source changed. Requesting changes on an existing acceptance also targets the exact identity, reviewed reason, and acceptance timestamp, so import rejects the revocation if the decision has since been replaced. Revocations are applied to the current store, not retained as another persisted finding outcome. Bring reviewed acceptances back through the validation path:
 
 ```bash
 pnpm agentlint acceptances import agentlint-acceptances.jsonl
 pnpm agentlint check --all
 ```
 
-Review artifacts use version 2 and contain each source file once, with the scan scope, executed bindings, and inspected files. Regenerate version 1 artifacts. The artifact uses the original check snapshot, including transient prior reasoning, rather than scanning again.
+Review artifacts use version 3 and contain each source file once, with the scan scope, executed bindings, and inspected files. Regenerate version 1 or 2 artifacts. The artifact uses the original check snapshot, including transient prior reasoning, rather than scanning again.
 
 Import re-runs the repository detectors. Decisions whose finding changed, disappeared, or no longer has compatible authority are rejected.
 
@@ -260,6 +362,8 @@ agentlint explain <rule-id|selector>
 agentlint review [--base ref] [--mode review|calibration] [--from artifact]
                  [--port number] [--no-open]
 agentlint pr <number> [--repo owner/name] [--artifact-only] [--port number] [--no-open]
+agentlint next [--base ref] [--rule id] [--format text|json]
+agentlint rules calibration <reports...> [--format text|json]
 agentlint rules list|test|scan
 agentlint acceptances list|clean|import
 agentlint init
@@ -290,7 +394,7 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
-      - uses: aurelienbobenrieth/agentlint/action@v0.2.0
+      - uses: aurelienbobenrieth/agentlint/action@v0.1.5
   command:
     if: github.event_name != 'pull_request' && startsWith(github.event.comment.body, '/agentlint')
     runs-on: ubuntu-latest
@@ -300,7 +404,7 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
-      - uses: aurelienbobenrieth/agentlint/action@v0.2.0
+      - uses: aurelienbobenrieth/agentlint/action@v0.1.5
 ```
 
 `fetch-depth: 0` is required because change rules use the merge base. The action runs `npx @aurelienbbn/agentlint@<version>` and resolves the package for `.agentlint/config.ts` itself, so no install step is needed unless the config imports third-party rule packages (`install: true`). Pull requests from forks run with a read-only token: they get annotations and the review artifact, not comments or approvals. See the [action README](../../action/README.md) for every input and output, and `dry-run` for testing.
@@ -319,7 +423,7 @@ Open an uploaded artifact locally with `agentlint pr <number>` (see [Detached CI
 
 ## Integration boundary
 
-The core package contains no MCP server, harness hook, GitHub bot, or provider SDK. Integrations call the CLI and read its exit code:
+The engine contains no MCP server, harness protocol, GitHub bot, or provider SDK. Integrations call the CLI and read its exit code. The hook adapter in the `setup` skill is a copyable script of that kind, not an engine surface:
 
 | Exit code | Meaning                                             |
 | --------- | --------------------------------------------------- |
@@ -346,6 +450,12 @@ Compact change fixtures use an actual line comparison with three context lines. 
 
 The package intentionally exports no bundled standards, detectors, rules, or presets.
 
+## Scan and storage guarantees
+
+State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
+
+Acceptance and proposal updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds `.agentlint/acceptances.lock` or `.agentlint/proposals.lock` for milliseconds. If a process stops while holding it, the next writer removes the lock once it is older than 30 seconds. A more recent lock is never stolen: the CLI fails clearly after a bounded wait. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
+
 ## Security boundary
 
 Local human authority is accountability, not cryptographic identity. A process with repository write access can edit configuration and acceptance files. Git review makes those changes visible. Provider-backed proof can be added later without changing the core gate semantics.
@@ -353,15 +463,3 @@ Local human authority is accountability, not cryptographic identity. A process w
 ## License
 
 [MIT](LICENSE)
-
-## Adopt one useful review obligation
-
-Start with one correction you or a teammate has repeated. Write its review question and the permitted cases. Have the coding agent propose a detector with activation and silence fixtures. Check what justifies a decision and declare any supporting files as dependencies. Run `rules test`, then `rules scan --review` on real code before committing the rule.
-
-Keep the rule only when the review work it saves exceeds its interruptions and maintenance. [The pilot worksheet](../../docs/review-pilot.md) provides a small-team evaluation without telemetry or a central service.
-
-## Scan and storage guarantees
-
-State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
-
-Acceptance updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. If a process stops while holding `.agentlint/acceptances.lock`, verify it has stopped and remove that lock file before retrying. The CLI fails clearly after a bounded wait rather than stealing a possibly active lock. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.

@@ -32,7 +32,6 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
   fingerprint: Fingerprint,
   lineageKey: Schema.UndefinedOr(Schema.String),
   file: Schema.String,
-  absolutePath: Schema.String,
   line: Schema.Number,
   column: Schema.Number,
   endLine: Schema.Number,

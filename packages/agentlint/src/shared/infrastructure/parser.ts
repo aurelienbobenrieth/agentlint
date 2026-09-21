@@ -1,3 +1,4 @@
+import { ParserError } from "../../domain/parser-error.js";
 /**
  * Tree-sitter WASM parser.
  *
@@ -8,37 +9,9 @@
  * @since 0.1.0
  */
 
-import { Context, Effect, FileSystem, HashMap, Layer, Option, Path, Schema } from "effect";
+import { Context, Effect, FileSystem, HashMap, Layer, Option, Path } from "effect";
 import { Env } from "../../config/env.js";
 import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
-
-/**
- * Raised when parsing fails — e.g. missing grammar, corrupt WASM, or
- * tree-sitter returning a null tree.
- *
- * @since 0.1.0
- * @category errors
- */
-export class ParserError extends Schema.TaggedError<ParserError>()("agentlint/ParserError", {
-  reason: Schema.Literals(["wasm_missing", "unknown_grammar", "init_failed", "load_failed", "parse_failed"]),
-  grammar: Schema.optional(Schema.String),
-  detail: Schema.optional(Schema.String),
-}) {
-  override get message(): string {
-    switch (this.reason) {
-      case "wasm_missing":
-        return `WASM file not found: ${this.detail}`;
-      case "unknown_grammar":
-        return `Unknown grammar: ${this.grammar}`;
-      case "init_failed":
-        return `Parser failed to initialize${this.detail ? `: ${this.detail}` : ""}`;
-      case "load_failed":
-        return `Failed to load grammar ${this.grammar}: ${this.detail}`;
-      case "parse_failed":
-        return `Parse failed${this.grammar ? ` (${this.grammar})` : ""}: ${this.detail ?? "parser returned null tree"}`;
-    }
-  }
-}
 
 /**
  * Maps grammar names to their corresponding `.wasm` filenames.
@@ -103,8 +76,6 @@ export class Parser extends Context.Service<
             if (filename === "tree-sitter.wasm") {
               const current = path.resolve(nmBase, "web-tree-sitter", filename);
               if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
-              const legacy = path.resolve(nmBase, "web-tree-sitter", "web-tree-sitter.wasm");
-              if (yield* fs.exists(legacy).pipe(Effect.orElseSucceed(() => false))) return legacy;
             } else {
               const grammar = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
               if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;

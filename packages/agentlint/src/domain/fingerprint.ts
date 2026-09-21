@@ -37,7 +37,7 @@ export class Fingerprint extends Schema.Class<Fingerprint>("Fingerprint")({
 }) {}
 
 /** A canonicalization failure. */
-export class FingerprintError extends Schema.TaggedError<FingerprintError>()("agentlint/FingerprintError", {
+class FingerprintError extends Schema.TaggedError<FingerprintError>()("agentlint/FingerprintError", {
   reason: Schema.Literals(["invalid_value", "invalid_path"]),
   detail: Schema.String,
 }) {
@@ -136,7 +136,7 @@ export function normalizeRepositoryPath(input: string): string {
 }
 
 /** Only top-level routing fields are sets. Arbitrary detector options preserve all array order. */
-export function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalValue {
+function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalValue {
   if (materialConfig === null || typeof materialConfig !== "object" || Array.isArray(materialConfig))
     return materialConfig;
   return Object.fromEntries(
@@ -157,13 +157,13 @@ export function bindingDigest(materialConfig: CanonicalValue): string {
 }
 
 /** Create a versioned fingerprint from already normalized evidence. */
-export function createFingerprint(scheme: string, version: number, evidence: CanonicalValue): Fingerprint {
+function createFingerprint(scheme: string, version: number, evidence: CanonicalValue): Fingerprint {
   return new Fingerprint({ scheme, version, digest: canonicalDigest(evidence) });
 }
 
 /** Fingerprint semantic state evidence. Presentation positions are excluded. */
 export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprint {
-  return createFingerprint("source-structure", 2, {
+  return createFingerprint("source-structure", 3, {
     path: normalizeRepositoryPath(evidence.path),
     structure: evidence.structure,
     captures: evidence.captures ?? {},
@@ -204,7 +204,7 @@ export function sameFingerprint(left: Fingerprint, right: Fingerprint): boolean 
 /** Check whether the engine knows the canonical evidence contract. */
 export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
   return (
-    (fingerprint.scheme === "source-structure" && fingerprint.version === 2) ||
+    (fingerprint.scheme === "source-structure" && fingerprint.version === 3) ||
     (fingerprint.scheme === "git-change" && fingerprint.version === 2)
   );
 }

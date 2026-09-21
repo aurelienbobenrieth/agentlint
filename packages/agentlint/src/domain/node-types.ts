@@ -13,6 +13,7 @@
  * @category models
  */
 export type TreeSitterNodeType =
+  | "document"
   | "abstract_class_declaration"
   | "abstract_method_signature"
   | "accessibility_modifier"

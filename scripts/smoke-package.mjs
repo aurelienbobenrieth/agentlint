@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -26,6 +28,7 @@ function run(command, args, expected = 0, cwd = root) {
       `${command} ${args.join(" ")} exited ${result.status}; expected ${expected}${result.error ? `: ${result.error.message}` : ""}`,
     );
   }
+  return result.stdout;
 }
 
 try {
@@ -62,7 +65,6 @@ void testRuleOnSources;
     "consumer.mts",
     "--noEmit",
     "--strict",
-    "--skipLibCheck",
     "--module",
     "NodeNext",
     "--target",
@@ -100,12 +102,49 @@ export default defineConfig({ rules: [rule] });
 
   run(process.execPath, [bin, "rules", "test"]);
   run(process.execPath, [bin, "check", "--all"], 1);
+  const consumerRequire = createRequire(join(root, "package.json"));
+  const { Schema } = await import(pathToFileURL(consumerRequire.resolve("effect")).href);
+  const { NextResult } = await import(
+    pathToFileURL(join(root, "node_modules", "@aurelienbbn", "agentlint", "dist", "contract.mjs")).href
+  );
+  const decodeNext = Schema.decodeUnknownSync(Schema.fromJsonString(NextResult));
+  const handoff = decodeNext(run(process.execPath, [bin, "next", "--format", "json"], 1));
+  if (
+    handoff.version !== 1 ||
+    handoff.remaining !== 1 ||
+    handoff.scope !== "complete" ||
+    handoff.actions[0]?.argv[0] !== "accept"
+  )
+    throw new Error("Invalid next handoff");
   run(process.execPath, [bin, "explain", "1"]);
   run(process.execPath, [bin, "accept", "1", "--reason", "The call runs inside the verified test sandbox."]);
   run(process.execPath, [bin, "check", "--all"]);
 
+  const cleared = decodeNext(run(process.execPath, [bin, "next", "--format", "json"]));
+  if (cleared.status !== "clear" || cleared.finding !== null) throw new Error("Accepted finding remained in next");
+  const presetPackage = join(root, "node_modules", "agentlint-smoke-presets");
+  mkdirSync(presetPackage, { recursive: true });
+  writeFileSync(
+    join(presetPackage, "package.json"),
+    JSON.stringify({ name: "agentlint-smoke-presets", type: "module", exports: "./index.mjs" }),
+  );
+  writeFileSync(
+    join(presetPackage, "index.mjs"),
+    readFileSync(join(root, ".agentlint", "config.ts"), "utf8").replace(
+      "export default defineConfig",
+      "export const starterPreset = defineConfig",
+    ),
+  );
+  const presetConsumer = join(root, "preset-consumer");
+  mkdirSync(join(presetConsumer, "src"), { recursive: true });
+  writeFileSync(join(presetConsumer, "src", "sample.ts"), "danger('preset');\n");
+  run(process.execPath, [bin, "init", "--preset", "agentlint-smoke-presets#starterPreset"], 0, presetConsumer);
+  run(process.execPath, [bin, "rules", "test"], 0, presetConsumer);
+  run(process.execPath, [bin, "next", "--format", "json"], 1, presetConsumer);
+
   for (const required of [
     "dist/bin.mjs",
+    "dist/calibration.mjs",
     "dist/ui/index.html",
     "dist/wasm/tree-sitter.wasm",
     "dist/wasm/tree-sitter-typescript.wasm",

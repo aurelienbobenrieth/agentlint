@@ -1,18 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { parseGitNameStatus, parseUnifiedHunks } from "./git.js";
+import { parseGitRawStatus, parseUnifiedHunks } from "./git.js";
 
-describe("parseGitNameStatus", () => {
-  it("normalizes added, modified, deleted, and renamed paths", () => {
-    expect(parseGitNameStatus("A\0new.ts\0M\0changed.ts\0D\0gone.ts\0R100\0old.ts\0moved.ts\0")).toEqual([
-      { status: "added", path: "new.ts" },
-      { status: "modified", path: "changed.ts" },
-      { status: "deleted", path: "gone.ts" },
-      { status: "renamed", previousPath: "old.ts", path: "moved.ts" },
+describe("parseGitRawStatus", () => {
+  const zero = "0".repeat(40);
+  const blob = "a".repeat(40);
+
+  it("reads status, paths, modes, and the baseline blob", () => {
+    const raw = [
+      `:000000 100644 ${zero} ${zero} A`,
+      "new.ts",
+      `:100644 100644 ${blob} ${zero} M`,
+      "changed.ts",
+      `:100644 000000 ${blob} ${zero} D`,
+      "gone.ts",
+      `:100644 100644 ${blob} ${blob} R100`,
+      "old.ts",
+      "moved.ts",
+      `:160000 160000 ${blob} ${zero} M`,
+      "vendor/sub",
+      "",
+    ].join("\0");
+    expect(parseGitRawStatus(raw)).toEqual([
+      { status: "added", path: "new.ts", beforeMode: "000000", afterMode: "100644", beforeBlob: zero },
+      { status: "modified", path: "changed.ts", beforeMode: "100644", afterMode: "100644", beforeBlob: blob },
+      { status: "deleted", path: "gone.ts", beforeMode: "100644", afterMode: "000000", beforeBlob: blob },
+      {
+        status: "renamed",
+        previousPath: "old.ts",
+        path: "moved.ts",
+        beforeMode: "100644",
+        afterMode: "100644",
+        beforeBlob: blob,
+      },
+      { status: "modified", path: "vendor/sub", beforeMode: "160000", afterMode: "160000", beforeBlob: blob },
     ]);
   });
 
-  it("normalizes Windows separators", () => {
-    expect(parseGitNameStatus("M\0src\\feature.ts\0")).toEqual([{ status: "modified", path: "src/feature.ts" }]);
+  it("keeps a backslash, which Git only emits as part of a file name", () => {
+    expect(parseGitRawStatus(`:100644 100644 ${blob} ${zero} M\0src/odd\\name.ts\0`)[0]?.path).toBe("src/odd\\name.ts");
   });
 });
 
