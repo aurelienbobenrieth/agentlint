@@ -12,7 +12,7 @@ inputs:
     required: false
     default: "0.1.5"
   base:
-    description: "Base ref of the pull request. Change rules diff against origin/<base>."
+    description: "Base branch of the pull request. Change rules diff against origin/<base>. HEAD, origin/..., and refs/... are passed as is."
     required: false
     default: ${{ github.base_ref }}
   working-directory:
@@ -24,7 +24,7 @@ inputs:
     required: false
     default: "false"
   github-token:
-    description: "Token used for the check run, the comments, and the approval push."
+    description: "Token used for the check run, the comments, the fetches, and the approval push. Never handed to the install, the agentlint CLI, or git hooks. A push made with the default token does not trigger other workflows."
     required: false
     default: ${{ github.token }}
   comment:

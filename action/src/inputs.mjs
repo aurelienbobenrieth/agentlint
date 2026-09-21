@@ -5,7 +5,8 @@
  * automatically, so `action.yml` maps every input to `INPUT_<NAME>` itself.
  */
 
-import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
 /**
  * @typedef {object} Inputs
@@ -79,7 +80,55 @@ export function resolveCli(version, workspace) {
   if (!SEMVER.test(version)) {
     throw new InputError(`version: expected a semver version or file:<path>, got "${version}"`);
   }
-  return [process.platform === "win32" ? "npx.cmd" : "npx", "--yes", `@aurelienbbn/agentlint@${version}`];
+  return [...npx(), "--yes", `@aurelienbbn/agentlint@${version}`];
+}
+
+/** @param {string} version */
+export function isPublishedVersion(version) {
+  return SEMVER.test(version);
+}
+
+/**
+ * The copy of `@aurelienbbn/agentlint` that the repository installed, looked up from the working directory up to the
+ * workspace root the way Node resolves packages. `null` when there is none.
+ *
+ * @param {string} workingDirectory absolute
+ * @param {string} workspace absolute
+ * @returns {Promise<{ argv: string[], version: string } | null>}
+ */
+export async function localCli(workingDirectory, workspace) {
+  for (let dir = workingDirectory; ; dir = dirname(dir)) {
+    const root = join(dir, "node_modules", "@aurelienbbn", "agentlint");
+    const manifest = await readFile(join(root, "package.json"), "utf8").then(
+      (text) => /** @type {unknown} */ (JSON.parse(text)),
+      () => null,
+    );
+    if (typeof manifest === "object" && manifest !== null) {
+      const { bin, version } = /** @type {{ bin?: unknown, version?: unknown }} */ (manifest);
+      const entry =
+        typeof bin === "string"
+          ? bin
+          : typeof bin === "object" && bin !== null
+            ? /** @type {Record<string, unknown>} */ (bin)["agentlint"]
+            : undefined;
+      if (typeof entry === "string") {
+        return { argv: ["node", resolve(root, entry)], version: typeof version === "string" ? version : "" };
+      }
+    }
+    if (dir === workspace || dirname(dir) === dir || !dir.startsWith(workspace)) return null;
+  }
+}
+
+/**
+ * On Windows `npx` is a `.cmd` shim, which Node refuses to spawn without a shell. Run the npm CLI that ships next to the
+ * Node binary instead, so no argument ever passes through a shell.
+ *
+ * @returns {string[]}
+ */
+function npx() {
+  return process.platform === "win32"
+    ? [process.execPath, join(dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js")]
+    : ["npx"];
 }
 
 /**

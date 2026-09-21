@@ -6,6 +6,8 @@
  * writer so a dry run never leaves the runner.
  */
 
+import { devNull } from "node:os";
+
 import { git } from "./cli.mjs";
 import { isRecord } from "./artifact.mjs";
 
@@ -23,7 +25,7 @@ import { isRecord } from "./artifact.mjs";
  * @property {(message: string) => void} error
  */
 
-export class GitHubError extends Error {
+class GitHubError extends Error {
   /**
    * @param {string} method
    * @param {string} url
@@ -46,8 +48,46 @@ export class GitHubError extends Error {
  * @property {(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body: unknown) => Promise<unknown>} write
  * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} graphql read-only query
  * @property {(query: string, variables: Record<string, unknown>) => Promise<unknown>} mutate
- * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<void>} gitWrite
+ * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitFetch authenticated `git fetch`
+ * @property {(args: ReadonlyArray<string>, cwd: string) => Promise<import("./cli.mjs").ExecResult>} gitWrite authenticated `git push`; a dry run records it and reports success
+ * @property {() => Promise<string>} identity login of the account the token acts as
  */
+
+/** The account behind the default `GITHUB_TOKEN`. */
+const DEFAULT_IDENTITY = "github-actions[bot]";
+
+/**
+ * Git options that authenticate one command against `serverUrl` with the token, the way `actions/checkout` does, but
+ * on the command line only: nothing is written to `.git/config`, so the checkout can use `persist-credentials: false`
+ * and no later process finds a credential on disk.
+ *
+ * Git hands `-c` values to its own children through `GIT_CONFIG_PARAMETERS`, and argv is visible to processes of the
+ * same user. No repository code runs while a fetch or a push is in flight, but code that ran earlier in the job (an
+ * install script, the configuration) could have left a hook or a helper behind. So hooks, credential helpers, the
+ * `ext::` transport, and push signing are switched off for the command. The header is scoped to the server URL: a
+ * rewritten remote on another host never receives it. The empty value first clears a header that a checkout persisted;
+ * two `Authorization` headers are rejected by GitHub.
+ *
+ * @param {string} serverUrl
+ * @param {string} token
+ * @returns {string[]}
+ */
+export function gitAuthOptions(serverUrl, token) {
+  const hardening = [
+    "-c",
+    `core.hooksPath=${devNull}`,
+    "-c",
+    "credential.helper=",
+    "-c",
+    "protocol.ext.allow=never",
+    "-c",
+    "push.gpgSign=false",
+  ];
+  if (token === "") return hardening;
+  const key = `http.${serverUrl.replace(/\/+$/, "")}/.extraheader`;
+  const basic = Buffer.from(`x-access-token:${token}`, "utf8").toString("base64");
+  return [...hardening, "-c", `${key}=`, "-c", `${key}=AUTHORIZATION: basic ${basic}`];
+}
 
 /**
  * @param {Headers} headers
@@ -68,15 +108,39 @@ function nextLink(headers) {
  * @param {string} options.token
  * @param {string} options.apiUrl
  * @param {string} options.graphqlUrl
+ * @param {string} [options.serverUrl] Default: https://github.com
  * @param {boolean} options.dryRun
  * @param {typeof fetch} options.fetchImpl
  * @param {Logger} options.log
+ * @param {number} [options.requestTimeoutMs] HTTP deadline, including response bodies. Default: 30 seconds.
  * @returns {GitHub}
  */
 export function createGitHub(options) {
   const { token, apiUrl, graphqlUrl, dryRun, fetchImpl, log } = options;
   /** @type {PlanEntry[]} */
   const plan = [];
+  const authOptions = gitAuthOptions(options.serverUrl ?? "https://github.com", token);
+  /** @type {Promise<string> | null} */
+  let identity = null;
+
+  /**
+   * Run an authenticated git command. Git does not print the header, but a failure is logged and posted to the pull
+   * request, and a spawn error quotes argv, so every text that leaves here is redacted.
+   *
+   * @param {ReadonlyArray<string>} args
+   * @param {string} cwd
+   * @returns {Promise<import("./cli.mjs").ExecResult>}
+   */
+  async function authenticatedGit(args, cwd) {
+    const secrets = [token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")].filter(Boolean);
+    const clean = (/** @type {string} */ text) => secrets.reduce((acc, secret) => acc.replaceAll(secret, "***"), text);
+    try {
+      const result = await git([...authOptions, ...args], cwd);
+      return { code: result.code, stdout: clean(result.stdout), stderr: clean(result.stderr) };
+    } catch (error) {
+      throw new Error(clean(error instanceof Error ? error.message : String(error)), { cause: error });
+    }
+  }
 
   /** @param {string} path */
   const url = (path) => (path.startsWith("http") ? path : `${apiUrl}${path}`);
@@ -98,6 +162,7 @@ export function createGitHub(options) {
         "x-github-api-version": "2022-11-28",
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(options.requestTimeoutMs ?? 30_000),
     });
     const text = await response.text();
     if (!response.ok) throw new GitHubError(method, target, response.status, text.slice(0, 500));
@@ -159,7 +224,12 @@ export function createGitHub(options) {
         const separator = path.includes("?") ? "&" : "?";
         /** @type {string | null} */
         let next = url(`${path}${separator}per_page=100`);
+        const seen = new Set();
         while (next) {
+          if (new URL(next).origin !== new URL(apiUrl).origin) throw new Error("GitHub pagination changed API origin");
+          if (seen.has(next) || seen.size >= 1_000)
+            throw new Error("GitHub pagination repeated a page or exceeded 1000 pages");
+          seen.add(next);
           const page = await send("GET", next);
           if (Array.isArray(page.data)) items.push(...page.data);
           next = nextLink(page.headers);
@@ -176,14 +246,26 @@ export function createGitHub(options) {
       }
       return graphql(query, variables);
     },
+    gitFetch: (args, cwd) => authenticatedGit(["fetch", ...args], cwd),
     gitWrite: async (args, cwd) => {
       if (dryRun) {
-        plan.push({ method: "GIT", url: `git ${args.join(" ")}`, body: null });
-        log.info(`dry-run: git ${args.join(" ")}`);
-        return;
+        plan.push({ method: "GIT", url: `git push ${args.join(" ")}`, body: null });
+        log.info(`dry-run: git push ${args.join(" ")}`);
+        return { code: 0, stdout: "", stderr: "" };
       }
-      const result = await git(args, cwd);
-      if (result.code !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+      return authenticatedGit(["push", ...args], cwd);
+    },
+    identity: () => {
+      // The REST `/user` endpoint refuses installation tokens; the GraphQL viewer answers for every token kind.
+      identity ??= tolerate(() => graphql("query { viewer { login } }", {}), null)
+        .catch(() => null)
+        .then((data) => {
+          const login = stringField(isRecord(data) ? data["viewer"] : undefined, "login");
+          if (login !== "") return login;
+          log.warn(`could not resolve the token's account; assuming ${DEFAULT_IDENTITY}`);
+          return DEFAULT_IDENTITY;
+        });
+      return identity;
     },
   };
 }

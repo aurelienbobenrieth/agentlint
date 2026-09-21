@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "state": {
-    "version": 2,
+    "version": 3,
     "mode": "review",
     "transport": "detached",
     "project": "demo",
@@ -9,8 +9,7 @@
     "generatedAt": "2026-08-29T10:00:00.000Z",
     "applications": [],
     "detached": {
-      "source": "artifact",
-      "canPersistAcceptances": false
+      "source": "artifact"
     },
     "findings": [
       {
@@ -66,7 +65,9 @@
           "diff": "--- a/src/vendor/legacy-parser.js\n+++ b/src/vendor/legacy-parser.js\n@@ -1,4 +1,5 @@\n export function parseFormula(input) {\n   // vendored from formula-parser@1.x\n+  // TODO(product): constrained evaluator with an allowlist\n   return eval(input);\n }\n",
           "actor": "agent:claude",
           "at": "2026-08-28T12:59:26.706Z"
-        }
+        },
+        "relatedFiles": ["src/vendor/legacy-parser.js"],
+        "invalidationReasons": []
       },
       {
         "id": "database/destructive-migrations:src/migrations/2026-07-drop-legacy-users.ts:4:1",
@@ -113,7 +114,9 @@
         "status": "unresolved",
         "acceptance": null,
         "lineageReason": "Approved with the staged backup and rollback runbook attached to OPS-1842.",
-        "proposal": null
+        "proposal": null,
+        "relatedFiles": ["src/migrations/2026-07-drop-legacy-users.ts"],
+        "invalidationReasons": []
       },
       {
         "id": "payments/idempotent-capture:src/payments/capture-order.ts:6:9",
@@ -160,7 +163,9 @@
         "status": "unresolved",
         "acceptance": null,
         "lineageReason": null,
-        "proposal": null
+        "proposal": null,
+        "relatedFiles": ["src/payments/capture-order.ts"],
+        "invalidationReasons": []
       }
     ],
     "sources": {
@@ -176,6 +181,7 @@
         "src/payments/capture-order.ts"
       ],
       "rules": ["security/dynamic-code-execution", "database/destructive-migrations", "payments/idempotent-capture"]
-    }
+    },
+    "calibration": []
   }
 }

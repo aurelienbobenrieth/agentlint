@@ -54,7 +54,7 @@ import { createHash } from "node:crypto";
  * @property {ReadonlyArray<Finding>} findings
  */
 
-export class ArtifactError extends Error {
+class ArtifactError extends Error {
   /** @param {string} path @param {string} detail */
   constructor(path, detail) {
     super(`Review artifact ${path} is not readable: ${detail}`);
@@ -132,7 +132,7 @@ function oneOf(key, allowed, value) {
  * @param {unknown} raw
  * @returns {Finding}
  */
-export function decodeFinding(raw) {
+function decodeFinding(raw) {
   if (!isRecord(raw)) throw new TypeError("finding is not an object");
   const identity = recordAt(raw, "identity");
   recordAt(identity, "fingerprint");
@@ -176,7 +176,7 @@ export function decodeFinding(raw) {
  * @returns {Artifact}
  */
 export function decodeArtifact(raw) {
-  if (!isRecord(raw) || raw["version"] !== 2) throw new TypeError("not a version 2 review artifact");
+  if (!isRecord(raw) || raw["version"] !== 3) throw new TypeError("not a version 3 review artifact");
   const state = recordAt(raw, "state");
   const findings = state["findings"];
   if (!Array.isArray(findings)) throw new TypeError("state.findings is not an array");

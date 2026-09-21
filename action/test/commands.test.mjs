@@ -70,6 +70,9 @@ describe("parseCommand", () => {
     });
     expect(isSelector("src/a.ts:3; rm -rf /")).toBe(false);
     expect(isSelector("$(id):3")).toBe(false);
+    expect(isSelector("--base=HEAD:1")).toBe(false);
+    expect(isSelector("-x:1")).toBe(false);
+    expect(parseCommand("/agentlint approve --help:1 --reason x")).toMatchObject({ ok: false });
     expect(isSelector("`x`:3")).toBe(false);
     expect(parseCommand("/agentlint approve ../../etc/passwd:1 --reason x")).toMatchObject({
       ok: true,
@@ -80,14 +83,13 @@ describe("parseCommand", () => {
 
 describe("resolveCli", () => {
   it("maps semver to npx and file: to a built checkout", () => {
-    const [npx, yes, spec] = resolveCli("0.1.5", "/ws");
-    expect(npx?.startsWith("npx")).toBe(true);
+    const [yes, spec] = resolveCli("0.1.5", "/ws").slice(-2);
     expect(yes).toBe("--yes");
     expect(spec).toBe("@aurelienbbn/agentlint@0.1.5");
     expect(resolveCli("file:packages/agentlint", "/ws")[1]?.replace(/\\/g, "/")).toMatch(
       /\/ws\/packages\/agentlint\/dist\/bin\.mjs$/,
     );
-    expect(resolveCli("1.0.0-rc.1", "/ws")[2]).toBe("@aurelienbbn/agentlint@1.0.0-rc.1");
+    expect(resolveCli("1.0.0-rc.1", "/ws").at(-1)).toBe("@aurelienbbn/agentlint@1.0.0-rc.1");
   });
 
   it("rejects anything else", () => {

@@ -5,12 +5,13 @@
  * review comments reconciled with the threads from earlier runs.
  */
 
-import { mkdtemp, readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { appendFile, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { isRecord, readArtifact } from "./artifact.mjs";
-import { exec, git, gitOutput } from "./cli.mjs";
+import { childEnv, exec, git, gitOutput } from "./cli.mjs";
 import { commentableByFile } from "./diff.mjs";
 import { numberField, stringField } from "./github.mjs";
 import { installCommand } from "./inputs.mjs";
@@ -19,6 +20,7 @@ import {
   SUMMARY_MARKER,
   countFindings,
   digestFromBody,
+  isActionComment,
   renderAnnotations,
   renderCheckOutput,
   renderInlineBody,
@@ -67,7 +69,7 @@ import {
 const ANNOTATION_BATCH = 50;
 
 /** @param {number} code @returns {Gate} */
-export function gateFromExit(code) {
+function gateFromExit(code) {
   return code === 0 ? "open" : code === 1 ? "closed" : "error";
 }
 
@@ -89,19 +91,24 @@ export function pullRequestFrom(pull) {
 }
 
 /**
- * The ref passed to `--base`: `origin/<base>` when it exists locally or can be
- * fetched, otherwise the input as given (so `HEAD` and explicit refs work).
+ * The ref passed to `--base`. A branch name, slashes included (`release/1.x`), becomes `origin/<base>`, fetched when
+ * the checkout does not have it. Only `HEAD`, `origin/...`, and `refs/...` are explicit refs and pass through.
  *
  * @param {Context} ctx
  * @param {string} base
  */
 export async function resolveBase(ctx, base) {
   const cwd = ctx.workingDirectory;
-  if (base === "" || base === "HEAD" || base.includes("/")) return base === "" ? "HEAD" : base;
+  if (base === "" || base === "HEAD") return "HEAD";
+  // The value is a workflow input or the pull request's base branch. It is never placed where Git reads an option.
+  if (base.startsWith("-")) throw new Error(`unsupported base ref: ${base}`);
+  if (base.startsWith("origin/") || base.startsWith("refs/")) return base;
   const remote = `origin/${base}`;
-  if ((await git(["rev-parse", "--verify", "--quiet", remote], cwd)).code === 0) return remote;
-  const fetched = await git(["fetch", "--no-tags", "origin", base], cwd);
-  if (fetched.code === 0 && (await git(["rev-parse", "--verify", "--quiet", remote], cwd)).code === 0) return remote;
+  const tracking = `refs/remotes/origin/${base}`;
+  const exists = async () => (await git(["rev-parse", "--verify", "--quiet", tracking], cwd)).code === 0;
+  if (await exists()) return remote;
+  const fetched = await ctx.github.gitFetch(["--no-tags", "origin", `+refs/heads/${base}:${tracking}`], cwd);
+  if (fetched.code === 0 && (await exists())) return remote;
   ctx.log.warn(`base ${remote} is not available; using ${base} as given`);
   return base;
 }
@@ -113,11 +120,29 @@ export async function installIfRequested(ctx) {
     const command = installCommand(await readdir(dir));
     if (!command) continue;
     ctx.log.info(`install: ${command.join(" ")} in ${dir}`);
-    const installed = await exec(command, { cwd: dir, env: ctx.env });
+    // Package managers are `.cmd` shims on Windows, which need a shell. The command is a fixed literal chosen from the
+    // lockfile name, so no repository or pull request text reaches the shell.
+    // Lifecycle scripts are repository code: they get the environment without the token or any other credential.
+    const installed = await exec(command, { cwd: dir, env: childEnv(ctx.env), shell: process.platform === "win32" });
     if (installed.code !== 0) throw new Error(`install failed:\n${installed.stderr}`);
     return;
   }
   ctx.log.warn("install requested but no lockfile found");
+}
+
+/**
+ * CLI output quotes repository content: messages, excerpts, file names. A line that starts with `::` would otherwise
+ * run as a workflow command, so the runner's command processing is suspended while the output is printed.
+ *
+ * @param {Context} ctx
+ * @param {string} output
+ */
+export function logCliOutput(ctx, output) {
+  if (output.trim() === "") return;
+  const token = randomUUID();
+  ctx.log.info(`::stop-commands::${token}`);
+  ctx.log.info(output.trimEnd());
+  ctx.log.info(`::${token}::`);
 }
 
 /**
@@ -131,8 +156,8 @@ export async function scan(ctx, base) {
   const dir = await mkdtemp(join(ctx.env["RUNNER_TEMP"] ?? tmpdir(), "agentlint-"));
   const artifactPath = join(dir, "agentlint-review.json");
   const result = await ctx.cli.run(["check", "--all", "--base", base, "--review-output", artifactPath]);
-  if (result.stdout.trim() !== "") ctx.log.info(result.stdout.trimEnd());
-  if (result.stderr.trim() !== "") ctx.log.info(result.stderr.trimEnd());
+  logCliOutput(ctx, result.stdout);
+  logCliOutput(ctx, result.stderr);
   if (result.code !== 0 && result.code !== 1) {
     return { gate: "error", code: result.code, findings: [], artifactPath: "" };
   }
@@ -157,6 +182,10 @@ async function publishCheckRun(ctx, headSha, result) {
     output: { ...output, annotations: annotations.slice(0, ANNOTATION_BATCH) },
   });
   const id = isRecord(created) ? numberField(created["id"]) : null;
+  // A dry run records the plan under a placeholder. A real run without an id has no check run to extend.
+  if (id === null && !ctx.inputs.dryRun && annotations.length > ANNOTATION_BATCH) {
+    throw new Error("GitHub created the check run without an id, so its remaining annotations cannot be attached");
+  }
   for (let offset = ANNOTATION_BATCH; offset < annotations.length; offset += ANNOTATION_BATCH) {
     await ctx.github.write("PATCH", `/repos/${ctx.repository}/check-runs/${id ?? "dry-run"}`, {
       output: { ...output, annotations: annotations.slice(offset, offset + ANNOTATION_BATCH) },
@@ -165,13 +194,28 @@ async function publishCheckRun(ctx, headSha, result) {
 }
 
 /**
+ * The sticky summary that this action's own account posted, if any.
+ *
+ * @param {Context} ctx
+ * @param {number} pullNumber
+ * @returns {Promise<unknown>}
+ */
+export async function findSummary(ctx, pullNumber) {
+  const comments = await ctx.github.paginate(`/repos/${ctx.repository}/issues/${pullNumber}/comments`);
+  const identity = await ctx.github.identity();
+  // The newest one: the action edits a single summary in place, so there is normally exactly one.
+  return comments.findLast(
+    (comment) => isActionComment(comment, identity) && stringField(comment, "body").includes(SUMMARY_MARKER),
+  );
+}
+
+/**
  * @param {Context} ctx
  * @param {number} pullNumber
  * @param {string} body
  */
 async function upsertSummary(ctx, pullNumber, body) {
-  const comments = await ctx.github.paginate(`/repos/${ctx.repository}/issues/${pullNumber}/comments`);
-  const existing = comments.find((comment) => stringField(comment, "body").includes(SUMMARY_MARKER));
+  const existing = await findSummary(ctx, pullNumber);
   const id = isRecord(existing) ? numberField(existing["id"]) : null;
   if (id !== null) {
     await ctx.github.write("PATCH", `/repos/${ctx.repository}/issues/comments/${id}`, { body });
@@ -208,6 +252,7 @@ async function reviewThreads(ctx, pullNumber) {
   const map = new Map();
   /** @type {string | null} */
   let after = null;
+  const seen = new Set();
   for (;;) {
     const data = await ctx.github.graphql(THREADS_QUERY, { owner, name, number: pullNumber, after });
     const repository = isRecord(data) ? data["repository"] : undefined;
@@ -226,6 +271,9 @@ async function reviewThreads(ctx, pullNumber) {
     const pageInfo = threads["pageInfo"];
     if (!isRecord(pageInfo) || pageInfo["hasNextPage"] !== true) return map;
     after = stringField(pageInfo, "endCursor");
+    if (!after || seen.has(after) || seen.size >= 1_000)
+      throw new Error("GitHub review pagination returned an invalid cursor or exceeded 1000 pages");
+    seen.add(after);
   }
 }
 
@@ -239,10 +287,11 @@ async function reviewThreads(ctx, pullNumber) {
 async function existingThreads(ctx, pullNumber) {
   const comments = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pullNumber}/comments`);
   const threads = await reviewThreads(ctx, pullNumber);
+  const identity = await ctx.github.identity();
   /** @type {ReviewThread[]} */
   const result = [];
   for (const comment of comments) {
-    if (!isRecord(comment) || comment["in_reply_to_id"] !== undefined) continue;
+    if (!isRecord(comment) || !isActionComment(comment, identity) || comment["in_reply_to_id"] !== undefined) continue;
     const digest = digestFromBody(stringField(comment, "body"));
     const commentId = numberField(comment["id"]);
     if (digest === null || commentId === null) continue;
@@ -343,9 +392,24 @@ export function recordOutputs(ctx, result) {
   ctx.outputs.set("artifact", result.artifactPath);
 }
 
+const FORK_NOTICE =
+  "Fork pull request: the token is read-only, so no agentlint check run or comment is written, and this job's status " +
+  "comes from the fork's own configuration and acceptances, so it is not a trustworthy gate. A maintainer pushes the " +
+  "commits to a branch in this repository to run the real gate.";
+
+/**
+ * @param {Context} ctx
+ * @param {string} markdown
+ */
+async function appendSummary(ctx, markdown) {
+  const path = ctx.env["GITHUB_STEP_SUMMARY"];
+  if (path) await appendFile(path, markdown, "utf8");
+}
+
 /** @param {Context} ctx @param {PullRequest} pull */
 export function isFork(ctx, pull) {
-  return pull.headRepo !== "" && pull.headRepo !== ctx.repository;
+  // A deleted head repository reports no name. Treat it as a fork: never push to or comment for an unknown origin.
+  return pull.headRepo !== ctx.repository;
 }
 
 /**
@@ -360,13 +424,21 @@ export async function runGate(ctx) {
   }
   const pull = pullRequestFrom(ctx.event["pull_request"]);
   const headSha = pull.headSha || (await gitOutput(["rev-parse", "HEAD"], ctx.workingDirectory));
-  await installIfRequested(ctx);
+  // The base is fetched before any repository code runs.
   const base = await resolveBase(ctx, ctx.inputs.base || pull.baseRef);
+  await installIfRequested(ctx);
   const result = await scan(ctx, base);
   recordOutputs(ctx, result);
 
   if (isFork(ctx, pull)) {
-    ctx.log.info(`fork pull request from ${pull.headRepo}: the token cannot write, printing annotations instead`);
+    ctx.log.warn(FORK_NOTICE);
+    await appendSummary(
+      ctx,
+      `### agentlint
+
+${FORK_NOTICE}
+`,
+    );
     for (const line of renderWorkflowCommands(result.findings)) ctx.log.info(line);
     return result.code;
   }

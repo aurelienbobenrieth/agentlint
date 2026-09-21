@@ -15,7 +15,7 @@ import { createCli } from "./cli.mjs";
 import { runCommand } from "./commands.mjs";
 import { runGate } from "./gate.mjs";
 import { createGitHub } from "./github.mjs";
-import { InputError, readInputs, resolveCli } from "./inputs.mjs";
+import { InputError, isPublishedVersion, localCli, readInputs, resolveCli } from "./inputs.mjs";
 
 /** @typedef {import("./gate.mjs").Context} Context */
 
@@ -23,7 +23,7 @@ import { InputError, readInputs, resolveCli } from "./inputs.mjs";
  * @param {(line: string) => void} write
  * @returns {import("./github.mjs").Logger}
  */
-export function createLogger(write) {
+function createLogger(write) {
   return {
     info: (message) => write(message),
     warn: (message) => write(`::warning::${message}`),
@@ -91,6 +91,7 @@ export async function run(options) {
       token: inputs.githubToken,
       apiUrl: env["GITHUB_API_URL"] ?? "https://api.github.com",
       graphqlUrl: env["GITHUB_GRAPHQL_URL"] ?? "https://api.github.com/graphql",
+      serverUrl: env["GITHUB_SERVER_URL"] ?? "https://github.com",
       dryRun: inputs.dryRun,
       fetchImpl: options.fetchImpl ?? fetch,
       log,
@@ -106,14 +107,28 @@ export async function run(options) {
       workspace,
       workingDirectory,
       github,
-      cli: createCli(resolveCli(inputs.version, workspace), workingDirectory, env),
+      cli: createCli(resolveCli(inputs.version, workspace), workingDirectory, env, {
+        // A `file:` version names the build to run. A published version yields to the copy the repository installed.
+        local: isPublishedVersion(inputs.version)
+          ? async () => {
+              const local = await localCli(workingDirectory, workspace);
+              if (!local) return null;
+              if (local.version !== inputs.version) {
+                log.warn(
+                  `running the installed @aurelienbbn/agentlint ${local.version}, not the version input ${inputs.version}`,
+                );
+              }
+              return local.argv;
+            }
+          : undefined,
+      }),
       log,
       outputs,
     };
     if (ctx.repository === "") throw new InputError("GITHUB_REPOSITORY is not set");
     if (inputs.dryRun) log.info("dry-run: writes are recorded, not sent");
 
-    if (eventName === "pull_request" || eventName === "pull_request_target") {
+    if (eventName === "pull_request") {
       exitCode = await runGate(ctx);
     } else if (eventName === "issue_comment" || eventName === "pull_request_review_comment") {
       exitCode = await runCommand(ctx);

@@ -7,8 +7,18 @@
 import { isRecord } from "./artifact.mjs";
 import { git, gitOutput } from "./cli.mjs";
 import { numberField, stringField } from "./github.mjs";
-import { installIfRequested, isFork, publish, pullRequestFrom, recordOutputs, resolveBase, scan } from "./gate.mjs";
-import { digestFromBody } from "./render.mjs";
+import {
+  findSummary,
+  installIfRequested,
+  isFork,
+  logCliOutput,
+  publish,
+  pullRequestFrom,
+  recordOutputs,
+  resolveBase,
+  scan,
+} from "./gate.mjs";
+import { digestFromBody, headFromSummary, isActionComment, renderFailureReply } from "./render.mjs";
 
 /** @typedef {import("./gate.mjs").Context} Context */
 /** @typedef {import("./gate.mjs").PullRequest} PullRequest */
@@ -38,7 +48,8 @@ function cleanReason(raw) {
 
 /** @param {string} selector */
 export function isSelector(selector) {
-  return DIGEST.test(selector) || FILE_LINE.test(selector);
+  // A selector is passed to the CLI as an argument: it never looks like an option.
+  return !selector.startsWith("-") && (DIGEST.test(selector) || FILE_LINE.test(selector));
 }
 
 /**
@@ -92,7 +103,7 @@ export function parseCommand(body, options = {}) {
  * @param {Context} ctx
  * @returns {Surface | null}
  */
-export function surfaceFrom(ctx) {
+function surfaceFrom(ctx) {
   const comment = ctx.event["comment"];
   if (!isRecord(comment)) return null;
   const user = comment["user"];
@@ -143,7 +154,7 @@ export function surfaceFrom(ctx) {
  * @param {Context} ctx
  * @param {string} login
  */
-export async function hasWriteAccess(ctx, login) {
+async function hasWriteAccess(ctx, login) {
   const data = await ctx.github.get(`/repos/${ctx.repository}/collaborators/${encodeURIComponent(login)}/permission`);
   return ["write", "maintain", "admin"].includes(stringField(data, "permission"));
 }
@@ -156,7 +167,7 @@ export async function hasWriteAccess(ctx, login) {
 async function implicitSelector(ctx, surface) {
   if (surface.inReplyTo === null) return null;
   const parent = await ctx.github.get(`/repos/${ctx.repository}/pulls/comments/${surface.inReplyTo}`);
-  return digestFromBody(stringField(parent, "body"));
+  return isActionComment(parent, await ctx.github.identity()) ? digestFromBody(stringField(parent, "body")) : null;
 }
 
 /**
@@ -165,10 +176,48 @@ async function implicitSelector(ctx, surface) {
  */
 async function checkoutHead(ctx, pull) {
   const cwd = ctx.workingDirectory;
-  const fetched = await git(["fetch", "--no-tags", "origin", pull.headRef], cwd);
+  // The branch name comes from the pull request. It is passed as a full ref, never where Git reads an option.
+  if (pull.headRef.startsWith("-")) throw new Error(`unsupported head branch name: ${pull.headRef}`);
+  const tracking = `refs/remotes/origin/${pull.headRef}`;
+  const fetched = await ctx.github.gitFetch(["--no-tags", "origin", `+refs/heads/${pull.headRef}:${tracking}`], cwd);
   if (fetched.code !== 0) throw new Error(`git fetch origin ${pull.headRef} failed: ${fetched.stderr.trim()}`);
-  const checkedOut = await git(["checkout", "-B", pull.headRef, `origin/${pull.headRef}`], cwd);
+  // `--force`: a retry starts again from the remote head and drops the local acceptance commit and any install residue.
+  const checkedOut = await git(["checkout", "--force", "-B", pull.headRef, tracking, "--"], cwd);
   if (checkedOut.code !== 0) throw new Error(`git checkout ${pull.headRef} failed: ${checkedOut.stderr.trim()}`);
+}
+
+/**
+ * A digest names one finding and its evidence, and so does the marker of an inline thread. `path:line` names whatever
+ * finding sits on that line when the queued job runs, which a push in between can change. It is accepted only while the
+ * checked-out head is the one the action's latest summary was rendered for, which is what the reviewer read.
+ *
+ * @param {Context} ctx
+ * @param {Surface} surface
+ * @param {string} selector
+ * @returns {Promise<string | null>} the refusal, or `null` when the selector may be used
+ */
+async function staleSelectorRefusal(ctx, surface, selector) {
+  if (DIGEST.test(selector)) return null;
+  const head = await gitOutput(["rev-parse", "HEAD"], ctx.workingDirectory);
+  const summary = await findSummary(ctx, surface.pullNumber);
+  const seen = summary === undefined ? null : headFromSummary(stringField(summary, "body"));
+  if (seen !== null && head.startsWith(seen)) return null;
+  const evidence =
+    seen === null
+      ? "there is no agentlint summary for it yet"
+      : `the latest agentlint summary is for \`${seen.slice(0, 7)}\``;
+  return (
+    `\`${selector}\` was not approved: the pull request head is \`${head.slice(0, 7)}\` and ${evidence}, so the finding on ` +
+    "that line may not be the one you reviewed. Check the current summary and approve by digest: " +
+    '`/agentlint approve <digest> --reason "..."`.'
+  );
+}
+
+const PUSH_ATTEMPTS = 3;
+
+/** @param {string} stderr of a failed `git push` */
+function headMoved(stderr) {
+  return /\[rejected\]|non-fast-forward|fetch first/.test(stderr);
 }
 
 /**
@@ -186,20 +235,25 @@ function commitSubject(message, fallback) {
  * @param {PullRequest} pull
  * @param {string} base
  * @param {{ selector: string, reason: string }} command
- * @returns {Promise<boolean>} whether the acceptance was recorded and pushed
+ * @returns {Promise<"pushed" | "refused" | "moved" | "failed">} `refused` and `failed` have replied to the commenter
  */
-async function approve(ctx, surface, pull, base, command) {
+async function approveOnce(ctx, surface, pull, base, command) {
+  const stale = await staleSelectorRefusal(ctx, surface, command.selector);
+  if (stale !== null) {
+    await surface.reply(stale);
+    return "refused";
+  }
   const result = await ctx.cli.run(["approve", command.selector, "--reason", command.reason, "--base", base], {
     AGENTLINT_ACTOR: `human:${surface.login}`,
   });
   const message = (result.stdout + result.stderr).trim();
-  ctx.log.info(message);
+  logCliOutput(ctx, message);
   if (result.code !== 0) {
-    await surface.reply(`agentlint could not record the approval:\n\n\`\`\`\n${message}\n\`\`\``);
-    return false;
+    await surface.reply(renderFailureReply("agentlint could not record the approval:", message));
+    return "refused";
   }
   const cwd = ctx.workingDirectory;
-  const added = await git(["add", ".agentlint/acceptances.jsonl"], cwd);
+  const added = await git(["add", "--", ".agentlint/acceptances.jsonl"], cwd);
   if (added.code !== 0) throw new Error(`git add failed: ${added.stderr.trim()}`);
   const author = `${surface.login} <${surface.userId}+${surface.login}@users.noreply.github.com>`;
   const committed = await git(
@@ -219,8 +273,44 @@ async function approve(ctx, surface, pull, base, command) {
     },
   );
   if (committed.code !== 0) throw new Error(`git commit failed: ${committed.stderr.trim()}`);
-  await ctx.github.gitWrite(["push", "origin", `HEAD:${pull.headRef}`], cwd);
-  return true;
+  // The push authenticates with the `github-token` input for this one command; see `gitAuthOptions`.
+  const pushed = await ctx.github.gitWrite(["origin", `HEAD:refs/heads/${pull.headRef}`], cwd);
+  if (pushed.code === 0) return "pushed";
+  if (headMoved(pushed.stderr)) return "moved";
+  await surface.reply(
+    renderFailureReply(
+      `agentlint recorded the approval but could not push it to \`${pull.headRef}\`, so nothing changed. The \`github-token\` needs \`contents: write\`, and the branch rules must let it push.`,
+      pushed.stderr,
+    ),
+  );
+  return "failed";
+}
+
+/**
+ * Another push (a second approval, a new commit) can move the branch between the fetch and the push. The approval is
+ * then applied again on the new head, where the CLI checks the evidence again, a bounded number of times. Correctness
+ * does not depend on the workflow serialising its runs.
+ *
+ * @param {Context} ctx
+ * @param {Surface} surface
+ * @param {PullRequest} pull
+ * @param {string} base
+ * @param {{ selector: string, reason: string }} command
+ * @returns {Promise<"pushed" | "refused" | "failed">}
+ */
+async function approve(ctx, surface, pull, base, command) {
+  for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      ctx.log.warn(`${pull.headRef} moved during the push; applying the approval again (attempt ${attempt})`);
+      await checkoutHead(ctx, pull);
+    }
+    const outcome = await approveOnce(ctx, surface, pull, base, command);
+    if (outcome !== "moved") return outcome;
+  }
+  await surface.reply(
+    `agentlint could not push the approval: \`${pull.headRef}\` moved ${PUSH_ATTEMPTS} times while it was being recorded. Nothing changed; send the command again.`,
+  );
+  return "failed";
 }
 
 /**
@@ -266,10 +356,15 @@ export async function runCommand(ctx) {
     return 0;
   }
 
+  // Both fetches happen before any repository code runs.
   await checkoutHead(ctx, pull);
-  await installIfRequested(ctx);
   const base = await resolveBase(ctx, ctx.inputs.base || pull.baseRef);
-  if (command.name === "approve" && !(await approve(ctx, surface, pull, base, command))) return 0;
+  await installIfRequested(ctx);
+  if (command.name === "approve") {
+    const outcome = await approve(ctx, surface, pull, base, command);
+    // A refusal is an answer to the commenter. A push that did not happen is a failed run.
+    if (outcome !== "pushed") return outcome === "refused" ? 0 : 1;
+  }
 
   const headSha = await gitOutput(["rev-parse", "HEAD"], ctx.workingDirectory);
   const result = await scan(ctx, base);

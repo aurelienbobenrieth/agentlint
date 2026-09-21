@@ -5,7 +5,7 @@
  * workflow commands used when the token cannot write.
  */
 
-import { shortDigest, unresolved } from "./artifact.mjs";
+import { isRecord, shortDigest, unresolved } from "./artifact.mjs";
 
 /** @typedef {import("./artifact.mjs").Finding} Finding */
 /** @typedef {"open" | "closed" | "error"} Gate */
@@ -14,7 +14,7 @@ export const SUMMARY_MARKER = "<!-- agentlint:summary -->";
 const INLINE_MARKER = /<!-- agentlint:([0-9a-f]{7,64}) -->/;
 
 /** @param {string} digest */
-export function inlineMarker(digest) {
+function inlineMarker(digest) {
   return `<!-- agentlint:${digest} -->`;
 }
 
@@ -24,6 +24,111 @@ export function inlineMarker(digest) {
  */
 export function digestFromBody(body) {
   return INLINE_MARKER.exec(body)?.[1] ?? null;
+}
+
+const HEAD_MARKER = /<!-- agentlint:head:([0-9a-f]{40,64}) -->/;
+const HEAD_TEXT = /Head `([0-9a-f]{7,64})`/;
+
+/**
+ * The head commit a summary comment was rendered for: the full SHA from the hidden marker, or the abbreviated one from
+ * the visible text of a summary written by an earlier version.
+ *
+ * @param {string} body
+ * @returns {string | null}
+ */
+export function headFromSummary(body) {
+  return HEAD_MARKER.exec(body)?.[1] ?? HEAD_TEXT.exec(body)?.[1] ?? null;
+}
+
+/**
+ * Anyone who can comment can write a marker, and so can any other bot. Only a comment posted by the account the
+ * action's own token acts as is an agentlint comment. `identity` is that login as GitHub reports it for the token;
+ * REST spells an application's account `<slug>[bot]`, so that spelling matches too, for a `Bot` account only.
+ *
+ * @param {unknown} comment a GitHub issue or review comment
+ * @param {string} identity
+ */
+export function isActionComment(comment, identity) {
+  if (!isRecord(comment) || identity === "") return false;
+  const user = comment["user"];
+  if (!isRecord(user) || typeof user["login"] !== "string") return false;
+  return user["login"] === identity || (user["type"] === "Bot" && user["login"] === `${identity}[bot]`);
+}
+
+/** GitHub rejects a comment body above 65,536 characters. Everything rendered here stays under this. */
+export const BODY_BUDGET = 60_000;
+const MORE = "open the review artifact";
+
+/**
+ * @param {string} value
+ * @param {number} limit
+ */
+function clip(value, limit) {
+  return value.length <= limit ? value : `${value.slice(0, limit).trimEnd()} … (truncated)`;
+}
+
+/**
+ * Finding text comes from the pull request: messages, standards, proposals, file names. Rendered as prose it must stay
+ * prose: no HTML (`<img>` tracking pixels), no links or images, no table or code-span delimiters, no heading, and no
+ * `@mention` that notifies someone (a zero-width space after `@` breaks it).
+ *
+ * @param {string} value
+ */
+export function plain(value) {
+  const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
+  return value
+    .replace(/[\\`|[\]]/g, "\\$&")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/@/g, `@${ZERO_WIDTH_SPACE}`)
+    .replace(/^(\s*)#/gm, "$1\\#");
+}
+
+/**
+ * A code span whose delimiter is longer than any backtick run inside it. Pipes stay escaped for table cells.
+ *
+ * @param {string} value
+ */
+export function codeSpan(value) {
+  const flat = value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length));
+  const delimiter = "`".repeat(longest + 1);
+  return longest === 0 ? `${delimiter}${flat}${delimiter}` : `${delimiter} ${flat} ${delimiter}`;
+}
+
+/**
+ * A fenced block whose fence is longer than any backtick run in the content (CommonMark), so the content cannot close
+ * it and continue as markdown.
+ *
+ * @param {string} content
+ * @param {string} [language]
+ */
+export function fenced(content, language = "") {
+  const longest = Math.max(0, ...(content.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}${language}\n${content}\n${fence}`;
+}
+
+const DIFF_LIMIT = 20_000;
+
+/** @param {string} diff */
+function clipDiff(diff) {
+  const trimmed = diff.trimEnd();
+  if (trimmed.length <= DIFF_LIMIT) return trimmed;
+  const cut = trimmed.lastIndexOf("\n", DIFF_LIMIT);
+  const kept = trimmed.slice(0, cut > 0 ? cut : DIFF_LIMIT);
+  const dropped = trimmed.slice(kept.length).split("\n").length - 1;
+  return `${kept}\n… diff truncated, ${dropped} more lines: ${MORE}`;
+}
+
+/**
+ * A reply that quotes CLI or git output.
+ *
+ * @param {string} heading
+ * @param {string} output
+ */
+export function renderFailureReply(heading, output) {
+  return `${heading}\n\n${fenced(clip(output.trim(), 5_000))}`;
 }
 
 /**
@@ -52,9 +157,20 @@ function authorityBadge(finding) {
   return finding.authority === "human" ? "**needs human approval**" : "agent authority";
 }
 
-/** @param {string} text */
-function cell(text) {
-  return text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+/**
+ * @param {string} text
+ * @param {number} limit
+ */
+function cell(text, limit) {
+  return clip(plain(text.replace(/\s*\r?\n\s*/g, " ")), limit);
+}
+
+/** @param {string} file */
+function urlPath(file) {
+  return file
+    .split("/")
+    .map((segment) => encodeURIComponent(segment).replace(/[()]/g, (char) => (char === "(" ? "%28" : "%29")))
+    .join("/");
 }
 
 /**
@@ -71,29 +187,56 @@ export function renderSummary(input) {
   const server = input.serverUrl ?? "https://github.com";
   const counts = countFindings(input.findings);
   const open = unresolved(input.findings);
-  const lines = [SUMMARY_MARKER, `## agentlint: gate ${gateLabel(input.gate)}`, ""];
+  const lines = [SUMMARY_MARKER];
+  // The full head lets a later `path:line` approval prove that it answers this exact scan.
+  if (/^[0-9a-f]{40,64}$/.test(input.headSha)) lines.push(`<!-- agentlint:head:${input.headSha} -->`);
   lines.push(
+    `## agentlint: gate ${gateLabel(input.gate)}`,
+    "",
     `${counts.unresolved} unresolved (${counts.human} human, ${counts.agent} agent), ${counts.accepted} accepted. Head \`${input.headSha.slice(0, 7)}\`.`,
     "",
   );
+  // Rows are added while the body stays inside the budget. The rest is counted, never silently dropped.
+  let room = BODY_BUDGET - lines.join("\n").length - 1_000;
+  /**
+   * @template T
+   * @param {ReadonlyArray<T>} items
+   * @param {(item: T) => string} render
+   * @param {string} noun
+   */
+  const pushWithinBudget = (items, render, noun) => {
+    let shown = 0;
+    for (const item of items) {
+      const line = render(item);
+      if (line.length + 1 > room) break;
+      room -= line.length + 1;
+      lines.push(line);
+      shown++;
+    }
+    if (shown < items.length) lines.push("", `… and ${items.length - shown} more ${noun} — ${MORE}.`);
+    lines.push("");
+  };
   if (open.length > 0) {
     lines.push("| Rule | Location | Authority | Message | Record the decision |", "| --- | --- | --- | --- | --- |");
-    for (const finding of open) {
-      const url = `${server}/${input.repository}/blob/${input.headSha}/${finding.file}#L${finding.line}`;
-      const location = `[${finding.file}:${finding.line}](${url})`;
-      lines.push(
-        `| ${cell(finding.ruleTitle)} | ${location} | ${finding.authority} | ${cell(finding.message)} | \`${acceptCommand(finding)}\` |`,
-      );
-    }
-    lines.push("");
+    pushWithinBudget(
+      open,
+      (finding) => {
+        const url = `${server}/${input.repository}/blob/${input.headSha}/${urlPath(finding.file)}#L${finding.line}`;
+        const location = `[${cell(finding.file, 300)}:${finding.line}](${url})`;
+        return `| ${cell(finding.ruleTitle, 200)} | ${location} | ${finding.authority} | ${cell(finding.message, 300)} | \`${acceptCommand(finding)}\` |`;
+      },
+      "findings",
+    );
   }
   const outside = open.filter((finding) => !input.inlineDigests.has(finding.digest));
   if (outside.length > 0) {
     lines.push("Not inside this pull request's diff, so only listed here:", "");
-    for (const finding of outside) {
-      lines.push(`- \`${finding.file}:${finding.line}\` ${cell(finding.ruleTitle)} (${finding.authority})`);
-    }
-    lines.push("");
+    pushWithinBudget(
+      outside,
+      (finding) =>
+        `- ${codeSpan(`${clip(finding.file, 300)}:${finding.line}`)} ${cell(finding.ruleTitle, 200)} (${finding.authority})`,
+      "findings outside the diff",
+    );
   }
   lines.push(
     'Human findings: comment `/agentlint approve <digest> --reason "..."` here, or reply `/agentlint approve <reason>` on the inline comment. ' +
@@ -104,9 +247,11 @@ export function renderSummary(input) {
 }
 
 /** @param {Gate} gate */
-export function gateLabel(gate) {
+function gateLabel(gate) {
   return gate === "open" ? "open" : gate === "closed" ? "closed" : "error";
 }
+
+const INLINE_CHECKS = 20;
 
 /**
  * @param {Finding} finding
@@ -115,27 +260,29 @@ export function gateLabel(gate) {
 export function renderInlineBody(finding) {
   const lines = [
     inlineMarker(finding.digest),
-    `### ${finding.ruleTitle}`,
+    `### ${cell(finding.ruleTitle, 200)}`,
     "",
     authorityBadge(finding),
     "",
-    finding.message,
+    clip(plain(finding.message), 2_000),
     "",
   ];
-  lines.push("**Standard**", "", finding.guidance.standard, "");
+  // Every part is clipped, so the body stays under BODY_BUDGET without ever cutting through a fence.
+  lines.push("**Standard**", "", clip(plain(finding.guidance.standard), 6_000), "");
   if (finding.guidance.checks.length > 0) {
-    for (const check of finding.guidance.checks) lines.push(`- ${check}`);
+    const checks = finding.guidance.checks.slice(0, INLINE_CHECKS);
+    for (const check of checks) lines.push(`- ${cell(check, 500)}`);
+    const hidden = finding.guidance.checks.length - checks.length;
+    if (hidden > 0) lines.push(`- … and ${hidden} more checks — ${MORE}.`);
     lines.push("");
   }
   if (finding.proposal) {
-    lines.push("**Agent proposal**", "", finding.proposal.summary, "");
+    lines.push("**Agent proposal**", "", clip(plain(finding.proposal.summary), 4_000), "");
     if (finding.proposal.diff) {
       lines.push(
         "<details><summary>Proposed diff</summary>",
         "",
-        "```diff",
-        finding.proposal.diff.trimEnd(),
-        "```",
+        fenced(clipDiff(finding.proposal.diff), "diff"),
         "",
         "</details>",
         "",
@@ -143,7 +290,7 @@ export function renderInlineBody(finding) {
     }
   }
   if (finding.lineageReason) {
-    lines.push(`**Prior judgment (context only):** ${finding.lineageReason}`, "");
+    lines.push(`**Prior judgment (context only):** ${clip(plain(finding.lineageReason), 2_000)}`, "");
   }
   if (finding.authority === "human") {
     lines.push('Reply "/agentlint approve <reason>" to accept.');

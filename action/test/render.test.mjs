@@ -4,10 +4,16 @@ import { describe, expect, it } from "vitest";
 
 import { decodeArtifact } from "../src/artifact.mjs";
 import {
+  BODY_BUDGET,
+  codeSpan,
   countFindings,
   digestFromBody,
+  fenced,
+  headFromSummary,
+  plain,
   renderAnnotations,
   renderCheckOutput,
+  renderFailureReply,
   renderInlineBody,
   renderSummary,
   renderWorkflowCommands,
@@ -77,5 +83,114 @@ describe("render", () => {
     if (!first) throw new Error("fixture");
     const tricky = renderWorkflowCommands([{ ...first, ruleTitle: "a:b,c", message: "x%\ny" }]);
     expect(tricky[0]).toContain("title=a%3Ab%2Cc::x%25%0Ay");
+  });
+});
+
+describe("hostile and oversized content", () => {
+  const FENCE = "`".repeat(3);
+  const hostileText = `@everyone see <img src="https://tracker.example/p.png"> | x \`code\` [click](https://evil.example)\n# Heading`;
+
+  it("keeps finding text inert in the summary table", async () => {
+    const [first] = await findings();
+    if (!first) throw new Error("fixture");
+    const summary = renderSummary({
+      repository: "o/r",
+      headSha: "a".repeat(40),
+      pullNumber: 1,
+      gate: "closed",
+      findings: [{ ...first, ruleTitle: hostileText, message: hostileText, file: "src/we|rd`(x).ts" }],
+      inlineDigests: new Set(),
+    });
+    expect(summary).not.toContain("<img");
+    expect(summary).not.toContain("@everyone");
+    expect(summary).not.toContain("[click](");
+    expect(summary).not.toMatch(/^# Heading/m);
+    expect(summary).toContain("&lt;img");
+    expect(summary).toContain("/blob/" + "a".repeat(40) + "/src/we%7Crd%60%28x%29.ts#L3");
+    // Every table row still has exactly the five unescaped column separators plus the two edges.
+    const row = summary.split("\n").find((line) => line.startsWith("| @"));
+    expect(row?.replace(/\\\|/g, "").split("|")).toHaveLength(7);
+    expect(summary).toMatchSnapshot();
+  });
+
+  it("fences a diff that contains a fence, and keeps the rest of the body prose", async () => {
+    const [first] = await findings();
+    if (!first?.proposal) throw new Error("fixture");
+    const diff = `+ok\n${FENCE}\n@everyone <img src=x>\n# not a heading\n${FENCE}${"`"}\n+more`;
+    const body = renderInlineBody({
+      ...first,
+      message: hostileText,
+      guidance: { standard: hostileText, checks: [hostileText] },
+      lineageReason: hostileText,
+      proposal: { ...first.proposal, summary: hostileText, diff },
+    });
+    const opening = "`".repeat(5) + "diff";
+    const start = body.indexOf(opening);
+    const end = body.indexOf("\n" + "`".repeat(5) + "\n", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(body.slice(start + opening.length + 1, end)).toBe(diff);
+    const prose = body.slice(0, start) + body.slice(end);
+    expect(prose).not.toContain("<img");
+    expect(prose).not.toContain("@everyone");
+    expect(prose).not.toContain("[click](");
+    expect(body.endsWith('Reply "/agentlint approve <reason>" to accept.')).toBe(true);
+    expect(body).toMatchSnapshot();
+  });
+
+  it("truncates a very long diff and very long text, and stays under the comment limit", async () => {
+    const [first] = await findings();
+    if (!first?.proposal) throw new Error("fixture");
+    const long = "<@x|`>".repeat(20_000);
+    const body = renderInlineBody({
+      ...first,
+      message: long,
+      guidance: { standard: long, checks: Array.from({ length: 200 }, () => long) },
+      lineageReason: long,
+      proposal: { ...first.proposal, summary: long, diff: "+line\n".repeat(50_000) },
+    });
+    expect(body.length).toBeLessThan(BODY_BUDGET);
+    expect(body).toMatch(/… diff truncated, \d+ more lines: open the review artifact/);
+    expect(body).toContain("… and 180 more checks");
+    expect(body.endsWith('Reply "/agentlint approve <reason>" to accept.')).toBe(true);
+  });
+
+  it("budgets the summary for 500 findings and says how many are not shown", async () => {
+    const [first] = await findings();
+    if (!first) throw new Error("fixture");
+    const many = Array.from({ length: 500 }, (_, index) => ({
+      ...first,
+      digest: index.toString(16).padStart(64, "0"),
+      file: `src/generated/some/deep/module-${index}.ts`,
+      line: index + 1,
+      message: "m".repeat(400),
+    }));
+    const summary = renderSummary({
+      repository: "aurelienbobenrieth/agentlint",
+      headSha: "a".repeat(40),
+      pullNumber: 42,
+      gate: "closed",
+      findings: many,
+      inlineDigests: new Set(),
+    });
+    expect(summary.length).toBeLessThanOrEqual(BODY_BUDGET);
+    expect(summary).toContain("500 unresolved");
+    const shown = summary.split("\n").filter((line) => line.startsWith("| ") && line.includes("/blob/")).length;
+    expect(shown).toBeGreaterThan(50);
+    expect(shown).toBeLessThan(500);
+    expect(summary).toContain(`… and ${500 - shown} more findings — open the review artifact.`);
+    expect(summary).toContain("agentlint pr 42");
+    expect(headFromSummary(summary)).toBe("a".repeat(40));
+  });
+
+  it("fences CLI output that contains a fence", () => {
+    const reply = renderFailureReply(
+      "agentlint could not record the approval:",
+      `oops\n${FENCE}\n@everyone\n${"x".repeat(9_000)}`,
+    );
+    expect(reply.split("\n")[2]).toBe("`".repeat(4));
+    expect(reply.length).toBeLessThan(6_000);
+    expect(codeSpan("a`b")).toBe("`` a`b ``");
+    expect(plain("a|b")).toBe("a\\|b");
+    expect(fenced("x")).toBe(`${FENCE}\nx\n${FENCE}`);
   });
 });

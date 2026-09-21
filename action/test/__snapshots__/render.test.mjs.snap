@@ -1,5 +1,63 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`hostile and oversized content > fences a diff that contains a fence, and keeps the rest of the body prose 1`] = `
+"<!-- agentlint:dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52 -->
+### Dynamic code execution has an explicit trust boundary
+
+**needs human approval**
+
+@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+\\# Heading
+
+**Standard**
+
+@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+\\# Heading
+
+- @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading
+
+**Agent proposal**
+
+@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+\\# Heading
+
+<details><summary>Proposed diff</summary>
+
+\`\`\`\`\`diff
++ok
+\`\`\`
+@everyone <img src=x>
+# not a heading
+\`\`\`\`
++more
+\`\`\`\`\`
+
+</details>
+
+**Prior judgment (context only):** @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+\\# Heading
+
+Reply "/agentlint approve <reason>" to accept."
+`;
+
+exports[`hostile and oversized content > keeps finding text inert in the summary table 1`] = `
+"<!-- agentlint:summary -->
+<!-- agentlint:head:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->
+## agentlint: gate closed
+
+1 unresolved (1 human, 0 agent), 0 accepted. Head \`aaaaaaa\`.
+
+| Rule | Location | Authority | Message | Record the decision |
+| --- | --- | --- | --- | --- |
+| @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading | [src/we\\|rd\\\`(x).ts:3](https://github.com/o/r/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/we%7Crd%60%28x%29.ts#L3) | human | @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading | \`/agentlint approve dd03e1e41c97 --reason "..."\` |
+
+Not inside this pull request's diff, so only listed here:
+
+- \`\` src/we\\|rd\`(x).ts:3 \`\` @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading (human)
+
+Human findings: comment \`/agentlint approve <digest> --reason "..."\` here, or reply \`/agentlint approve <reason>\` on the inline comment. Agent findings: run \`agentlint accept <digest> --reason "..."\` locally and push. Review everything locally with \`agentlint pr 1\`."
+`;
+
 exports[`render > renders inline bodies with the marker first and the right reply instruction 1`] = `
 "<!-- agentlint:dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52 -->
 ### Dynamic code execution has an explicit trust boundary
@@ -17,7 +75,7 @@ Code that evaluates strings at runtime names the trust boundary the string cross
 
 **Agent proposal**
 
-Not fixed. This file is vendored from formula-parser@1.x and the eval is its core. Replacing it means adopting a constrained evaluator, which changes the formula surface for customers. Needs a product decision.
+Not fixed. This file is vendored from formula-parser@​1.x and the eval is its core. Replacing it means adopting a constrained evaluator, which changes the formula surface for customers. Needs a product decision.
 
 <details><summary>Proposed diff</summary>
 
@@ -39,6 +97,7 @@ Reply "/agentlint approve <reason>" to accept."
 
 exports[`render > renders the sticky summary with links, commands, and out-of-diff findings 1`] = `
 "<!-- agentlint:summary -->
+<!-- agentlint:head:abcdef1234567890abcdef1234567890abcdef12 -->
 ## agentlint: gate closed
 
 3 unresolved (2 human, 1 agent), 0 accepted. Head \`abcdef1\`.

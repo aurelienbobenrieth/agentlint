@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -18,6 +18,7 @@ const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const stub = join(fixtures, "cli-stub.mjs");
 const API = "https://api.github.com";
 const REPO = "aurelienbobenrieth/agentlint";
+const BOT = { login: "github-actions[bot]", id: 41898282, type: "Bot" };
 const HUMAN_DIGEST = "dd03e1e41c975157815a150153bd8fb7bb6873cc9357ddfaefaafdfbf1eb5f52";
 const AGENT_DIGEST = "103d435f608a96c123f5d168f130495fdd20d00eacb575fb67f87e3849f6376a";
 
@@ -44,6 +45,7 @@ function createFetch(overrides = {}) {
     "GET /repos/aurelienbobenrieth/agentlint/collaborators/aurelienbobenrieth/permission": { permission: "write" },
     "GET /repos/aurelienbobenrieth/agentlint/pulls/comments/8001": {
       id: 8001,
+      user: BOT,
       body: `<!-- agentlint:${HUMAN_DIGEST} -->\n### Dynamic code execution`,
     },
     "POST /repos/aurelienbobenrieth/agentlint/check-runs": { id: 77 },
@@ -123,6 +125,18 @@ function at(value, ...path) {
   return current;
 }
 
+/** @param {string} path */
+const jsonLines = (path) =>
+  readFile(path, "utf8")
+    .then((text) =>
+      text
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)),
+    )
+    .catch(() => []);
+
 /**
  * A working checkout with an `origin` bare remote and a pushed `feature/gate` branch.
  */
@@ -150,21 +164,24 @@ async function createRepo() {
  * @param {string} event
  * @param {string} fixture
  * @param {Record<string, string>} extra
+ * @param {Partial<Record<string, unknown>>} [routes]
  */
-async function runAction(event, fixture, extra) {
+async function runAction(event, fixture, extra, routes = {}) {
   const outputDir = await mkdtemp(join(tmpdir(), "agentlint-out-"));
   cleanup.push(outputDir);
   const outputFile = join(outputDir, "output");
   const stubLog = join(outputDir, "stub.log");
+  const stubEnvLog = join(outputDir, "stub-env.log");
+  const installEnvLog = join(outputDir, "install-env.log");
   await writeFile(outputFile, "");
-  const { requests, fetchImpl } = createFetch();
+  const { requests, fetchImpl } = createFetch(routes);
   /** @type {string[]} */
   const logs = [];
   const result = await run({
     env: {
       ...process.env,
       GITHUB_EVENT_NAME: event,
-      GITHUB_EVENT_PATH: join(fixtures, fixture),
+      GITHUB_EVENT_PATH: isAbsolute(fixture) ? fixture : join(fixtures, fixture),
       GITHUB_REPOSITORY: REPO,
       GITHUB_API_URL: API,
       GITHUB_GRAPHQL_URL: `${API}/graphql`,
@@ -172,6 +189,16 @@ async function runAction(event, fixture, extra) {
       RUNNER_TEMP: outputDir,
       AGENTLINT_ACTION_CLI_STUB: stub,
       AGENTLINT_STUB_LOG: stubLog,
+      AGENTLINT_STUB_ENV_LOG: stubEnvLog,
+      AGENTLINT_INSTALL_ENV_LOG: installEnvLog,
+      GITHUB_STEP_SUMMARY: join(outputDir, "summary.md"),
+      // What a runner or a careless workflow can put in the step environment.
+      GITHUB_TOKEN: "leak",
+      GH_TOKEN: "leak",
+      ACTIONS_RUNTIME_TOKEN: "leak",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "leak",
+      NODE_AUTH_TOKEN: "leak",
+      NPM_TOKEN: "leak",
       INPUT_VERSION: "0.1.5",
       "INPUT_GITHUB-TOKEN": "token",
       INPUT_COMMENT: "true",
@@ -182,19 +209,49 @@ async function runAction(event, fixture, extra) {
     fetchImpl,
     log: { info: (m) => logs.push(m), warn: (m) => logs.push(`W ${m}`), error: (m) => logs.push(`E ${m}`) },
   });
-  const stubCalls = await readFile(stubLog, "utf8")
-    .then((text) =>
-      text
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line)),
-    )
-    .catch(() => []);
-  return { ...result, requests, logs, outputFile: await readFile(outputFile, "utf8"), stubCalls };
+  return {
+    ...result,
+    requests,
+    logs,
+    outputFile: await readFile(outputFile, "utf8"),
+    stepSummary: await readFile(join(outputDir, "summary.md"), "utf8").catch(() => ""),
+    stubCalls: await jsonLines(stubLog),
+    /** @type {string[][]} names of the environment variables each CLI invocation received */
+    stubEnvs: await jsonLines(stubEnvLog),
+    /** @type {string[][]} same for the install lifecycle script */
+    installEnvs: await jsonLines(installEnvLog),
+  };
 }
 
 describe("pull_request", () => {
+  it("fails closed when GitHub repeats a GraphQL review cursor", async () => {
+    const repo = await createRepo();
+    const result = await runAction(
+      "pull_request",
+      "pull_request.opened.json",
+      {
+        GITHUB_WORKSPACE: repo.work,
+        "INPUT_WORKING-DIRECTORY": ".",
+      },
+      {
+        "POST /graphql": {
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: true, endCursor: "same" },
+                },
+              },
+            },
+          },
+        },
+      },
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.logs.some((line) => line.includes("invalid cursor"))).toBe(true);
+    expect(result.requests.filter((request) => request.url === "/graphql")).toHaveLength(2);
+  });
   it("publishes the check run, the inline review, and the sticky summary on a same-repo PR", async () => {
     const repo = await createRepo();
     const { exitCode, outputs, requests, outputFile } = await runAction("pull_request", "pull_request.opened.json", {
@@ -236,13 +293,13 @@ describe("pull_request", () => {
     const repo = await createRepo();
     const { requests, fetchImpl } = createFetch({
       "GET /repos/aurelienbobenrieth/agentlint/issues/42/comments": [
-        { id: 500, body: "<!-- agentlint:summary -->\nold" },
+        { id: 500, user: BOT, body: "<!-- agentlint:summary -->\nold" },
       ],
       "GET /repos/aurelienbobenrieth/agentlint/pulls/42/comments": [
-        { id: 8001, body: `<!-- agentlint:${HUMAN_DIGEST} -->\nx` },
-        { id: 8002, body: `<!-- agentlint:${"e".repeat(64)} -->\ngone` },
+        { id: 8001, user: BOT, body: `<!-- agentlint:${HUMAN_DIGEST} -->\nx` },
+        { id: 8002, user: BOT, body: `<!-- agentlint:${"e".repeat(64)} -->\ngone` },
         { id: 8003, in_reply_to_id: 8002, body: "a reply" },
-        { id: 8004, body: `<!-- agentlint:${"0".repeat(64)} -->\nalready resolved` },
+        { id: 8004, user: BOT, body: `<!-- agentlint:${"0".repeat(64)} -->\nalready resolved` },
       ],
       "POST /graphql": {
         data: {
@@ -291,7 +348,7 @@ describe("pull_request", () => {
 
   it("prints workflow commands and writes nothing on a fork PR", async () => {
     const repo = await createRepo();
-    const { exitCode, outputs, requests, logs } = await runAction(
+    const { exitCode, outputs, requests, logs, stepSummary } = await runAction(
       "pull_request",
       "pull_request.synchronize.fork.json",
       {
@@ -303,6 +360,8 @@ describe("pull_request", () => {
     expect(outputs.get("artifact")).not.toBe("");
     expect(requests).toEqual([]);
     expect(logs.some((line) => line.startsWith("::error file=src/vendor/legacy-parser.js,line=3"))).toBe(true);
+    expect(logs.some((line) => line.includes("not a trustworthy gate"))).toBe(true);
+    expect(stepSummary).toContain("not a trustworthy gate");
   });
 
   it("records the plan instead of writing in dry-run", async () => {
@@ -418,9 +477,9 @@ describe("issue_comment", () => {
 });
 
 describe("pull_request_review_comment", () => {
-  it("takes the selector from the parent comment marker and replies in the thread", async () => {
+  it("takes the selector from the parent comment marker and reacts on the review comment", async () => {
     const repo = await createRepo();
-    const { exitCode, requests, stubCalls } = await runAction(
+    const { exitCode, outputs, requests, stubCalls } = await runAction(
       "pull_request_review_comment",
       "pull_request_review_comment.created.json",
       { GITHUB_WORKSPACE: repo.work, "INPUT_DRY-RUN": "true" },
@@ -436,15 +495,286 @@ describe("pull_request_review_comment", () => {
     ]);
     // dry-run: nothing was sent, the push and the reaction are in the plan
     expect(requests.every((r) => r.method === "GET" || r.url === "/graphql")).toBe(true);
+    const plan = JSON.parse(outputs.get("dry-run-plan") ?? "[]").map(
+      (/** @type {unknown} */ entry) => `${String(at(entry, "method"))} ${String(at(entry, "url"))}`,
+    );
+    expect(plan).toEqual([
+      "GIT git push origin HEAD:refs/heads/feature/gate",
+      `POST ${API}/repos/${REPO}/check-runs`,
+      `POST ${API}/repos/${REPO}/pulls/42/reviews`,
+      `POST ${API}/repos/${REPO}/issues/42/comments`,
+      `POST ${API}/repos/${REPO}/pulls/comments/9002/reactions`,
+    ]);
   });
 });
 
 describe("workflow trust boundary", () => {
+  it("ignores a marker in a comment that the action did not post", async () => {
+    const repo = await createRepo();
+    const { exitCode, outputs, stubCalls } = await runAction(
+      "pull_request_review_comment",
+      "pull_request_review_comment.created.json",
+      { GITHUB_WORKSPACE: repo.work, "INPUT_DRY-RUN": "true" },
+      {
+        [`GET /repos/${REPO}/pulls/comments/8001`]: {
+          id: 8001,
+          user: { login: "outside-contributor", id: 2002, type: "User" },
+          body: `<!-- agentlint:${HUMAN_DIGEST} -->
+### Dynamic code execution`,
+        },
+      },
+    );
+    expect(exitCode).toBe(0);
+    expect(stubCalls.filter((call) => call.args[0] === "approve")).toEqual([]);
+    const plan = JSON.parse(outputs.get("dry-run-plan") ?? "[]");
+    expect(plan.map((/** @type {unknown} */ entry) => String(at(entry, "url")))).toEqual([
+      `${API}/repos/${REPO}/pulls/42/comments/9002/replies`,
+    ]);
+  });
+
   it("rejects pull_request_target before executing repository code or calling GitHub", async () => {
     const result = await runAction("pull_request_target", "pull_request.opened.json", {});
     expect(result.exitCode).toBe(2);
     expect(result.stubCalls).toEqual([]);
     expect(result.requests).toEqual([]);
     expect(result.logs.join("\n")).toContain("pull_request_target is unsupported");
+  });
+});
+
+/** The credentials `runAction` plants in the step environment, plus every action input. */
+const PLANTED = new Set([
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "ACTIONS_RUNTIME_TOKEN",
+  "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+  "NODE_AUTH_TOKEN",
+  "NPM_TOKEN",
+]);
+
+/** @param {string} name */
+const bearsCredential = (name) => /^INPUT_/i.test(name) || PLANTED.has(name.toUpperCase());
+
+/**
+ * An event file with another comment body.
+ *
+ * @param {string} body
+ */
+async function commentEvent(body) {
+  const dir = await mkdtemp(join(tmpdir(), "agentlint-ev-"));
+  cleanup.push(dir);
+  const event = JSON.parse(await readFile(join(fixtures, "issue_comment.created.approve.json"), "utf8"));
+  event.comment.body = body;
+  await writeFile(join(dir, "event.json"), JSON.stringify(event));
+  return join(dir, "event.json");
+}
+
+describe("least privilege", () => {
+  it("hands no token to the install lifecycle scripts or to the CLI", { timeout: 120_000 }, async () => {
+    const repo = await createRepo();
+    // `npm ci` with no dependencies is offline. The lifecycle script is the repository code under test.
+    await writeFile(
+      join(repo.work, "package.json"),
+      JSON.stringify({
+        name: "fixture",
+        version: "1.0.0",
+        private: true,
+        scripts: { preinstall: "node dump-env.mjs" },
+      }),
+    );
+    await writeFile(
+      join(repo.work, "package-lock.json"),
+      JSON.stringify({
+        name: "fixture",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": { name: "fixture", version: "1.0.0" } },
+      }),
+    );
+    await writeFile(join(repo.work, ".npmrc"), ["audit=false", "fund=false", "update-notifier=false", ""].join("\n"));
+    await writeFile(
+      join(repo.work, "dump-env.mjs"),
+      'import { appendFileSync } from "node:fs";\n' +
+        'appendFileSync(process.env["AGENTLINT_INSTALL_ENV_LOG"], JSON.stringify(Object.keys(process.env)) + "\\n");\n',
+    );
+    const { exitCode, stubEnvs, installEnvs, logs } = await runAction("pull_request", "pull_request.opened.json", {
+      GITHUB_WORKSPACE: repo.work,
+      INPUT_INSTALL: "true",
+    });
+    expect(logs.filter((line) => line.startsWith("E "))).toEqual([]);
+    expect(exitCode).toBe(1);
+    expect(installEnvs).toHaveLength(1);
+    expect(stubEnvs.length).toBeGreaterThan(0);
+    for (const names of [...installEnvs, ...stubEnvs]) {
+      expect(names.filter(bearsCredential)).toEqual([]);
+      expect(names).toContain("AGENTLINT_STUB_LOG");
+    }
+  });
+
+  it("pushes with the input token without writing it to the repository configuration", async () => {
+    const repo = await createRepo();
+    const { exitCode } = await runAction("issue_comment", "issue_comment.created.approve.json", {
+      GITHUB_WORKSPACE: repo.work,
+      "INPUT_GITHUB-TOKEN": "ghs_secret_token_value",
+    });
+    expect(exitCode).toBe(0);
+    const config = await readFile(join(repo.work, ".git", "config"), "utf8");
+    expect(config).not.toContain("extraheader");
+    expect(config).not.toContain(Buffer.from("x-access-token:ghs_secret_token_value").toString("base64"));
+  });
+});
+
+describe("approval push", () => {
+  it("applies the approval again when the branch moved, without a forced push", async () => {
+    const repo = await createRepo();
+    const other = join(repo.root, "other");
+    await repo.git(["clone", "-q", "-b", "feature/gate", repo.origin, other], repo.root);
+    await writeFile(join(other, "concurrent.txt"), "another approval or a new commit\n");
+    await repo.git(["add", "."], other);
+    await repo.git(["commit", "-q", "-m", "concurrent"], other);
+
+    const { exitCode, stubCalls, logs } = await runAction("issue_comment", "issue_comment.created.approve.json", {
+      GITHUB_WORKSPACE: repo.work,
+      AGENTLINT_STUB_RACE: other,
+    });
+    expect(logs.filter((line) => line.startsWith("E "))).toEqual([]);
+    expect(exitCode).toBe(0);
+    expect(stubCalls.filter((call) => call.args[0] === "approve")).toHaveLength(2);
+    const subjects = await repo.git(["log", "-3", "--format=%s", "feature/gate"], repo.origin);
+    expect(subjects.split("\n")).toEqual([
+      "chore(agentlint): accept security/dynamic-code-execution at src/vendor/legacy-parser.js:3",
+      "concurrent",
+      "feature",
+    ]);
+  });
+
+  it("replies and fails the run when the remote refuses the push", async () => {
+    const repo = await createRepo();
+    const hook = join(repo.origin, "hooks", "pre-receive");
+    await writeFile(hook, "#!/bin/sh\necho 'protected branch: push declined' >&2\nexit 1\n", { mode: 0o755 });
+    const before = await repo.git(["rev-parse", "feature/gate"], repo.origin);
+    const { exitCode, requests } = await runAction("issue_comment", "issue_comment.created.approve.json", {
+      GITHUB_WORKSPACE: repo.work,
+    });
+    expect(exitCode).toBe(1);
+    expect(await repo.git(["rev-parse", "feature/gate"], repo.origin)).toBe(before);
+    const writes = requests.filter((r) => r.method !== "GET" && r.url !== "/graphql");
+    expect(writes.map((r) => r.url)).toEqual([`/repos/${REPO}/issues/42/comments`]);
+    expect(bodyOf(writes[0])["body"]).toContain("could not push it to `feature/gate`");
+    expect(bodyOf(writes[0])["body"]).toContain("push declined");
+  });
+});
+
+describe("path:line approvals", () => {
+  it("refuses when the head is not the one the latest summary was rendered for", async () => {
+    const repo = await createRepo();
+    const event = await commentEvent('/agentlint approve src/vendor/legacy-parser.js:3 --reason "reviewed"');
+    const { exitCode, requests, stubCalls } = await runAction(
+      "issue_comment",
+      event,
+      { GITHUB_WORKSPACE: repo.work },
+      {
+        [`GET /repos/${REPO}/issues/42/comments`]: [
+          {
+            id: 500,
+            user: BOT,
+            body: `<!-- agentlint:summary -->\n<!-- agentlint:head:${"1".repeat(40)} -->\n## agentlint: gate closed`,
+          },
+        ],
+      },
+    );
+    expect(exitCode).toBe(0);
+    expect(stubCalls).toEqual([]);
+    const reply = requests.find((r) => r.method === "POST" && r.url === `/repos/${REPO}/issues/42/comments`);
+    expect(bodyOf(reply)["body"]).toContain("was not approved");
+    expect(bodyOf(reply)["body"]).toContain("the latest agentlint summary is for `1111111`");
+    expect(bodyOf(reply)["body"]).toContain("approve by digest");
+  });
+
+  it("ignores a summary that another account posted, and accepts the action's own for the same head", async () => {
+    const repo = await createRepo();
+    const head = await repo.git(["rev-parse", "feature/gate"], repo.origin);
+    const event = await commentEvent('/agentlint approve src/vendor/legacy-parser.js:3 --reason "reviewed"');
+    const summary = `<!-- agentlint:summary -->\n<!-- agentlint:head:${head} -->\n## agentlint: gate closed`;
+
+    const foreign = await runAction(
+      "issue_comment",
+      event,
+      { GITHUB_WORKSPACE: repo.work },
+      {
+        [`GET /repos/${REPO}/issues/42/comments`]: [
+          { id: 500, user: { login: "other-app[bot]", id: 7, type: "Bot" }, body: summary },
+        ],
+      },
+    );
+    expect(foreign.stubCalls).toEqual([]);
+    const refusal = foreign.requests.find((r) => r.method === "POST" && r.url === `/repos/${REPO}/issues/42/comments`);
+    expect(bodyOf(refusal)["body"]).toContain("there is no agentlint summary");
+
+    const own = await runAction(
+      "issue_comment",
+      event,
+      { GITHUB_WORKSPACE: repo.work },
+      { [`GET /repos/${REPO}/issues/42/comments`]: [{ id: 500, user: BOT, body: summary }] },
+    );
+    expect(own.exitCode).toBe(0);
+    expect(own.stubCalls.find((call) => call.args[0] === "approve")?.args[1]).toBe("src/vendor/legacy-parser.js:3");
+    expect(own.requests.some((r) => r.method === "PATCH" && r.url === `/repos/${REPO}/issues/comments/500`)).toBe(true);
+  });
+});
+
+describe("comment identity", () => {
+  it("resolves the token's own account and edits only its summary", async () => {
+    const repo = await createRepo();
+    const { requests } = await runAction(
+      "pull_request",
+      "pull_request.opened.json",
+      { GITHUB_WORKSPACE: repo.work },
+      {
+        "POST /graphql": {
+          data: {
+            viewer: { login: "my-gate-app[bot]" },
+            repository: {
+              pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } },
+            },
+          },
+        },
+        [`GET /repos/${REPO}/issues/42/comments`]: [
+          { id: 501, user: { login: "my-gate-app[bot]", id: 9, type: "Bot" }, body: "<!-- agentlint:summary -->\nold" },
+          { id: 502, user: BOT, body: "<!-- agentlint:summary -->\nquoted by another workflow's bot" },
+        ],
+      },
+    );
+    const writes = requests.filter((r) => r.method !== "GET").map((r) => `${r.method} ${r.url}`);
+    expect(writes).toContain(`PATCH /repos/${REPO}/issues/comments/501`);
+    expect(writes).not.toContain(`PATCH /repos/${REPO}/issues/comments/502`);
+  });
+});
+
+describe("base ref", () => {
+  it("prefixes a branch name that contains a slash with origin/", async () => {
+    const repo = await createRepo();
+    await repo.git(["push", "-q", "origin", "main:refs/heads/release/1.x"], repo.work);
+    await repo.git(["update-ref", "-d", "refs/remotes/origin/release/1.x"], repo.work);
+    const { stubCalls } = await runAction("pull_request", "pull_request.opened.json", {
+      GITHUB_WORKSPACE: repo.work,
+      INPUT_BASE: "release/1.x",
+    });
+    const check = stubCalls.find((call) => call.args[0] === "check");
+    expect(check?.args.slice(0, 4)).toEqual(["check", "--all", "--base", "origin/release/1.x"]);
+    expect(await repo.git(["rev-parse", "--verify", "refs/remotes/origin/release/1.x"], repo.work)).toMatch(
+      /^[0-9a-f]+$/,
+    );
+  });
+
+  it("passes explicit refs through", async () => {
+    const repo = await createRepo();
+    for (const base of ["origin/main", "refs/remotes/origin/main", "HEAD"]) {
+      const { stubCalls } = await runAction("pull_request", "pull_request.opened.json", {
+        GITHUB_WORKSPACE: repo.work,
+        INPUT_BASE: base,
+      });
+      expect(stubCalls.find((call) => call.args[0] === "check")?.args[3]).toBe(base);
+    }
   });
 });
