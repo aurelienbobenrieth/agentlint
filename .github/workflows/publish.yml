@@ -72,9 +72,7 @@ jobs:
       - name: Publish package
         env:
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: |
-          npm install --global npm@latest
-          npm publish "$PACKAGE_PATH" --access public
+        run: pnpm exec npm publish "$PACKAGE_PATH" --access public
 
       - name: Create GitHub Release
         env:

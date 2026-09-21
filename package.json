@@ -28,6 +28,7 @@
     "@changesets/cli": "3.0.3",
     "@tanstack/intent": "catalog:",
     "knip": "6.37.0",
+    "npm": "12.0.2",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0"
   },

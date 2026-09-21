@@ -3,7 +3,8 @@
   "ignoreWorkspaces": ["examples/*"],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.{mjs,js}"]
+      "entry": ["scripts/*.{mjs,js}"],
+      "ignoreDependencies": ["npm"]
     },
     "packages/agentlint": {
       "entry": ["scripts/*.mjs", "skills/**/*.mjs"],
