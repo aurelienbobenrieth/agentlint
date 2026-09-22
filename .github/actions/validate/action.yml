@@ -19,6 +19,13 @@ runs:
       run: |
         pnpm --filter @aurelienbbn/agentlint pack --pack-destination "$RUNNER_TEMP"
         echo "path=$(find "$RUNNER_TEMP" -name 'aurelienbbn-agentlint-*.tgz' -print -quit)" >> "$GITHUB_OUTPUT"
+    - name: Validate published package metadata and types
+      shell: bash
+      env:
+        PACKAGE_PATH: ${{ steps.package.outputs.path }}
+      run: |
+        pnpm exec publint "$PACKAGE_PATH" --strict
+        pnpm exec attw "$PACKAGE_PATH" --profile esm-only
     - name: Smoke-test packed artifact
       shell: bash
       env:

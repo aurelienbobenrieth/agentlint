@@ -23,5 +23,13 @@ export default defineConfig({
     maxWorkers: 4,
     include: ["src/**/*.test.ts"],
     testTimeout: 15_000,
+    coverage: {
+      thresholds: {
+        statements: 70,
+        branches: 70,
+        functions: 70,
+        lines: 70,
+      },
+    },
   },
 });

@@ -73,12 +73,41 @@ jobs:
         with:
           advanced-security: false
 
+  browser:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @agentlint/review exec playwright install --with-deps chromium
+
+      - name: Test review UI in Chromium
+        run: pnpm test:browser
+
   gate:
     name: Validate
     if: always()
     needs:
       - validate
       - workflows
+      - browser
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -86,4 +115,5 @@ jobs:
         env:
           MATRIX_RESULT: ${{ needs.validate.result }}
           WORKFLOW_RESULT: ${{ needs.workflows.result }}
-        run: test "$MATRIX_RESULT" = success && test "$WORKFLOW_RESULT" = success
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: test "$MATRIX_RESULT" = success && test "$WORKFLOW_RESULT" = success && test "$BROWSER_RESULT" = success

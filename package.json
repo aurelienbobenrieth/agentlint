@@ -11,19 +11,28 @@
   },
   "type": "module",
   "scripts": {
-    "build": "pnpm --filter @aurelienbbn/agentlint build",
+    "build": "pnpm --filter @aurelienbbn/agentlint build && pnpm --filter @agentlint/review build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "coverage": "pnpm --filter @aurelienbbn/agentlint test:coverage",
+    "package:lint": "publint packages/agentlint --pack pnpm --strict",
+    "package:types": "attw --pack packages/agentlint --profile esm-only",
+    "package:check": "pnpm package:lint && pnpm package:types",
+    "architecture:check": "node scripts/architecture/check.mjs",
+    "architecture:graph": "node scripts/architecture/graph.mjs",
+    "smoke:action": "node scripts/smoke-action.mjs",
+    "test:browser": "pnpm --filter @agentlint/review test:browser",
     "test:watch": "pnpm --filter @aurelienbbn/agentlint test:watch",
     "lint": "oxlint",
     "fmt": "oxfmt --write",
     "fmt:check": "oxfmt --check",
     "changeset": "changeset",
     "refs:sync": "node scripts/sync-ref-repos.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check && pnpm knip && intent validate packages/agentlint/skills && pnpm test",
+    "check": "pnpm architecture:check && pnpm typecheck && pnpm lint && pnpm fmt:check && pnpm knip && intent validate packages/agentlint/skills && pnpm smoke:action && pnpm test && pnpm coverage",
     "knip": "knip"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
     "@tanstack/intent": "catalog:",
@@ -31,10 +40,16 @@
     "knip": "6.37.0",
     "npm": "12.0.2",
     "oxfmt": "0.68.0",
-    "oxlint": "1.83.0"
+    "oxlint": "1.83.0",
+    "publint": "0.3.24"
   },
   "engines": {
     "node": ">=22.19.0"
   },
-  "packageManager": "pnpm@10.28.0"
+  "packageManager": "pnpm@10.28.0",
+  "pnpm": {
+    "overrides": {
+      "@types/node": "22.20.4"
+    }
+  }
 }
