@@ -8,11 +8,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
-    "effect": "catalog:"
-  },
   "devDependencies": {
-    "@types/node": "26.6.1",
+    "@types/node": "22.20.4",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

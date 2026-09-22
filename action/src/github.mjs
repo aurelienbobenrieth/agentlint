@@ -6,13 +6,17 @@
  */
 
 import { devNull } from "node:os";
-import { Array as A, Schema } from "effect";
-
 import { git } from "./cli.mjs";
 import { isRecord } from "./artifact.mjs";
 
-const isNumber = Schema.is(Schema.Number);
-const isString = Schema.is(Schema.String);
+/**
+ * @param {unknown} value @returns {value is number}
+ */
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
+/**
+ * @param {unknown} value @returns {value is string}
+ */
+const isString = (value) => typeof value === "string";
 
 /**
  * @typedef {object} PlanEntry
@@ -147,7 +151,7 @@ export function createGitHub(options) {
    * @returns {Promise<import("./cli.mjs").ExecResult>}
    */
   async function authenticatedGit({ args, cwd }) {
-    const secrets = A.filter([token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")], Boolean);
+    const secrets = [token, Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")].filter(Boolean);
     const clean = (
       /**
        * @type {string}

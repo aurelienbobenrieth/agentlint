@@ -6,13 +6,38 @@
 
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { Schema } from "effect";
 
-const PackageManifest = Schema.Struct({
-  bin: Schema.optional(Schema.Union([Schema.String, Schema.Record(Schema.String, Schema.String)])),
-  version: Schema.optional(Schema.String),
-});
-const decodePackageManifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageManifest));
+/**
+ * Decode only the package-manifest fields needed to locate the local CLI.
+ *
+ * @param {string} text
+ * @returns {{ bin?: string | Record<string, string>; version?: string }}
+ */
+function decodePackageManifest(text) {
+  const value = JSON.parse(text);
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError("invalid package manifest");
+  const raw = /**
+   * @type {Record<string, unknown>}
+   */ (value);
+  const version = raw["version"];
+  const bin = raw["bin"];
+  if (version !== undefined && typeof version !== "string") throw new TypeError("invalid package version");
+  if (bin !== undefined && typeof bin !== "string") {
+    if (typeof bin !== "object" || bin === null || Array.isArray(bin)) throw new TypeError("invalid package bin");
+    for (const entry of Object.values(bin)) if (typeof entry !== "string") throw new TypeError("invalid package bin");
+  }
+  return {
+    ...(typeof version === "string" ? { version } : {}),
+    ...(typeof bin === "string" || (typeof bin === "object" && bin !== null)
+      ? {
+          bin: /**
+           * @type {string | Record<string, string>}
+           */ (bin),
+        }
+      : {}),
+  };
+}
 
 /**
  * @typedef {object} Inputs
@@ -123,7 +148,7 @@ export async function localCli({ workingDirectory, workspace }) {
         return null;
       });
     if (manifest) {
-      const entry = Schema.is(Schema.String)(manifest.bin) ? manifest.bin : manifest.bin?.["agentlint"];
+      const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.["agentlint"];
       if (entry !== undefined) return { argv: ["node", resolve(root, entry)], version: manifest.version ?? "" };
     }
     if (dir === workspace || dirname(dir) === dir || !dir.startsWith(workspace)) return null;

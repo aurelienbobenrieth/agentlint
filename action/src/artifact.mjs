@@ -6,11 +6,14 @@
 
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { Array as A, Schema } from "effect";
-
-const isRecordValue = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
-const isString = Schema.is(Schema.String);
-const isNumber = Schema.is(Schema.Number);
+/**
+ * @param {unknown} value @returns {value is string}
+ */
+const isString = (value) => typeof value === "string";
+/**
+ * @param {unknown} value @returns {value is number}
+ */
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
 /**
  * @typedef {object} Proposal
@@ -76,7 +79,7 @@ class ArtifactError extends Error {
  * @returns {value is Record<string, unknown>}
  */
 export function isRecord(value) {
-  return isRecordValue(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -169,7 +172,7 @@ function decodeFinding(raw) {
     message: stringAt({ record: raw, key: "message" }),
     guidance: {
       standard: stringAt({ record: guidance, key: "standard" }),
-      checks: Array.isArray(checks) ? A.filter(checks, isString) : [],
+      checks: Array.isArray(checks) ? checks.filter(isString) : [],
     },
     status: oneOf({ key: "status", allowed: ["unresolved", "accepted", "changes_requested"], value: raw["status"] }),
     acceptance: isRecord(acceptance)

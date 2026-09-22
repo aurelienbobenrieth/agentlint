@@ -6,7 +6,6 @@
 
 import { randomUUID } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
-import { Array as A } from "effect";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -49,10 +48,12 @@ async function readEvent(path) {
  * @param {string} input.path
  */
 async function writeOutputs({ outputs, path }) {
-  const text = A.map([...outputs], ([name, value]) => {
-    const delimiter = `ghadelimiter_${randomUUID()}`;
-    return `${name}<<${delimiter}\n${value}\n${delimiter}\n`;
-  }).join("");
+  const text = [...outputs]
+    .map(([name, value]) => {
+      const delimiter = `ghadelimiter_${randomUUID()}`;
+      return `${name}<<${delimiter}\n${value}\n${delimiter}\n`;
+    })
+    .join("");
   await appendFile(path, text, "utf8");
 }
 

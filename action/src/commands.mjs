@@ -6,7 +6,6 @@
 
 import { isRecord } from "./artifact.mjs";
 import { git, gitOutput } from "./cli.mjs";
-import { Array as A } from "effect";
 import { numberField, stringField } from "./github.mjs";
 import {
   findSummary,
@@ -185,7 +184,7 @@ function surfaceFrom(ctx) {
  */
 async function hasWriteAccess({ ctx, login }) {
   const data = await ctx.github.get(`/repos/${ctx.repository}/collaborators/${encodeURIComponent(login)}/permission`);
-  return A.contains(["write", "maintain", "admin"], stringField({ record: data, key: "permission" }));
+  return ["write", "maintain", "admin"].includes(stringField({ record: data, key: "permission" }));
 }
 
 /**

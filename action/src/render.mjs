@@ -5,9 +5,11 @@
  */
 
 import { isRecord, shortDigest, unresolved } from "./artifact.mjs";
-import { Match, Schema } from "effect";
 
-const isString = Schema.is(Schema.String);
+/**
+ * @param {unknown} value @returns {value is string}
+ */
+const isString = (value) => typeof value === "string";
 
 /**
  * @typedef {import("./artifact.mjs").Finding} Finding
@@ -292,11 +294,7 @@ export function renderSummary(input) {
  * @param {Gate} gate
  */
 function gateLabel(gate) {
-  return Match.value(gate).pipe(
-    Match.when("open", () => "open"),
-    Match.when("closed", () => "closed"),
-    Match.orElse(() => "error"),
-  );
+  return gate === "open" || gate === "closed" ? gate : "error";
 }
 
 const INLINE_CHECKS = 20;

@@ -5,9 +5,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { Schema } from "effect";
-
-const isNumber = Schema.is(Schema.Number);
+/**
+ * @param {unknown} value @returns {value is number}
+ */
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
 /**
  * Credentials that the runner or the workflow can place in the step environment. None of them may reach a process that
@@ -60,7 +61,7 @@ export function childEnv(env) {
  *
  * @param {object} input
  * @param {ReadonlyArray<string>} input.argv
- * @param {{ cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; shell?: boolean }} input.options
+ * @param {{ cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number }} input.options
  * @returns {Promise<ExecResult>}
  */
 export function exec({ argv, options }) {
@@ -76,7 +77,6 @@ export function exec({ argv, options }) {
         timeout: options.timeoutMs ?? 300_000,
         maxBuffer: 64 * 1024 * 1024,
         windowsHide: true,
-        shell: options.shell ?? false,
       },
       (error, stdout, stderr) => {
         const code = error?.code;

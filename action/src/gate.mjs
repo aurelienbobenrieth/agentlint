@@ -6,7 +6,6 @@
 
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdtemp, readdir } from "node:fs/promises";
-import { Array as A, Match, Schema } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,11 +89,9 @@ const ERROR_GATE = "error";
  * @param {number} code @returns {Gate}
  */
 function gateFromExit(code) {
-  return Match.value(code).pipe(
-    Match.when(0, () => OPEN_GATE),
-    Match.when(1, () => CLOSED_GATE),
-    Match.orElse(() => ERROR_GATE),
-  );
+  if (code === 0) return OPEN_GATE;
+  if (code === 1) return CLOSED_GATE;
+  return ERROR_GATE;
 }
 
 /**
@@ -147,12 +144,15 @@ export async function installIfRequested(ctx) {
     const command = installCommand(await readdir(dir));
     if (!command) continue;
     ctx.log.info(`install: ${command.join(" ")} in ${dir}`);
-    // Package managers are `.cmd` shims on Windows, which need a shell. The command is a fixed literal chosen from the
-    // lockfile name, so no repository or pull request text reaches the shell.
+    // Package managers are `.cmd` shims on Windows. Invoke the command processor explicitly so `execFile` keeps its
+    // shell-free contract and Node does not concatenate arbitrary argv. Every token below is a fixed literal selected
+    // from the lockfile name; no repository or pull request text reaches the command string.
+    const argv =
+      process.platform === "win32" ? [ctx.env["ComSpec"] ?? "cmd.exe", "/d", "/s", "/c", command.join(" ")] : command;
     // Lifecycle scripts are repository code: they get the environment without the token or any other credential.
     const installed = await exec({
-      argv: command,
-      options: { cwd: dir, env: childEnv(ctx.env), shell: process.platform === "win32" },
+      argv,
+      options: { cwd: dir, env: childEnv(ctx.env) },
     });
     if (installed.code !== 0) throw new Error(`install failed:\n${installed.stderr}`);
     return;
@@ -206,11 +206,7 @@ export async function scan({ ctx, base }) {
 async function publishCheckRun({ ctx, headSha, result }) {
   const annotations = renderAnnotations(result.findings);
   const output = renderCheckOutput({ gate: result.gate, findings: result.findings });
-  const conclusion = Match.value(result.gate).pipe(
-    Match.when("open", () => "success"),
-    Match.when("closed", () => "failure"),
-    Match.orElse(() => "action_required"),
-  );
+  const conclusion = result.gate === "open" ? "success" : result.gate === "closed" ? "failure" : "action_required";
   const created = await ctx.github.write({
     method: "POST",
     path: `/repos/${ctx.repository}/check-runs`,
@@ -382,7 +378,7 @@ async function publishInline({ ctx, pull, result }) {
   const files = await ctx.github.paginate(`/repos/${ctx.repository}/pulls/${pull.number}/files`);
   const commentable = commentableByFile(
     files.filter(isRecord).map((file) => {
-      const patch = Schema.is(Schema.String)(file["patch"]) ? file["patch"] : undefined;
+      const patch = typeof file["patch"] === "string" ? file["patch"] : undefined;
       const filename = stringField({ record: file, key: "filename" });
       const status = stringField({ record: file, key: "status" });
       return patch === undefined ? { filename, status } : { filename, patch, status };
@@ -422,10 +418,10 @@ async function publishInline({ ctx, pull, result }) {
     if (thread.threadId) await ctx.github.mutate({ query: RESOLVE_MUTATION, variables: { threadId: thread.threadId } });
     else ctx.log.warn(`thread for comment ${thread.commentId} has no GraphQL id; left unresolved`);
   }
-  const reconciledThreads = [...plan.leave, ...A.map(plan.resolve, (entry) => entry.thread)];
+  const reconciledThreads = [...plan.leave, ...plan.resolve.map((entry) => entry.thread)];
   return new Set([
-    ...A.map(reconciledThreads, (thread) => thread.digest),
-    ...A.map(plan.create, (finding) => finding.digest),
+    ...reconciledThreads.map((thread) => thread.digest),
+    ...plan.create.map((finding) => finding.digest),
   ]);
 }
 
@@ -500,7 +496,7 @@ export function isFork({ ctx, pull }) {
  */
 export async function runGate(ctx) {
   const action = stringField({ record: ctx.event, key: "action" });
-  if (!A.contains(["opened", "synchronize", "reopened", "ready_for_review"], action)) {
+  if (!["opened", "synchronize", "reopened", "ready_for_review"].includes(action)) {
     ctx.log.info(`pull_request.${action}: nothing to do`);
     return 0;
   }
