@@ -36,10 +36,24 @@ export const withFileLock =
         const result = yield* fs.writeFileString(lock, `${owner}\n`, { flag: "wx" }).pipe(Effect.result);
         if (result._tag === "Success") return owner;
 
+        if (result.failure.reason._tag === "AlreadyExists") {
+          yield* Effect.sleep(RETRY_MS);
+          continue;
+        }
+
         // Some Windows filesystems report exclusive-create contention as Unknown rather than AlreadyExists.
-        // Existence distinguishes contention from a genuine write failure without weakening exclusive creation.
+        // Existence usually distinguishes that shape from a genuine write failure. If the owner releases between the
+        // failed create and this probe, one immediate exclusive-create retry succeeds; a repeated non-contention error
+        // remains a real I/O failure instead of being hidden behind the bounded lock wait.
         const exists = yield* fs.exists(lock).pipe(Effect.orElseSucceed(() => false));
-        if (!exists) return yield* Effect.fail(fail(result.failure));
+        if (!exists) {
+          const probe = yield* fs.writeFileString(lock, `${owner}\n`, { flag: "wx" }).pipe(Effect.result);
+          if (probe._tag === "Success") return owner;
+          const contended =
+            probe.failure.reason._tag === "AlreadyExists" ||
+            (yield* fs.exists(lock).pipe(Effect.orElseSucceed(() => false)));
+          if (!contended) return yield* Effect.fail(fail(probe.failure));
+        }
         yield* Effect.sleep(RETRY_MS);
       }
       return yield* Effect.fail(
