@@ -1,7 +1,7 @@
 import { Schema as S } from "effect";
 
 import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import { PersistedReview } from "../../model";
+import { PersistedReview } from "../../shared/model";
 
 export const fields = {
   LoadedState: { state: ReviewStatePayload, saved: S.NullOr(PersistedReview), savedUnreadable: S.Boolean },

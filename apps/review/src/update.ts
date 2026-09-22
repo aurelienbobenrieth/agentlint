@@ -8,7 +8,7 @@ import * as shell from "./features/shell/update";
 import * as shortcuts from "./features/shortcuts/update";
 import * as toasts from "./features/toasts/update";
 import { Message } from "./message";
-import type { Model } from "./model";
+import type { Model } from "./shared/model";
 import type { UpdateReturn } from "./shared/update";
 
 /**

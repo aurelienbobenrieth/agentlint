@@ -1,4 +1,4 @@
-import { relatedGroups } from "./features/list/groups";
+import { relatedGroups } from "./shared/grouping/related";
 import { currentCalibrationReport } from "./features/calibration/selectors";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { findingContext } from "./features/detail/selectors";
 import { decodeSavedReview } from "./features/session/command";
 import { shortcutFor } from "./features/shortcuts/subscription";
 import { Message } from "./message";
-import { emptyDraft, persistedReview, Screen, type Model } from "./model";
+import { emptyDraft, persistedReview, Screen, type Model } from "./shared/model";
 import { encodeJson } from "./shared/json";
 import { deriveReview, effectiveFindingStatus } from "./shared/selectors";
 import { update } from "./update";

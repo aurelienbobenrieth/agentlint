@@ -16,6 +16,9 @@ import type { PlatformError } from "effect";
 import { Env } from "../../config/env.js";
 import picomatch from "picomatch";
 import { compareStrings } from "../../domain/compare.js";
+import { inspectRepositoryEntry, isInside, toRepositoryPath } from "../infrastructure/repository/entry/service.js";
+
+export { inspectRepositoryEntry, isInside, toRepositoryPath } from "../infrastructure/repository/entry/service.js";
 
 /**
  * Raised when candidate files cannot be enumerated.
@@ -93,36 +96,6 @@ export function compileGlobs(patterns: ReadonlyArray<string> | undefined): ((fil
   return patterns?.length ? picomatch([...patterns], { dot: true }) : undefined;
 }
 
-/**
- * Rewrite native separators to `/`. Only Windows separates with a backslash; elsewhere it is a legal file-name
- * character and must survive.
- *
- * @since 0.2.0
- * @category Constructors
- */
-export function toRepositoryPath({ value, separator }: { readonly value: string; readonly separator: string }): string {
-  return separator === "\\" ? value.replace(/\\/g, "/") : value;
-}
-
-/**
- * Whether `candidate` is `root` or lies below it. Both are absolute; resolve links first when that matters.
- *
- * @since 0.2.0
- * @category Constructors
- */
-export function isInside({
-  path,
-  root,
-  candidate,
-}: {
-  readonly path: Path.Path;
-  readonly root: string;
-  readonly candidate: string;
-}): boolean {
-  const relative = path.relative(root, candidate);
-  return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
-}
-
 function toProjectPath({
   file,
   cwd,
@@ -137,60 +110,6 @@ function toProjectPath({
     throw new FileResolverError({ reason: "filesystem", detail: `Path outside the repository: ${file}` });
   return toRepositoryPath({ value: path.relative(cwd, resolved), separator: path.sep });
 }
-
-/**
- * What a repository path is on disk. `linkTarget` is set when the path itself is a symbolic link.
- *
- * @since 0.2.0
- * @category Models
- */
-export type RepositoryEntry =
-  | { readonly _tag: "Missing" }
-  | { readonly _tag: "Escapes"; readonly linkTarget: string | undefined }
-  | { readonly _tag: "Inside"; readonly realPath: string; readonly linkTarget: string | undefined };
-
-/**
- * Resolve links before anything reads a repository path. A path whose real location is outside the canonical repository
- * root, or inside `.git`, `Escapes`: a committed `leak.ts -> ../.git/config` is never read as source.
- *
- * @since 0.2.0
- * @category Constructors
- */
-export const inspectRepositoryEntry: (input: {
-  readonly fs: FileSystem.FileSystem;
-  readonly path: Path.Path;
-  readonly canonicalRoot: string;
-  readonly file: string;
-}) => Effect.Effect<RepositoryEntry, PlatformError.PlatformError> = Effect.fn("inspectRepositoryEntry")(function* ({
-  fs,
-  path,
-  canonicalRoot,
-  file,
-}: {
-  readonly fs: FileSystem.FileSystem;
-  readonly path: Path.Path;
-  readonly canonicalRoot: string;
-  readonly file: string;
-}) {
-  const lexical = path.resolve(canonicalRoot, file);
-  const real = yield* fs.realPath(lexical).pipe(
-    Effect.map((value): string | undefined => value),
-    Effect.catchIf(
-      (error) => error.reason._tag === "NotFound",
-      () => Effect.succeed(undefined),
-    ),
-  );
-  // Only a path that does not resolve to itself can be a link; regular files skip the extra call.
-  const linkTarget =
-    real === lexical ? undefined : yield* fs.readLink(lexical).pipe(Effect.orElseSucceed(() => undefined));
-  if (real === undefined) return linkTarget === undefined ? { _tag: "Missing" } : { _tag: "Escapes", linkTarget };
-  if (
-    !isInside({ path, root: canonicalRoot, candidate: real }) ||
-    isInside({ path, root: path.resolve(canonicalRoot, ".git"), candidate: real })
-  )
-    return { _tag: "Escapes", linkTarget };
-  return { _tag: "Inside", realPath: real, linkTarget };
-});
 
 /**
  * Match change-set paths against explicit CLI files with the same meaning the state resolver gives them: a glob is a

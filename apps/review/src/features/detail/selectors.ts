@@ -1,6 +1,6 @@
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Array as A } from "effect";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
 import { encodePrettyJson } from "../../shared/json";
 

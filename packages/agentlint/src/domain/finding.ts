@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { Fingerprint, FindingSource, findingIdentityKey } from "./fingerprint.js";
 import type { AgentlintNode } from "./node.js";
 import type { CanonicalValue } from "./fingerprint.js";
-import { Lifecycle, RuleAuthority } from "./rule.js";
+import { Lifecycle, RuleAuthority } from "./rule/primitives.js";
 
 /**
  * Evidence reported by a state detector.

@@ -1,15 +1,6 @@
-import type { ChangeHunk, ChangeLine } from "../../domain/rule.js";
+import type { ChangeHunk, ChangeLine } from "../../domain/rule/model.js";
+import { textLines } from "../../domain/source-text.js";
 import { Array as A } from "effect";
-
-/**
- * Git-style text lines: a terminal newline terminates the last line, rather than adding one.
- */
-export function textLines(source: string | undefined): string[] {
-  if (!source) return [];
-  const lines = source.split(/\r?\n/);
-  if (lines.at(-1) === "") lines.pop();
-  return lines;
-}
 
 /**
  * Small in-memory fixtures use an exact line diff with the same three-line context as Git.

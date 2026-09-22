@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Array as A } from "effect";
 import { defineConfig, normalizeConfig } from "./config.js";
-import { defineRule } from "./rule.js";
+import { defineRule } from "./rule/model.js";
 import { AcceptanceRecord, acceptanceSatisfies } from "./acceptance.js";
 import { bindingDigest, canonicalStringify, Fingerprint, FindingSource } from "./fingerprint.js";
 import { findingId, FindingRecord } from "./finding.js";

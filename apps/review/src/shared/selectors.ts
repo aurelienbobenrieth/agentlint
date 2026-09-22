@@ -1,4 +1,4 @@
-import { relatedGroups } from "../features/list/groups";
+import { relatedGroups } from "./grouping/related";
 import type { FindingStatus, ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Array as A, Match } from "effect";
 
@@ -12,7 +12,7 @@ import {
   type Model,
   type StatusFacet,
   type View,
-} from "../model";
+} from "./model";
 
 export const draftFor = ({ model, findingId }: { readonly model: Model; readonly findingId: string }): Draft =>
   model.drafts[findingId] ?? emptyDraft();

@@ -4,7 +4,7 @@ import { Command } from "foldkit";
 
 import { EditorApplicationId, ReviewOpenRequest } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { ExportKind } from "../../model";
+import { ExportKind } from "../../shared/model";
 
 const encodeOpenRequest = S.encodeSync(S.fromJsonString(ReviewOpenRequest));
 

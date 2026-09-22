@@ -2,7 +2,7 @@ import { evo } from "foldkit/struct";
 
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model, Shortcut } from "../../model";
+import type { Model, Shortcut } from "../../shared/model";
 import { deriveReview, draftFor } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { effectiveReason } from "../decision/selectors";

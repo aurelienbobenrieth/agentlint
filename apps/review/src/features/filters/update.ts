@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import { emptyFacets, type Model } from "../../model";
+import { emptyFacets, type Model } from "../../shared/model";
 import { appendCommands, type Handlers, toggle, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
 import { persist, persistLater } from "../session/update";

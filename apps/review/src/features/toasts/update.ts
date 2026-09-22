@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import type { Model, ToastTone } from "../../model";
+import type { Model, ToastTone } from "../../shared/model";
 import type { Handlers, UpdateReturn } from "../../shared/update";
 import { ExpireToast, RemoveToast } from "./command";
 import type { fields } from "./messages";

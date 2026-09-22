@@ -2,10 +2,27 @@
  * Rule composition identity helpers. @module @since 0.2.0
  */
 
-import { FindingSource, bindingDigest, type CanonicalValue } from "./fingerprint.js";
-import type { AgentlintRule } from "./rule.js";
+import { FindingSource, bindingDigest, type CanonicalValue } from "../fingerprint.js";
 
-function materialBinding(rule: AgentlintRule): CanonicalValue {
+interface IdentityRule {
+  readonly lifecycle: "state" | "change";
+  readonly standard: { readonly id: string; readonly revision: number };
+  readonly detector: {
+    readonly id: string;
+    readonly version: number;
+    readonly scan?: "file" | "repository" | undefined;
+    readonly createOnce?: unknown;
+  };
+  readonly binding: {
+    readonly id: string;
+    readonly include?: ReadonlyArray<string> | undefined;
+    readonly exclude?: ReadonlyArray<string> | undefined;
+    readonly dependencies?: ReadonlyArray<string> | undefined;
+    readonly options?: CanonicalValue | undefined;
+  };
+}
+
+function materialBinding(rule: IdentityRule): CanonicalValue {
   return {
     include: [...(rule.binding.include ?? [])],
     exclude: [...(rule.binding.exclude ?? [])],
@@ -21,7 +38,7 @@ function materialBinding(rule: AgentlintRule): CanonicalValue {
 /**
  * Build the exact source identity for all findings from one effective rule.
  */
-export function findingSourceForRule(rule: AgentlintRule): FindingSource {
+export function findingSourceForRule(rule: IdentityRule): FindingSource {
   return new FindingSource({
     standardId: rule.standard.id,
     standardRevision: rule.standard.revision,

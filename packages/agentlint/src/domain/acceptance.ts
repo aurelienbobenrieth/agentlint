@@ -16,7 +16,7 @@ import {
   sameFingerprint,
   sameFindingSource,
 } from "./fingerprint.js";
-import { RuleAuthority } from "./rule.js";
+import { RuleAuthority } from "./rule/primitives.js";
 
 /**
  * The authority path that made or is required to make a decision. Same literals as `RuleAuthority`.

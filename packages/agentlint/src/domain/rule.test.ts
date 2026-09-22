@@ -1,8 +1,8 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { Array as A, Order, Schema } from "effect";
 import { ConfigError, defineConfig, normalizeConfig } from "./config.js";
-import type { ChangeRule, StateRule } from "./rule.js";
-import { defineRule, RuleDefinitionError, ruleMatches } from "./rule.js";
+import type { ChangeRule, StateRule } from "./rule/model.js";
+import { defineRule, RuleDefinitionError, ruleMatches } from "./rule/model.js";
 
 const standard = {
   id: "data/bounded-query",

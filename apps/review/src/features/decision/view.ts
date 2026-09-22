@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor, type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";

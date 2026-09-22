@@ -9,3 +9,13 @@
 export function normalizeLineEndings(text: string): string {
   return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
 }
+
+/**
+ * Git-style lines: a terminal newline terminates the last line instead of adding an empty line.
+ */
+export function textLines(source: string | undefined): string[] {
+  if (!source) return [];
+  const lines = source.split(/\r?\n/);
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}

@@ -3,7 +3,7 @@ import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldki
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model, StatusFacet, View } from "../../model";
+import type { Model, StatusFacet, View } from "../../shared/model";
 import { facetCount, type FindingGroup, type ReviewDerivation, statusFacet } from "../../shared/selectors";
 import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";

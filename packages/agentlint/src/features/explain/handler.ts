@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { findLineage, invalidationReasons, lookupAcceptance } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
 import { normalizeGuidance } from "../../domain/guidance.js";
-import type { AgentlintRule } from "../../domain/rule.js";
+import type { AgentlintRule } from "../../domain/rule/model.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";

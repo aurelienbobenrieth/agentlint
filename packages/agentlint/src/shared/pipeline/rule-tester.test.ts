@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Array as A } from "effect";
-import { defineRule } from "../../domain/rule.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { testRuleFixtures, testRuleOnChange } from "../../testing.js";
 import { normalizeChangeFixture } from "./change-fixture.js";
 
@@ -53,6 +53,28 @@ describe("rule fixtures", () => {
     });
 
     await expect(testRuleFixtures(rule)).resolves.toEqual({ ruleId: "security/no-eval", total: 2, failures: [] });
+  });
+
+  it("rejects an imperative detector whose fixture replay changes", async () => {
+    let run = 0;
+    const rule = defineRule({
+      lifecycle: "state",
+      standard,
+      binding: { id: "state/nondeterministic", authority: "agent" },
+      detector: {
+        id: "state/nondeterministic",
+        version: 1,
+        createOnce({ context }) {
+          run += 1;
+          return { identifier: (node) => context.report({ node, message: `run ${run}` }) };
+        },
+        fixtures: { mustReport: ["value"] },
+      },
+    });
+
+    await expect(testRuleFixtures(rule)).resolves.toMatchObject({
+      failures: [{ expectation: "deterministic", index: 0, findingCount: 1 }],
+    });
   });
 
   it("normalizes before-and-after repositories", () => {

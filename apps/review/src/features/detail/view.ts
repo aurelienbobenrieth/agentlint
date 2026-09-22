@@ -3,7 +3,7 @@ import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type { EditorApplication, ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { CodeView, Model } from "../../model";
+import type { CodeView, Model } from "../../shared/model";
 import { type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, iconButton, kbd, tip } from "../../shared/ui/controls";
 import { appIcon, icon } from "../../shared/ui/icons";

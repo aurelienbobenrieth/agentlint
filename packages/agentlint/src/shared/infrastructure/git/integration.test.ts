@@ -5,9 +5,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, truncateSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "@effect/vitest";
-import { Env } from "../../config/env.js";
-import { normalizeChangeFixture } from "../pipeline/change-fixture.js";
-import { Git } from "./git.js";
+import { Env } from "../../../config/env.js";
+import { normalizeChangeFixture } from "../../pipeline/change-fixture.js";
+import { Git } from "./service.js";
 
 interface Repository {
   readonly cwd: string;

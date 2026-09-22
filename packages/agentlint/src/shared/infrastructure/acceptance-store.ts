@@ -21,7 +21,7 @@ import { randomUUID } from "node:crypto";
 import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
-import { withFileLock } from "./file-lock.js";
+import { withFileLock } from "./file/lock/live.js";
 
 export class AcceptanceStoreError extends Schema.TaggedError<AcceptanceStoreError>()("agentlint/AcceptanceStoreError", {
   reason: Schema.Literals(["invalid_record", "duplicate_record", "invalid_acceptance", "io"]),

@@ -3,21 +3,21 @@
  */
 
 import { execFile } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Array as A, Console, Effect, FileSystem, Layer, ManagedRuntime, Match, Option, Path, Schema } from "effect";
 import type { Context } from "effect";
 import { Env } from "../../config/env.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { Git } from "../../shared/infrastructure/git.js";
+import { Git } from "../../shared/infrastructure/git/service.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
-import { encodeJson } from "../../shared/infrastructure/json.js";
 import {
   ReviewActionRequest,
   ReviewOpenRequest,
   type EditorApplication,
+  type ReviewActionResult,
   type ReviewFinishResult,
   type ReviewMode,
   type ReviewStatePayload,
@@ -30,6 +30,16 @@ import {
   isInsideDirectory,
   makeReviewSessionState,
 } from "./handler.js";
+import {
+  hasSessionCookie,
+  isAuthorizedReviewRequest,
+  reviewSessionGuard,
+  tokenMatches,
+  type ReviewSessionGuard,
+} from "./server/auth.js";
+import { readJson, sendJson } from "./server/http.js";
+
+export { isAuthorizedReviewRequest, reviewSessionGuard } from "./server/auth.js";
 
 type ReviewServices =
   | Env
@@ -65,11 +75,6 @@ export class ReviewServerError extends Schema.TaggedError<ReviewServerError>()("
 
 const ActionDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewActionRequest));
 const OpenRequestDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewOpenRequest));
-const MAX_BODY_BYTES = 128 * 1024;
-/**
- * Past the cap the body is drained so the client can read the 413. Past this the connection is dropped.
- */
-const MAX_DRAINED_BYTES = 8 * MAX_BODY_BYTES;
 const INVALID_SESSION = { ok: false, message: "Invalid review session." };
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -81,165 +86,6 @@ const MIME_TYPES = new Map([
   [".woff2", "font/woff2"],
   [".map", "application/json"],
 ]);
-
-type Body =
-  | { readonly status: "ok"; readonly text: string }
-  | { readonly status: "too_large" }
-  | { readonly status: "aborted" };
-
-function readBody(request: IncomingMessage): Promise<Body> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    const body = { size: 0 };
-    request.on("data", (chunk: Buffer) => {
-      body.size += chunk.length;
-      if (body.size > MAX_DRAINED_BYTES) request.destroy();
-      else if (body.size <= MAX_BODY_BYTES) chunks.push(chunk);
-    });
-    request.on("end", () =>
-      resolve(
-        body.size > MAX_BODY_BYTES
-          ? { status: "too_large" }
-          : { status: "ok", text: Buffer.concat(chunks).toString("utf8") },
-      ),
-    );
-    // A destroyed or reset request never ends. Settle anyway so nothing waits on it.
-    request.on("close", () => resolve({ status: "aborted" }));
-    request.on("error", () => resolve({ status: "aborted" }));
-  });
-}
-
-function sendJson({
-  response,
-  status,
-  payload,
-}: {
-  readonly response: ServerResponse;
-  readonly status: number;
-  readonly payload: unknown;
-}): void {
-  response.writeHead(status, {
-    "cache-control": "no-store",
-    "content-type": "application/json; charset=utf-8",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-  });
-  response.end(encodeJson(payload));
-}
-
-/**
- * Decode a JSON request body, or answer the request and return `undefined`. The schema failure stays out of the
- * response: it echoes the body and describes internal types.
- */
-async function readJson<A>({
-  request,
-  response,
-  decode,
-  invalid,
-}: {
-  readonly request: IncomingMessage;
-  readonly response: ServerResponse;
-  readonly decode: (body: string) => A;
-  readonly invalid: string;
-}): Promise<A | undefined> {
-  if (!/^application\/json\s*(;|$)/iu.test(request.headers["content-type"] ?? "")) {
-    sendJson({ response, status: 415, payload: { ok: false, message: "Send the request as application/json." } });
-    return undefined;
-  }
-  const body = await readBody(request);
-  if (body.status === "aborted") return undefined;
-  if (body.status === "too_large") {
-    sendJson({ response, status: 413, payload: { ok: false, message: "Request body exceeds 128 KiB." } });
-    return undefined;
-  }
-  try {
-    return decode(body.text);
-  } catch {
-    // REASON: malformed client JSON is represented by the stable 400 response below.
-    sendJson({ response, status: 400, payload: { ok: false, message: invalid } });
-    return undefined;
-  }
-}
-
-/**
- * What a request must present on one port. Cookies ignore ports, so the cookie name carries it: concurrent sessions
- * keep separate cookies and a browser never offers this one to another local server.
- */
-export interface ReviewSessionGuard {
-  readonly cookieName: string;
-  readonly hosts: ReadonlySet<string>;
-  readonly origins: ReadonlySet<string>;
-}
-
-export function reviewSessionGuard(port: number): ReviewSessionGuard {
-  // A browser leaves the default port out of both headers.
-  const hosts = A.flatMap(["127.0.0.1", "localhost"], (host) => [`${host}:${port}`, ...(port === 80 ? [host] : [])]);
-  return {
-    cookieName: `agentlint_review_${port}`,
-    hosts: new Set(hosts),
-    origins: new Set(A.map(hosts, (host) => `http://${host}`)),
-  };
-}
-
-function requestTokens({
-  request,
-  cookieName,
-}: {
-  readonly request: Pick<IncomingMessage, "headers">;
-  readonly cookieName: string;
-}): string[] {
-  return (request.headers.cookie?.split(";") ?? []).flatMap((cookie) => {
-    const [name, value] = cookie.trim().split("=", 2);
-    return name === cookieName && value !== undefined ? [value] : [];
-  });
-}
-
-function tokenMatches({
-  actual,
-  expected,
-}: {
-  readonly actual: string | undefined;
-  readonly expected: string;
-}): boolean {
-  if (!actual) return false;
-  const actualBytes = Buffer.from(actual);
-  const expectedBytes = Buffer.from(expected);
-  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
-}
-
-/**
- * Another local page can set a same-named cookie on a narrower path, which a browser sends first. Any matching cookie
- * authenticates, so a planted one cannot shadow the real one.
- */
-function hasSessionCookie({
-  request,
-  guard,
-  token,
-}: {
-  readonly request: Pick<IncomingMessage, "headers">;
-  readonly guard: ReviewSessionGuard;
-  readonly token: string;
-}) {
-  return requestTokens({ request, cookieName: guard.cookieName }).some((candidate) =>
-    tokenMatches({ actual: candidate, expected: token }),
-  );
-}
-
-export function isAuthorizedReviewRequest({
-  request,
-  expectedToken,
-  guard,
-}: {
-  readonly request: Pick<IncomingMessage, "headers" | "method">;
-  readonly expectedToken: string;
-  readonly guard: ReviewSessionGuard;
-}): boolean {
-  if (!hasSessionCookie({ request, guard, token: expectedToken })) return false;
-  if (request.method !== "GET") return guard.origins.has(request.headers.origin ?? "");
-  // A state read scans the repository. Browsers that send fetch metadata must show the read is ours.
-  const site = request.headers["sec-fetch-site"];
-  return site === undefined || site === "same-origin" || site === "none";
-}
 
 function openBrowser({ url, platform }: { readonly url: string; readonly platform: string }): void {
   const [command, args] = Match.value(platform).pipe(
@@ -273,6 +119,10 @@ export interface ReviewListenerConfig {
    * Called once the finish response is written and no action is still writing to the repository.
    */
   readonly onFinish: (result: ReviewFinishResult) => void;
+  /**
+   * Internal execution boundary used to coordinate the listener with its host and deterministic tests.
+   */
+  readonly executeAction?: ((proceed: () => Promise<ReviewActionResult>) => Promise<ReviewActionResult>) | undefined;
 }
 
 export interface ReviewListener {
@@ -434,7 +284,8 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
         sendJson({ response, status: 409, payload: { ok: false, message: "The review is finishing." } });
         return;
       }
-      const result = await track(run(applyReviewAction(action, { ...selection, session: sessionState })));
+      const proceed = () => run(applyReviewAction(action, { ...selection, session: sessionState }));
+      const result = await track(config.executeAction ? config.executeAction(proceed) : proceed());
       if (result.ok) actionCounts.set(action.type, (actionCounts.get(action.type) ?? 0) + 1);
       sendJson({ response, status: result.ok ? 200 : 409, payload: result });
       return;

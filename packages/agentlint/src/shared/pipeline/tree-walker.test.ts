@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineRule } from "../../domain/rule.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { testRuleOnSource } from "../../testing.js";
 
 describe("state visitors", () => {

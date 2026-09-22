@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { type Model, SIDEBAR_MAX, SIDEBAR_MIN } from "../../model";
+import { type Model, SIDEBAR_MAX, SIDEBAR_MIN } from "../../shared/model";
 import { deriveReview } from "../../shared/selectors";
 import { button, iconButton } from "../../shared/ui/controls";
 import { detail } from "../detail/view";

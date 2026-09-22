@@ -22,7 +22,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Layer, ManagedRuntime } from "effect";
 import { Env } from "./config/env.js";
 import type { FindingRecord } from "./domain/finding.js";
-import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule.js";
+import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule/model.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { runRuleFixtures, runRuleOnChange, runRuleOnSource, runRuleOnSources } from "./shared/pipeline/rule-tester.js";
 

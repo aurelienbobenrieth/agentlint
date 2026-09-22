@@ -1,6 +1,6 @@
 import { calibrationReport } from "@aurelienbbn/agentlint/calibration";
 import type { CalibrationReport, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor } from "../../shared/selectors";
 import { encodePrettyJson } from "../../shared/json";
 

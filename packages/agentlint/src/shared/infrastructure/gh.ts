@@ -32,7 +32,8 @@ export class GhError extends Schema.TaggedError<GhError>()("agentlint/GhError", 
  */
 const GH_TIMEOUT_MS = 120_000;
 
-const isMissingBinary = (error: { readonly code?: string | number | undefined }): boolean => error.code === "ENOENT";
+const isMissingBinary = (error: { readonly code?: string | number | null | undefined }): boolean =>
+  error.code === "ENOENT";
 
 const ghCommand = ({
   cwd,

@@ -2,10 +2,10 @@
  * Change detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintChange, normalizeRepositoryPath } from "./fingerprint.js";
-import { FindingRecord } from "./finding.js";
-import type { ChangeFindingOptions, ChangeRule, ChangeRuleContext, ChangeSet, ChangedFile } from "./rule.js";
-import { findingSourceForRule } from "./rule-identity.js";
+import { canonicalDigest, fingerprintChange, normalizeRepositoryPath } from "../../fingerprint.js";
+import { FindingRecord } from "../../finding.js";
+import { findingSourceForRule } from "../identity.js";
+import type { ChangeFindingOptions, ChangeRule, ChangeRuleContext, ChangeSet, ChangedFile } from "../model.js";
 
 function operation(file: ChangedFile): "add" | "delete" | "modify" | "rename" {
   const operations = {

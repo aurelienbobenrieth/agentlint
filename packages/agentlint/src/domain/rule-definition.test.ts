@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import { defineConfig, normalizeConfig } from "./config.js";
-import { defineRule, RuleDefinitionError } from "./rule.js";
+import { defineRule, RuleDefinitionError } from "./rule/model.js";
 import type { CanonicalValue } from "./fingerprint.js";
 
 const valid = {

@@ -23,8 +23,8 @@ import { Array as A, Effect, Option } from "effect";
 import { Query, type Node as TSNode, type Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../infrastructure/parsed-node.js";
-import type { RuleMatch } from "../../domain/rule.js";
-import type { RuleContextImpl } from "../../domain/rule-context.js";
+import type { RuleMatch } from "../../domain/rule/model.js";
+import type { RuleContextImpl } from "../../domain/rule/context/live.js";
 import { Parser } from "../infrastructure/parser.js";
 import { walkTree } from "./tree-cursor.js";
 

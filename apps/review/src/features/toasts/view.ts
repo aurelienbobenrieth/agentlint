@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { iconButton } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 

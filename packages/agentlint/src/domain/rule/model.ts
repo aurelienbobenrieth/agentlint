@@ -9,11 +9,12 @@
  */
 
 import { Predicate, Schema } from "effect";
-import { canonicalStringify, normalizeRepositoryPath, type CanonicalValue } from "./fingerprint.js";
-import type { AgentlintNode } from "./node.js";
-import type { TreeSitterNodeType } from "./node-types.js";
-import type { RuleContext } from "./rule-context.js";
-import { Guidance } from "./guidance.js";
+import { canonicalStringify, normalizeRepositoryPath, type CanonicalValue } from "../fingerprint.js";
+import type { AgentlintNode } from "../node.js";
+import type { TreeSitterNodeType } from "../node-types.js";
+import { Guidance } from "../guidance.js";
+import type { RuleContext } from "./context/model.js";
+import { Lifecycle, RuleAuthority } from "./primitives.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
@@ -218,14 +219,7 @@ export interface ChangeRuleContext {
 /**
  * Who may accept a finding produced by a binding.
  */
-export const RuleAuthority = Schema.Literals(["agent", "human"]);
-export type RuleAuthority = Schema.Schema.Type<typeof RuleAuthority>;
-
-/**
- * Which evidence a detector judges: current source or a normalized change.
- */
-export const Lifecycle = Schema.Literals(["state", "change"]);
-export type Lifecycle = Schema.Schema.Type<typeof Lifecycle>;
+export { Lifecycle, RuleAuthority } from "./primitives.js";
 
 /**
  * Repository-owned policy and material detector configuration.

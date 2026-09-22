@@ -1,7 +1,7 @@
 import type { Update } from "foldkit";
 
 import type { Message } from "../message";
-import type { Model } from "../model";
+import type { Model } from "./model";
 
 export type UpdateReturn = Update.Return<Model, Message>;
 export type Commands = Update.Commands<Message>;

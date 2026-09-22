@@ -2,7 +2,7 @@ import { independentHidden } from "../detail/selectors";
 import { evo } from "foldkit/struct";
 
 import type { ReviewActionRequest, ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
-import { type Draft, type Model, Screen } from "../../model";
+import { type Draft, type Model, Screen } from "../../shared/model";
 import { draftFor, duplicateFindingId, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";

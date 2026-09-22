@@ -1,6 +1,6 @@
 import { Schema as S } from "effect";
 
-import { View } from "../../model";
+import { View } from "../../shared/model";
 
 export const fields = {
   SelectedView: { view: View },

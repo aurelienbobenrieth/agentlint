@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Clock, Effect, FileSystem, Layer, PlatformError } from "effect";
+import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,7 +103,7 @@ describe("acceptance current-state reconciliation", () => {
     }),
   );
 
-  it.live("removes a lock abandoned by a stopped process and keeps waiting on a recent one", () =>
+  it.live("never steals a lock whose owner may still write", () =>
     Effect.gen(function* () {
       const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
       const layer = testLayer(cwd);
@@ -111,14 +111,8 @@ describe("acceptance current-state reconciliation", () => {
       const write = Effect.flatMap(AcceptanceStore, (store) => store.write([record({ digest: "kept" })]));
       yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const now = yield* Clock.currentTimeMillis;
         yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
-
-        yield* fs.writeFileString(lock, `${now - 60_000}\n`);
-        yield* write;
-        expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
-
-        yield* fs.writeFileString(lock, `${now}\n`);
+        yield* fs.writeFileString(lock, "another-owner\n");
         const blocked = yield* Effect.flip(write);
         expect(blocked.message).toContain("locked");
         expect(yield* fs.exists(lock)).toBe(true);

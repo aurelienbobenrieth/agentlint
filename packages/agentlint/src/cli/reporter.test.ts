@@ -4,7 +4,7 @@ import { Env } from "../config/env.js";
 import { normalizeConfig } from "../domain/config.js";
 import { FindingRecord, findingKey } from "../domain/finding.js";
 import { Fingerprint, FindingSource } from "../domain/fingerprint.js";
-import { defineRule } from "../domain/rule.js";
+import { defineRule } from "../domain/rule/model.js";
 import { formatCheckJsonl, formatCheckText } from "./reporter.js";
 
 const dangerRule = defineRule({

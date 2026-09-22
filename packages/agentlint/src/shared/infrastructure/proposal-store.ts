@@ -15,7 +15,7 @@ import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
 import { ProposalRecord, proposalKey } from "../../domain/proposal.js";
-import { withFileLock } from "./file-lock.js";
+import { withFileLock } from "./file/lock/live.js";
 
 export class ProposalStoreError extends Schema.TaggedError<ProposalStoreError>()("agentlint/ProposalStoreError", {
   reason: Schema.Literals(["invalid_record", "io"]),

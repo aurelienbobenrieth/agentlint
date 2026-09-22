@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";

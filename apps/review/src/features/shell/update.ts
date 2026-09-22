@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import { clampSidebarWidth, type Model } from "../../model";
+import { clampSidebarWidth, type Model } from "../../shared/model";
 import type { Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";
 import type { fields } from "./messages";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineRule, type RuleMatch } from "../../domain/rule.js";
+import { defineRule, type RuleMatch } from "../../domain/rule/model.js";
 import { testRuleOnSource } from "../../testing.js";
 
 const ruleFor = (match: RuleMatch) =>

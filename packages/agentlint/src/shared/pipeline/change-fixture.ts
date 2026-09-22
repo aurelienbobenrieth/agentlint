@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { fixtureHunks } from "./change-hunks.js";
-import type { ChangeFixture, ChangeSet, ChangedFile } from "../../domain/rule.js";
+import type { ChangeFixture, ChangeSet, ChangedFile } from "../../domain/rule/model.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 
 /**

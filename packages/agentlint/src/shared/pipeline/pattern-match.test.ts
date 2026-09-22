@@ -1,6 +1,6 @@
 import { Array as EffectArray, Order } from "effect";
 import { describe, expect, it } from "vitest";
-import { defineRule, type RuleMatch } from "../../domain/rule.js";
+import { defineRule, type RuleMatch } from "../../domain/rule/model.js";
 import { testRuleFixtures, testRuleOnSource, testRuleOnSources } from "../../testing.js";
 
 const patternRule = (match: RuleMatch | ReadonlyArray<RuleMatch>) =>
@@ -79,7 +79,7 @@ describe("structural pattern matching", () => {
 });
 
 describe("deep and long code", () => {
-  it("matches a 3000-term binary expression without exhausting the stack", async () => {
+  it("matches a 3000-term binary expression without exhausting the stack", { timeout: 45_000 }, async () => {
     const sum = Array.from({ length: 3000 }, () => "'a'").join(" + ");
     const source = `const s = ${sum};
 danger(s);

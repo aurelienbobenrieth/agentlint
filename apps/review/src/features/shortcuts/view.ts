@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { iconButton, kbd } from "../../shared/ui/controls";
 
 export const helpDialog = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Html => {

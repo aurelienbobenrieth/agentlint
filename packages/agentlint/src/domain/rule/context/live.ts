@@ -2,36 +2,14 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState } from "./fingerprint.js";
+import { canonicalDigest, fingerprintState } from "../../fingerprint.js";
 import { Schema } from "effect";
-import type { CanonicalValue } from "./fingerprint.js";
-import { type FindingOptions, FindingRecord } from "./finding.js";
-import type { AgentlintNode, Position } from "./node.js";
-import type { StateRule } from "./rule.js";
-import { findingSourceForRule } from "./rule-identity.js";
-
-/**
- * What a state detector sees while one file is being walked.
- */
-export interface RuleContext {
-  /**
-   * Absolute filesystem path of the current file.
-   */
-  readonly absolutePath: string;
-  /**
-   * Repository-relative, forward-slash path of the current file.
-   */
-  readonly path: string;
-  /**
-   * Full source text of the current file.
-   */
-  readonly source: string;
-  /**
-   * Explicit repository-relative binding dependencies, captured before detection.
-   */
-  readonly dependencies: Readonly<Record<string, string>>;
-  report(options: FindingOptions): void;
-}
+import type { CanonicalValue } from "../../fingerprint.js";
+import { type FindingOptions, FindingRecord } from "../../finding.js";
+import type { AgentlintNode, Position } from "../../node.js";
+import { findingSourceForRule } from "../identity.js";
+import type { StateRule } from "../model.js";
+import type { RuleContext } from "./model.js";
 
 /**
  * Offsets of each line start. Node columns count UTF-16 code units, as string indices do.

@@ -2,7 +2,7 @@ import { Option } from "effect";
 import { Subscription } from "foldkit";
 
 import { Message } from "../../message";
-import type { Shortcut } from "../../model";
+import type { Shortcut } from "../../shared/model";
 import type { SubscriptionEntry } from "../../shared/subscription";
 
 const isEditable = (target: EventTarget | null): boolean =>

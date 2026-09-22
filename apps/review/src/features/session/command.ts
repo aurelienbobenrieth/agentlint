@@ -10,7 +10,7 @@ import { Command } from "foldkit";
 
 import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { PersistedReview } from "../../model";
+import { PersistedReview } from "../../shared/model";
 import { markDirty } from "../../shared/dirty-flag";
 
 const decodeState = S.decodeUnknownEffect(ReviewStatePayload);

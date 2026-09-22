@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest";
 import { Env } from "../../config/env.js";
-import { Git } from "../infrastructure/git.js";
+import { Git } from "../infrastructure/git/service.js";
 import { isInside, resolveFiles, toRepositoryPath, type ResolveOptions, type ResolverGit } from "./file-resolver.js";
 
 const cwd = join(tmpdir(), "agentlint-v02-file-resolver-test");

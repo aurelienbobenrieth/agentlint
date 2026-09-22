@@ -6,7 +6,7 @@ Coding agents write the mechanical part well. What goes wrong is judgment: a pay
 
 agentlint covers that gap:
 
-- **A deterministic trigger.** A rule matches a code shape or a Git change. The same code gives the same findings. No model is called.
+- **A deterministic trigger.** A rule matches a code shape or normalized Git change. The engine uses no model, network, or wall clock. Repository-authored imperative detectors are trusted code; `rules test` replays their fixtures and rejects differing findings.
 - **Your standard, at the moment it applies.** The finding carries the written standard, its checks, and permitted examples, so the agent does not rely on context recall.
 - **A gate the agent cannot talk past.** Each finding stays open until the code changes or someone records an acceptance with a concrete reason. You decide per rule whether an agent may accept or only a human.
 - **A reviewable record.** Acceptances live in `.agentlint/acceptances.jsonl`, bound to the exact evidence. They show in the pull request diff, and they expire when the code materially changes. It is an `eslint-disable` that needs a reason, an authority, and a new review when the code moves.
@@ -454,7 +454,7 @@ The package intentionally exports no bundled standards, detectors, rules, or pre
 
 State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
 
-Acceptance and proposal updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds `.agentlint/acceptances.lock` or `.agentlint/proposals.lock` for milliseconds. If a process stops while holding it, the next writer removes the lock once it is older than 30 seconds. A more recent lock is never stolen: the CLI fails clearly after a bounded wait. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
+Acceptance and proposal updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds `.agentlint/acceptances.lock` or `.agentlint/proposals.lock` for milliseconds. Locks carry an ownership token and a writer only releases its own lock. A lock is never stolen based on age because a paused process may still resume and write; after an abrupt process death, remove the orphaned lock manually. The CLI fails clearly after a bounded wait. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
 
 ## Security boundary
 

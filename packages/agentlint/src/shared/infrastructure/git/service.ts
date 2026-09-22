@@ -9,19 +9,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
 import { Context, Effect, FileSystem, Layer, Match, Path, Schema } from "effect";
-import { textLines } from "../pipeline/change-hunks.js";
-import { inspectRepositoryEntry, toRepositoryPath } from "../pipeline/file-resolver.js";
-import { Env } from "../../config/env.js";
-import { compareStrings } from "../../domain/compare.js";
-import type { ChangeHunk, ChangeLine, ChangeSet, ChangedFile, FileSnapshot } from "../../domain/rule.js";
-import { normalizeLineEndings } from "../../domain/source-text.js";
+import { Env } from "../../../config/env.js";
+import { compareStrings } from "../../../domain/compare.js";
+import type { ChangeSet, ChangedFile, FileSnapshot } from "../../../domain/rule/model.js";
+import { normalizeLineEndings, textLines } from "../../../domain/source-text.js";
+import { inspectRepositoryEntry, toRepositoryPath } from "../repository/entry/service.js";
+import { GIT_MAX_BUFFER_BYTES, runGitCommand } from "./command.js";
+import { parseGitRawStatus, parseUnifiedHunks, type StatusEntry } from "./parsing.js";
 
-/**
- * Largest Git output and largest working file loaded into a snapshot.
- */
-const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+export { parseGitRawStatus, parseUnifiedHunks } from "./parsing.js";
 
 /**
  * @since 0.2.0 @category errors
@@ -45,7 +42,7 @@ export class GitError extends Schema.TaggedError<GitError>()("agentlint/GitError
     return {
       command: `Git ${this.operation} failed: ${this.detail}`,
       executable_missing: `Git ${this.operation} failed: git is not installed or not on PATH`,
-      output_too_large: `Git ${this.operation} failed: the output exceeds ${MAX_BUFFER_BYTES} bytes`,
+      output_too_large: `Git ${this.operation} failed: the output exceeds ${GIT_MAX_BUFFER_BYTES} bytes`,
       unsafe_ref: `Git reference must not start with "-": ${this.ref}`,
       no_merge_base: `No merge base for HEAD and ${this.ref}. Pass --base with a ref that shares history with HEAD.`,
       shallow_clone: `No merge base for HEAD and ${this.ref}: this is a shallow clone. Fetch full history (actions/checkout fetch-depth: 0) or pass --base.`,
@@ -83,152 +80,10 @@ const unloadedSnapshot = (blob: string): FileSnapshot => ({ digest: `git-blob:${
  */
 const isBinary = (content: string): boolean => content.slice(0, 8000).includes("\0");
 
-interface CommandFailure {
-  readonly exitCode: number | undefined;
-  readonly code: string | undefined;
-  readonly detail: string;
-}
-
-const CommandFailureSchema = Schema.Struct({
-  exitCode: Schema.UndefinedOr(Schema.Number),
-  code: Schema.UndefinedOr(Schema.String),
-  detail: Schema.String,
-});
-const isNumber = Schema.is(Schema.Number);
-const isString = Schema.is(Schema.String);
-
-const gitCommand = ({
-  cwd,
-  args,
-  literalPathspecs,
-  variables,
-}: {
-  readonly cwd: string;
-  readonly args: ReadonlyArray<string>;
-  readonly literalPathspecs: boolean;
-  readonly variables?: Readonly<NodeJS.ProcessEnv>;
-}) =>
-  Effect.tryPromise({
-    try: (signal) =>
-      new Promise<string>((resolve, reject) => {
-        execFile(
-          "git",
-          [
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "color.ui=false",
-            "-c",
-            "diff.algorithm=myers",
-            "-c",
-            "diff.indentHeuristic=false",
-            // A read-only tool must not take the index lock from a concurrent commit.
-            "--no-optional-locks",
-            // `pages/[id].tsx` is one file, not a character class.
-            ...(literalPathspecs ? ["--literal-pathspecs"] : []),
-            ...args,
-          ],
-          {
-            cwd,
-            encoding: "utf8",
-            maxBuffer: MAX_BUFFER_BYTES,
-            windowsHide: true,
-            signal,
-            timeout: 120_000,
-            env: variables ? { ...variables, LANG: "C", LC_ALL: "C" } : undefined,
-          },
-          (error, stdout, stderr) => {
-            if (!error) return resolve(stdout);
-            reject({
-              exitCode: isNumber(error.code) ? error.code : undefined,
-              code: isString(error.code) ? error.code : undefined,
-              detail: stderr.trim() || error.message,
-            } satisfies CommandFailure);
-          },
-        );
-      }),
-    catch: (failure) => Schema.decodeUnknownSync(CommandFailureSchema)(failure),
-  });
-
 /**
  * Exit status 1 is Git's "no"; every other failure is a real one.
  */
 const answersNo = (error: GitError): boolean => error.reason === "command" && error.exitCode === 1;
-
-interface StatusEntry {
-  readonly status: ChangedFile["status"];
-  readonly path: string;
-  readonly previousPath?: string | undefined;
-  readonly beforeMode: string;
-  readonly afterMode: string;
-  /**
-   * Blob of the baseline side. All zeros when the baseline has none or Git did not resolve it.
-   */
-  readonly beforeBlob: string;
-}
-
-/**
- * Parse `git diff --raw -z --abbrev=40`. Git separates with `/` on every platform, so paths pass through verbatim: a
- * backslash is part of a file name.
- */
-export function parseGitRawStatus(output: string): ReadonlyArray<StatusEntry> {
-  const tokens = output.split("\0").filter((token) => token.length > 0);
-  const files: StatusEntry[] = [];
-
-  const cursor = { index: 0 };
-  while (cursor.index < tokens.length) {
-    const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) [0-9a-f]+ ([A-Z])/.exec(tokens[cursor.index++] ?? "");
-    if (!header) continue;
-    const [, beforeMode = "", afterMode = "", beforeBlob = "", kind] = header;
-    if (kind === "R" || kind === "C") {
-      const previousPath = tokens[cursor.index++];
-      const path = tokens[cursor.index++];
-      if (previousPath && path)
-        files.push({ status: "renamed", previousPath, path, beforeMode, afterMode, beforeBlob });
-      continue;
-    }
-
-    const path = tokens[cursor.index++];
-    if (!path) continue;
-    const status: ChangedFile["status"] = Match.value(kind).pipe(
-      Match.when("A", () => "added" as const),
-      Match.when("D", () => "deleted" as const),
-      Match.orElse(() => "modified" as const),
-    );
-    files.push({ status, path, beforeMode, afterMode, beforeBlob });
-  }
-
-  return files;
-}
-
-export function parseUnifiedHunks(output: string): ReadonlyArray<ChangeHunk> {
-  const hunks: ChangeHunk[] = [];
-  const state: {
-    current: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: ChangeLine[] } | null;
-  } = { current: null };
-
-  for (const line of output.split(/\r?\n/)) {
-    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
-    if (header) {
-      if (state.current) hunks.push(state.current);
-      state.current = {
-        oldStart: Number(header[1]),
-        oldLines: Number(header[2] ?? "1"),
-        newStart: Number(header[3]),
-        newLines: Number(header[4] ?? "1"),
-        lines: [],
-      };
-      continue;
-    }
-    if (!state.current || line.startsWith("\\ No newline")) continue;
-    if (line.startsWith("+")) state.current.lines.push({ kind: "addition", content: line.slice(1) });
-    else if (line.startsWith("-")) state.current.lines.push({ kind: "deletion", content: line.slice(1) });
-    else if (line.startsWith(" ")) state.current.lines.push({ kind: "context", content: line.slice(1) });
-  }
-
-  if (state.current) hunks.push(state.current);
-  return hunks;
-}
 
 /**
  * One side of a changed file: loaded text, an identity without content, or nothing agentlint may read.
@@ -279,7 +134,7 @@ export class Git extends Context.Service<
         readonly args: ReadonlyArray<string>;
         readonly literalPathspecs?: boolean;
       }) =>
-        gitCommand({
+        runGitCommand({
           cwd: env.cwd,
           args,
           literalPathspecs,
@@ -441,7 +296,8 @@ export class Git extends Context.Service<
           if (entry._tag !== "Inside") return { _tag: "Skipped" } as const;
           const info = yield* fs.stat(entry.realPath);
           if (info.type !== "File") return { _tag: "Skipped" } as const;
-          const content = Number(info.size) > MAX_BUFFER_BYTES ? undefined : yield* fs.readFileString(entry.realPath);
+          const content =
+            Number(info.size) > GIT_MAX_BUFFER_BYTES ? undefined : yield* fs.readFileString(entry.realPath);
           if (content !== undefined && !isBinary(content)) return { _tag: "Text", content } as const;
           return {
             _tag: "Unloaded",

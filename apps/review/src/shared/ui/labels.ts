@@ -1,5 +1,5 @@
 import type { ReviewMode } from "@aurelienbbn/agentlint/contract";
-import type { AuthorityFacet, LifecycleFacet, StatusFacet } from "../../model";
+import type { AuthorityFacet, LifecycleFacet, StatusFacet } from "../model";
 
 export const statusLabel = ({ status, mode }: { readonly status: StatusFacet; readonly mode: ReviewMode }): string =>
   status === "accepted"

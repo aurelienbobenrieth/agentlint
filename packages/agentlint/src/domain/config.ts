@@ -3,7 +3,7 @@
  */
 
 import { Schema } from "effect";
-import { defineRule, type AgentlintRule } from "./rule.js";
+import { defineRule, type AgentlintRule } from "./rule/model.js";
 
 export interface AgentlintConfig {
   /**

@@ -2,7 +2,7 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Facets, GroupBy, Model, StatusFacet, View } from "../../model";
+import type { Facets, GroupBy, Model, StatusFacet, View } from "../../shared/model";
 import { facetCount, type ReviewDerivation } from "../../shared/selectors";
 import { iconButton, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";

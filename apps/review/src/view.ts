@@ -4,7 +4,7 @@ import { finishedView } from "./features/finish/view";
 import { loadFailedView, loadingView } from "./features/session/view";
 import { reviewView } from "./features/shell/view";
 import type { Message } from "./message";
-import { type Model, Screen } from "./model";
+import { type Model, Screen } from "./shared/model";
 
 export const view = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Document => ({
   title: "agentlint · Review",

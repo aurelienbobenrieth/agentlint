@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { featureTestLayer, featureTestRule } from "../../__fixtures__/feature-test-services.js";
 import { normalizeConfig } from "../../domain/config.js";
-import { defineRule } from "../../domain/rule.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";

@@ -5,17 +5,27 @@
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Console, Effect, FileSystem, Layer, Option, Path, Result, Schema } from "effect";
+import { Console, Effect, FileSystem, Layer, Path, Result } from "effect";
 import { Argument, CliError, CliOutput, Command, Flag } from "effect/unstable/cli";
-import { ruleIds } from "./cli/flags.js";
+import {
+  baseFlag,
+  filesArgument,
+  openFlag,
+  optionalString,
+  portFlag,
+  ruleFlag,
+  selectorArgument,
+} from "./cli/options.js";
 import { formatCheckJsonl, formatCheckText } from "./cli/reporter.js";
+import { readAcceptanceRecords, readArtifact, writeReviewArtifact } from "./cli/review-artifact.js";
+import { openReviewSession, printAcceptances, setExitCode } from "./cli/runtime.js";
 import { Env } from "./config/env.js";
 import { acceptHandler } from "./features/accept/handler.js";
 import { AcceptCommand } from "./features/accept/request.js";
 import { acceptancesHandler } from "./features/acceptances/handler.js";
-import { AcceptancesCommand, type AcceptancesResult } from "./features/acceptances/request.js";
+import { AcceptancesCommand } from "./features/acceptances/request.js";
 import { checkHandler } from "./features/check/handler.js";
-import { CheckCommand, type CheckResult } from "./features/check/request.js";
+import { CheckCommand } from "./features/check/request.js";
 import { explainHandler } from "./features/explain/handler.js";
 import { ExplainCommand } from "./features/explain/request.js";
 import { nextHandler } from "./features/next/handler.js";
@@ -28,15 +38,12 @@ import { prHandler } from "./features/pr/handler.js";
 import { PrCommand } from "./features/pr/request.js";
 import { proposeHandler } from "./features/propose/handler.js";
 import { ProposeCommand } from "./features/propose/request.js";
-import { ReviewArtifact } from "./features/review/contract.js";
-import { buildReviewPayload } from "./features/review/handler.js";
-import { runReviewSession } from "./features/review/server.js";
 import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features/rules/handler.js";
 import { RulesListCommand, RulesScanCommand, RulesTestCommand } from "./features/rules/request.js";
-import { AcceptanceStore, AcceptanceStoreError, parseDecisions } from "./shared/infrastructure/acceptance-store.js";
+import { AcceptanceStore } from "./shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "./shared/infrastructure/config-loader.js";
 import { Gh } from "./shared/infrastructure/gh.js";
-import { Git } from "./shared/infrastructure/git.js";
+import { Git } from "./shared/infrastructure/git/service.js";
 import { encodeJson, encodePrettyJson } from "./shared/infrastructure/json.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { ProposalStore } from "./shared/infrastructure/proposal-store.js";
@@ -46,132 +53,6 @@ declare const __AGENTLINT_VERSION__: string;
 
 const TAGLINE = "Deterministic findings. Explicit judgment. Repository-owned review decisions.";
 const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage or configuration error.";
-
-// ---------------------------------------------------------------------------
-// Shared flags and arguments
-// ---------------------------------------------------------------------------
-
-const optionalString = ({
-  name,
-  metavar,
-  description,
-}: {
-  readonly name: string;
-  readonly metavar: string;
-  readonly description: string;
-}) =>
-  Flag.String(name).pipe(
-    Flag.withMetavar(metavar),
-    Flag.withDescription(description),
-    Flag.optional,
-    Flag.map(Option.getOrUndefined),
-  );
-
-const baseFlag = optionalString({
-  name: "base",
-  metavar: "ref",
-  description: "Git ref used as the change baseline (merge base)",
-});
-
-const ruleFlag = Flag.String("rule").pipe(
-  Flag.withMetavar("id"),
-  Flag.withDescription("Restrict to a rule id; repeat or comma-separate for several"),
-  Flag.atLeast(0),
-  Flag.map(ruleIds),
-);
-
-const filesArgument = Argument.String("files").pipe(
-  Argument.withDescription("Files or directories to inspect"),
-  Argument.variadic(),
-);
-
-const selectorArgument = Argument.String("selector").pipe(
-  Argument.withDescription("Finding number from the last check or a full finding key"),
-);
-
-const portFlag = Flag.Int("port").pipe(
-  Flag.withDescription("Local server port (0 picks a free port)"),
-  Flag.withDefault(0),
-  Flag.filter(
-    (port) => port >= 0 && port <= 65_535,
-    () => "--port must be 0..65535.",
-  ),
-);
-
-const openFlag = Flag.Boolean("open").pipe(
-  Flag.withDescription("Open the browser; pass --no-open to only print the URL"),
-  Flag.withDefault(true),
-);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const readArtifact = Effect.fn("readArtifact")(function* (file: string) {
-  const env = yield* Env;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const absolute = path.resolve(env.cwd, file);
-  const raw = yield* fs.readFileString(absolute);
-  const artifact = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewArtifact))(raw).pipe(
-    Effect.mapError((cause) => new Error(`${file} is not an agentlint review artifact: ${cause.message}`, { cause })),
-  );
-  return { state: artifact.state, source: absolute };
-});
-
-const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (
-  file: string,
-  check: CheckResult,
-  base?: string,
-) {
-  const env = yield* Env;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const absolute = path.resolve(env.cwd, file);
-  const state = yield* buildReviewPayload({
-    check,
-    base,
-    mode: "review",
-    transport: "detached",
-    source: path.basename(absolute),
-  });
-  const artifact: ReviewArtifact = { version: 3, state };
-  yield* fs.makeDirectory(path.dirname(absolute), { recursive: true });
-  yield* fs.writeFileString(absolute, `${encodePrettyJson(artifact)}\n`);
-  return absolute;
-});
-
-const readAcceptanceRecords = Effect.fn("readAcceptanceRecords")(function* (file: string) {
-  const env = yield* Env;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const raw = yield* fs.readFileString(path.resolve(env.cwd, file));
-  return yield* Effect.try({
-    try: () => parseDecisions(raw),
-    catch: (error) =>
-      Schema.is(AcceptanceStoreError)(error)
-        ? error
-        : new AcceptanceStoreError({ reason: "invalid_record", detail: "Decision parsing failed", line: undefined }),
-  });
-});
-
-const setExitCode = (code: number) => Effect.map(Env, (env) => env.setExitCode(code));
-
-const openReviewSession = Effect.fn("openReviewSession")(function* (options: Parameters<typeof runReviewSession>[0]) {
-  const result = yield* runReviewSession(options);
-  yield* Console.log(`Review finished: ${result.summary}`);
-  if (result.feedback) yield* Console.log(result.feedback);
-});
-
-const printAcceptances = Effect.fn("printAcceptances")(function* (result: AcceptancesResult) {
-  if (!result.records.length) yield* Console.log("No active acceptances.");
-  for (const record of result.records) {
-    yield* Console.log(
-      `${record.source.bindingId} ${record.authority} ${record.fingerprint.digest.slice(0, 12)} ${record.reason}`,
-    );
-  }
-  yield* setExitCode(result.exitCode);
-});
 
 // ---------------------------------------------------------------------------
 // Commands

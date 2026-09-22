@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { deriveReview } from "../../shared/selectors";
 import type { Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";

@@ -1,7 +1,7 @@
 import { evo } from "foldkit/struct";
 import { Schema } from "effect";
 
-import { type Model, PersistedReview, persistedReview, Screen } from "../../model";
+import { type Model, PersistedReview, persistedReview, Screen } from "../../shared/model";
 import { duplicateFindingId } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";

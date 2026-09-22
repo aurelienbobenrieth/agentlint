@@ -12,8 +12,8 @@ import type { Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../infrastructure/parsed-node.js";
 import type { FindingRecord } from "../../domain/finding.js";
-import type { VisitorHandler, Visitors } from "../../domain/rule.js";
-import type { RuleContextImpl } from "../../domain/rule-context.js";
+import type { VisitorHandler, Visitors } from "../../domain/rule/model.js";
+import type { RuleContextImpl } from "../../domain/rule/context/live.js";
 import { walkTree } from "./tree-cursor.js";
 import { Predicate } from "effect";
 

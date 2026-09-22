@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html";
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { Message } from "../../message";
 import { button } from "../../shared/ui/controls";
 import { summarizeCalibration } from "@aurelienbbn/agentlint/calibration";

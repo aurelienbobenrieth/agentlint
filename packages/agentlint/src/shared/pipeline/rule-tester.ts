@@ -5,7 +5,7 @@ import type { FixtureReport, FixtureFailure } from "../../domain/fixture-report.
  */
 
 import { Effect, Schema } from "effect";
-import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
+import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
 import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import {
@@ -15,7 +15,7 @@ import {
   type ChangeSet,
   type StateFixture,
   type StateRule,
-} from "../../domain/rule.js";
+} from "../../domain/rule/model.js";
 import { grammarForExtension } from "./language-map.js";
 import { PatternError } from "../../domain/pattern-error.js";
 import { collectStateFindings } from "./collect-findings.js";
@@ -77,7 +77,25 @@ function fixtureLabel(fixture: StateFixture | ChangeFixture): string | undefined
 }
 
 const runStateFixture = Effect.fn("runStateFixture")(function* (rule: StateRule, fixture: StateFixture) {
-  return (yield* runRuleOnSources(rule, stateFiles(fixture))).length;
+  return yield* runRuleOnSources(rule, stateFiles(fixture));
+});
+
+const sameFindings = (left: ReadonlyArray<FindingRecord>, right: ReadonlyArray<FindingRecord>): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+const nondeterministic = ({
+  index,
+  fixture,
+  findings,
+}: {
+  readonly index: number;
+  readonly fixture: StateFixture | ChangeFixture;
+  readonly findings: ReadonlyArray<FindingRecord>;
+}): FixtureFailure => ({
+  expectation: "deterministic",
+  index,
+  label: fixtureLabel(fixture),
+  findingCount: findings.length,
 });
 
 /**
@@ -89,14 +107,23 @@ export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: Age
     const mustReport = rule.detector.fixtures?.mustReport ?? [];
     const mustStaySilent = rule.detector.fixtures?.mustStaySilent ?? [];
     for (const [index, fixture] of mustReport.entries()) {
-      const count = yield* runStateFixture(rule, fixture);
-      if (count === 0)
+      const findings = yield* runStateFixture(rule, fixture);
+      const replay = yield* runStateFixture(rule, fixture);
+      if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
+      if (findings.length === 0)
         failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
     }
     for (const [index, fixture] of mustStaySilent.entries()) {
-      const count = yield* runStateFixture(rule, fixture);
-      if (count > 0)
-        failures.push({ expectation: "mustStaySilent", index, label: fixtureLabel(fixture), findingCount: count });
+      const findings = yield* runStateFixture(rule, fixture);
+      const replay = yield* runStateFixture(rule, fixture);
+      if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
+      if (findings.length > 0)
+        failures.push({
+          expectation: "mustStaySilent",
+          index,
+          label: fixtureLabel(fixture),
+          findingCount: findings.length,
+        });
     }
     return {
       ruleId: rule.binding.id,
@@ -108,13 +135,25 @@ export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: Age
   const mustReport = rule.detector.fixtures?.mustReport ?? [];
   const mustStaySilent = rule.detector.fixtures?.mustStaySilent ?? [];
   for (const [index, fixture] of mustReport.entries()) {
-    const count = runRuleOnChange({ rule, change: normalizeChangeFixture(fixture) }).length;
-    if (count === 0) failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
+    const change = normalizeChangeFixture(fixture);
+    const findings = runRuleOnChange({ rule, change });
+    const replay = runRuleOnChange({ rule, change });
+    if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
+    if (findings.length === 0)
+      failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
   }
   for (const [index, fixture] of mustStaySilent.entries()) {
-    const count = runRuleOnChange({ rule, change: normalizeChangeFixture(fixture) }).length;
-    if (count > 0)
-      failures.push({ expectation: "mustStaySilent", index, label: fixtureLabel(fixture), findingCount: count });
+    const change = normalizeChangeFixture(fixture);
+    const findings = runRuleOnChange({ rule, change });
+    const replay = runRuleOnChange({ rule, change });
+    if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
+    if (findings.length > 0)
+      failures.push({
+        expectation: "mustStaySilent",
+        index,
+        label: fixtureLabel(fixture),
+        findingCount: findings.length,
+      });
   }
 
   return {

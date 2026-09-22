@@ -5,22 +5,20 @@
 import { Array as A, Effect, FileSystem, Path, Schema } from "effect";
 import { DetectionError, UnparseableFilesError } from "./detection-error.js";
 import { Env } from "../../config/env.js";
-import { ChangeRuleContextImpl } from "../../domain/change-rule-context.js";
 import { compareStrings } from "../../domain/compare.js";
-import type { NormalizedConfig } from "../../domain/config.js";
+import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
 import { FindingRecord } from "../../domain/finding.js";
 import {
   ruleMatches,
-  type AgentlintRule,
   type ChangeRule,
   type RuleMatch,
   type StateRule,
   type Visitors,
-} from "../../domain/rule.js";
-import { RuleContextImpl } from "../../domain/rule-context.js";
+} from "../../domain/rule/model.js";
+import { RuleContextImpl } from "../../domain/rule/context/live.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
-import { Git } from "../infrastructure/git.js";
+import { Git } from "../infrastructure/git/service.js";
 import { Parser } from "../infrastructure/parser.js";
 import {
   compileGlobs,
@@ -32,6 +30,9 @@ import {
 import { grammarForExtension } from "./language-map.js";
 import { compileMatches, disposeMatches, runMatches, type RunnableMatches } from "./pattern-match.js";
 import { visitorKeys, walkFile } from "./tree-walker.js";
+import { filterRules, scopeMatcher, sortFindings, type ScopeMatcher } from "./finding/rules.js";
+
+export { ruleEnabledForFile } from "./finding/rules.js";
 
 const CollectResult = Schema.Struct({
   findings: Schema.Array(FindingRecord),
@@ -52,8 +53,6 @@ export const CollectOptions = Schema.Struct({
 });
 export type CollectOptions = Schema.Schema.Type<typeof CollectOptions>;
 
-type ScopeMatcher = (file: string) => boolean;
-
 interface StateRuleEntry {
   readonly rule: StateRule;
   readonly inScope: ScopeMatcher;
@@ -64,47 +63,8 @@ interface StateRuleEntry {
   readonly compiledByGrammar: Map<string, RunnableMatches>;
 }
 
-/**
- * Compile a binding's include and exclude globs into one predicate.
- */
-function scopeMatcher(rule: AgentlintRule): ScopeMatcher {
-  const included = compileGlobs(rule.binding.include);
-  const excluded = compileGlobs(rule.binding.exclude);
-  if (!included && !excluded) return () => true;
-  return (file) => (included ? included(file) : true) && !(excluded ? excluded(file) : false);
-}
-
-/**
- * Test one file against a binding's scope. Compiles the globs on every call; prefer `scopeMatcher` in loops.
- */
-export function ruleEnabledForFile({ rule, file }: { readonly rule: AgentlintRule; readonly file: string }): boolean {
-  return scopeMatcher(rule)(file);
-}
-
 const readError = (file: string) => (error: { readonly message: string }) =>
   new FileResolverError({ reason: "filesystem", detail: file ? `${file}: ${error.message}` : error.message });
-
-function filterRules({
-  config,
-  requested,
-}: {
-  readonly config: NormalizedConfig;
-  readonly requested: ReadonlyArray<string>;
-}): ReadonlyArray<AgentlintRule> {
-  if (requested.length === 0) return config.rules;
-  return config.rules.filter((rule) => requested.includes(rule.binding.id));
-}
-
-function sortFindings(findings: ReadonlyArray<FindingRecord>): FindingRecord[] {
-  return findings.toSorted(
-    (left, right) =>
-      compareStrings({ left: left.file, right: right.file }) ||
-      left.line - right.line ||
-      left.column - right.column ||
-      compareStrings({ left: left.ruleId, right: right.ruleId }) ||
-      compareStrings({ left: left.fingerprint.digest, right: right.fingerprint.digest }),
-  );
-}
 
 /**
  * What a scan read. `sources` keeps only files with a finding, so a complete scan does not hold the repository in

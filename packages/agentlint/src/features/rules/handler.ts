@@ -4,7 +4,7 @@
 
 import { Effect } from "effect";
 import { compareStrings } from "../../domain/compare.js";
-import type { AgentlintRule } from "../../domain/rule.js";
+import type { AgentlintRule } from "../../domain/rule/model.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { collectFindings, ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
 import { runRuleFixtures } from "../../shared/pipeline/rule-tester.js";
@@ -74,12 +74,14 @@ export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command
       continue;
     }
     totals.failed += 1;
-    lines.push(`FAIL ${report.ruleId} (${report.failures.length}/${report.total} fixtures failed)`);
+    lines.push(`FAIL ${report.ruleId} (${report.failures.length} failure${report.failures.length === 1 ? "" : "s"})`);
     for (const failure of report.failures) {
       const expectation =
         failure.expectation === "mustReport"
           ? "expected at least one finding, got none"
-          : `expected no findings, got ${failure.findingCount}`;
+          : failure.expectation === "mustStaySilent"
+            ? `expected no findings, got ${failure.findingCount}`
+            : "fixture replay produced different findings";
       lines.push(
         `  ${failure.expectation}[${failure.index}]${failure.label ? ` ${failure.label}` : ""}: ${expectation}`,
       );

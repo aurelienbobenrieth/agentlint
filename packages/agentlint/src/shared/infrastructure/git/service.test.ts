@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseGitRawStatus, parseUnifiedHunks } from "./git.js";
+import { parseGitRawStatus, parseUnifiedHunks } from "./service.js";
 
 describe("parseGitRawStatus", () => {
   const zero = "0".repeat(40);

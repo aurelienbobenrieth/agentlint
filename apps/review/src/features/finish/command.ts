@@ -4,7 +4,7 @@ import { Command } from "foldkit";
 
 import { ReviewFinishResult } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { ExportKind } from "../../model";
+import { ExportKind } from "../../shared/model";
 import { hasEmbeddedState } from "../session/command";
 
 const decodeFinishResult = S.decodeUnknownEffect(ReviewFinishResult);

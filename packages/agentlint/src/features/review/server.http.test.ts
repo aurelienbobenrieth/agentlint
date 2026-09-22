@@ -1,5 +1,5 @@
 import { Layer, ManagedRuntime, Schema } from "effect";
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,12 +38,22 @@ const required = <A>(value: A | undefined): A => {
   return value;
 };
 
-async function mount(session: ReviewListenerConfig["session"] = { mode: "review" }): Promise<void> {
+const deferred = (): { readonly promise: Promise<void>; readonly resolve: () => void } => {
+  const state: { resolve: () => void } = { resolve: () => undefined };
+  const promise = new Promise<void>((resolve) => (state.resolve = resolve));
+  return { promise, resolve: () => state.resolve() };
+};
+
+async function mount(
+  session: ReviewListenerConfig["session"] = { mode: "review" },
+  options: Pick<ReviewListenerConfig, "executeAction"> = {},
+): Promise<void> {
   fixture.listener = await required(fixture.runtime).runPromise(
     makeReviewListener({
       session,
       assetsRoot,
       applications: [],
+      ...options,
       onFinish: (result) => {
         fixture.finished.push(result);
         fixture.lockfilesAtFinish = readdirSync(join(cwd, ".agentlint")).filter((name) => /\.(lock|tmp)$/u.test(name));
@@ -346,7 +356,18 @@ describe("review request validation", () => {
 
 describe("review session finish", () => {
   it("lets an action in flight land before it reports and releases the session", async () => {
-    await mount();
+    const started = deferred();
+    const release = deferred();
+    await mount(
+      { mode: "review" },
+      {
+        executeAction: async (proceed) => {
+          started.resolve();
+          await release.promise;
+          return proceed();
+        },
+      },
+    );
     const cookie = await signIn();
     const findingId = await firstFindingId(cookie);
     const action = post({
@@ -354,10 +375,11 @@ describe("review session finish", () => {
       cookie,
       body: encodeJson({ type: "accept", findingId, reason: "Reviewed." }),
     });
-    await vi.waitFor(() => expect(existsSync(join(cwd, ".agentlint", "acceptances.lock"))).toBe(true));
-    const finish = await post({ path: "/api/finish", cookie, body: "" });
+    await started.promise;
+    const finish = post({ path: "/api/finish", cookie, body: "" });
+    release.resolve();
     expect((await action).status).toBe(200);
-    expect(finish.status).toBe(200);
+    expect((await finish).status).toBe(200);
     expect(fixture.finished).toEqual([expect.objectContaining({ summary: "1 accept" })]);
     expect(fixture.lockfilesAtFinish).toEqual([]);
     const late = await post({ path: "/api/action", cookie, body: encodeJson({ type: "withdraw", findingId }) });

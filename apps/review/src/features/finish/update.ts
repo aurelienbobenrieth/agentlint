@@ -1,7 +1,7 @@
 import { calibrationOutput } from "../calibration/selectors";
 import { evo } from "foldkit/struct";
 
-import { type ExportKind, type Model, Screen } from "../../model";
+import { type ExportKind, type Model, Screen } from "../../shared/model";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { agentInstructions, detachedOutput } from "../decision/selectors";
 import { CopyText } from "../detail/command";

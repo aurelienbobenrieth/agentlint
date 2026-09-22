@@ -8,19 +8,19 @@
  */
 
 export { defineConfig, ConfigError } from "./domain/config.js";
-export { defineRule, RuleDefinitionError } from "./domain/rule.js";
+export { defineRule, RuleDefinitionError } from "./domain/rule/model.js";
 export { PatternError } from "./domain/pattern-error.js";
 export { ParserError } from "./domain/parser-error.js";
 
 // Runtime schemas a consumer may need to construct or decode.
 export { FindingRecord, findingId } from "./domain/finding.js";
-export { ChangeBaseline, ChangedFile, ChangeHunk, ChangeLine, ChangeSet, FileSnapshot } from "./domain/rule.js";
+export { ChangeBaseline, ChangedFile, ChangeHunk, ChangeLine, ChangeSet, FileSnapshot } from "./domain/rule/model.js";
 
 export type { AgentlintConfig } from "./domain/config.js";
 export type { AgentlintNode, Position } from "./domain/node.js";
 export type { TreeSitterNodeType } from "./domain/node-types.js";
 export type { Guidance, GuidanceExample, GuidanceRef } from "./domain/guidance.js";
-export type { RuleContext } from "./domain/rule-context.js";
+export type { RuleContext } from "./domain/rule/context/model.js";
 export type {
   AgentlintRule,
   ChangeDetector,
@@ -44,7 +44,7 @@ export type {
   VisitorHandler,
   VisitorHooks,
   Visitors,
-} from "./domain/rule.js";
+} from "./domain/rule/model.js";
 
 export type { CanonicalValue, CanonicalObject } from "./domain/fingerprint.js";
 export type { FindingOptions } from "./domain/finding.js";

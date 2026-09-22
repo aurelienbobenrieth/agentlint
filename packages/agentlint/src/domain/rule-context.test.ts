@@ -1,7 +1,7 @@
 import { Array as EffectArray, Order, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { defineRule } from "./rule.js";
-import { semanticStructure } from "./rule-context.js";
+import { defineRule } from "./rule/model.js";
+import { semanticStructure } from "./rule/context/live.js";
 import { testRuleOnSource } from "../testing.js";
 
 const danger = defineRule({
