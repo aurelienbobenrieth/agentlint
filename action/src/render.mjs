@@ -356,6 +356,11 @@ export function renderInlineBody(finding) {
  * @property {string} title
  */
 
+// GitHub rejects annotations whose title exceeds 255 characters or whose message exceeds 64 KB. The limits leave room
+// for the truncation marker `clip` appends.
+const ANNOTATION_TITLE_LIMIT = 240;
+const ANNOTATION_MESSAGE_LIMIT = 60_000;
+
 /**
  * @param {ReadonlyArray<Finding>} findings
  * @returns {Annotation[]}
@@ -366,8 +371,11 @@ export function renderAnnotations(findings) {
     start_line: finding.line,
     end_line: finding.line,
     annotation_level: finding.authority === "human" ? "failure" : "warning",
-    message: `${finding.message}\n\n${finding.guidance.standard}\n\nRecord the decision: ${acceptCommand(finding)}`,
-    title: `${finding.ruleTitle} (${finding.ruleId})`,
+    message: clip({
+      value: `${finding.message}\n\n${finding.guidance.standard}\n\nRecord the decision: ${acceptCommand(finding)}`,
+      limit: ANNOTATION_MESSAGE_LIMIT,
+    }),
+    title: clip({ value: `${finding.ruleTitle} (${finding.ruleId})`, limit: ANNOTATION_TITLE_LIMIT }),
   }));
 }
 

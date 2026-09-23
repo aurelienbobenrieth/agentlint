@@ -1,7 +1,8 @@
 // @ts-check
 /**
- * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the action reads. Decoded structurally: the
- * The Effect schemas below validate untrusted artifact fields at the file boundary.
+ * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the action reads. The artifact is untrusted
+ * input, so the hand-written structural decoder below checks every field it reads at the file boundary and rejects the
+ * artifact otherwise; fields the action does not read are ignored.
  */
 
 import { readFile } from "node:fs/promises";

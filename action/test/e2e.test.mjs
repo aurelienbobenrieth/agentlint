@@ -77,6 +77,7 @@ function createFetch(overrides = {}) {
     requests.push({ method, url: path, body });
     const key = `${method} ${path}`;
     const found = key in routes ? routes[key] : method === "GET" ? [] : {};
+    if (found instanceof Response) return found.clone();
     return new Response(JSON.stringify(found), { status: 200, headers: { "content-type": "application/json" } });
   };
   return { requests, fetchImpl };
@@ -745,6 +746,31 @@ describe("approval push", () => {
     expect(writes.map((r) => r.url)).toEqual([`/repos/${REPO}/issues/42/comments`]);
     expect(bodyOf(writes[0])["body"]).toContain("could not push it to `feature/gate`");
     expect(bodyOf(writes[0])["body"]).toContain("push declined");
+  });
+});
+
+describe("command failures", () => {
+  it("replies to the commenter when a step after the permission check throws", async () => {
+    const repo = await createRepo();
+    const { exitCode, requests, logs } = await runAction({
+      event: "issue_comment",
+      fixture: "issue_comment.created.approve.json",
+      extra: { GITHUB_WORKSPACE: repo.work },
+      routes: { [`POST /repos/${REPO}/check-runs`]: new Response("upstream unavailable", { status: 503 }) },
+    });
+    expect(exitCode).toBe(2);
+    expect(logs.some((line) => line.startsWith("E ") && line.includes("failed with 503"))).toBe(true);
+    const replies = requests.filter((r) => r.method === "POST" && r.url === `/repos/${REPO}/issues/42/comments`);
+    const reply = replies
+      .map((r) => String(bodyOf(r)["body"]))
+      .find((body) => body.includes("could not run the command"));
+    expect(reply).toContain("agentlint could not run the command:");
+    expect(reply).toContain("failed with 503: upstream unavailable");
+    expect(
+      requests.some(
+        (r) => r.url === `/repos/${REPO}/issues/comments/9001/reactions` && bodyOf(r)["content"] === "rocket",
+      ),
+    ).toBe(false);
   });
 });
 

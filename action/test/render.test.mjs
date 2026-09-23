@@ -90,6 +90,24 @@ describe("hostile and oversized content", () => {
   const FENCE = "`".repeat(3);
   const hostileText = `@everyone see <img src="https://tracker.example/p.png"> | x \`code\` [click](https://evil.example)\n# Heading`;
 
+  it("clips annotation titles and messages to the GitHub limits", async () => {
+    const [first] = await findings();
+    if (!first) throw new Error("fixture");
+    const [annotation] = renderAnnotations([
+      {
+        ...first,
+        ruleTitle: "t".repeat(1_000),
+        message: "m".repeat(100_000),
+        guidance: { ...first.guidance, standard: "s".repeat(100_000) },
+      },
+    ]);
+    if (!annotation) throw new Error("annotation");
+    expect(annotation.title.length).toBeLessThanOrEqual(255);
+    expect(annotation.title.endsWith("(truncated)")).toBe(true);
+    expect(new TextEncoder().encode(annotation.message).length).toBeLessThan(64 * 1024);
+    expect(annotation.message.endsWith("(truncated)")).toBe(true);
+  });
+
   it("keeps finding text inert in the summary table", async () => {
     const [first] = await findings();
     if (!first) throw new Error("fixture");

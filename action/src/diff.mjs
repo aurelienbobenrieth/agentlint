@@ -19,29 +19,22 @@ export function commentableLines(patch) {
    */
   const lines = new Set();
   if (!patch) return lines;
-  /**
-   * @param {{ remaining: string[]; right: number; inHunk: boolean }} input
-   */
-  const visit = ({ remaining, right, inHunk }) => {
-    const [line, ...rest] = remaining;
-    if (line === undefined) return;
+  // A plain loop: patches can run to tens of thousands of lines, far beyond the call stack.
+  let right = 0;
+  let inHunk = false;
+  for (const line of patch.split("\n")) {
     const header = HUNK_HEADER.exec(line);
     if (header) {
-      visit({ remaining: rest, right: Number(header[1]), inHunk: true });
-      return;
+      right = Number(header[1]);
+      inHunk = true;
+      continue;
     }
-    if (!inHunk || line.startsWith("\\") || line.startsWith("-")) {
-      visit({ remaining: rest, right, inHunk });
-      return;
-    }
+    if (!inHunk || line.startsWith("\\") || line.startsWith("-")) continue;
     if (line.startsWith("+") || line.startsWith(" ") || line === "") {
       lines.add(right);
-      visit({ remaining: rest, right: right + 1, inHunk });
-      return;
+      right += 1;
     }
-    visit({ remaining: rest, right, inHunk });
-  };
-  visit({ remaining: patch.split("\n"), right: 0, inHunk: false });
+  }
   return lines;
 }
 

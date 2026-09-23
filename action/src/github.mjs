@@ -39,12 +39,32 @@ class GitHubError extends Error {
    * @param {string} input.url
    * @param {number} input.status
    * @param {string} input.detail
+   * @param {ReadonlyArray<unknown>} [input.errors] GraphQL `errors` of a 200 response
    */
-  constructor({ method, url, status, detail }) {
+  constructor({ method, url, status, detail, errors = [] }) {
     super(`${method} ${url} failed with ${status}: ${detail}`);
     this.name = "GitHubError";
     this.status = status;
+    this.errors = errors;
   }
+}
+
+/**
+ * Whether a failure means the token may not perform the request, as opposed to a network error, a timeout, or a server
+ * error that a retry could fix.
+ *
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isAuthorizationError(error) {
+  if (!(error instanceof GitHubError)) return false;
+  if (error.status === 401 || error.status === 403) return true;
+  return error.errors.some(
+    (entry) =>
+      isRecord(entry) &&
+      (entry["type"] === "FORBIDDEN" ||
+        (isString(entry["message"]) && /resource not accessible/i.test(entry["message"]))),
+  );
 }
 
 /**
@@ -243,6 +263,7 @@ export function createGitHub(options) {
         url: graphqlUrl,
         status: 200,
         detail: JSON.stringify(data["errors"]).slice(0, 500),
+        errors: data["errors"],
       });
     }
     return isRecord(data) ? data["data"] : null;
@@ -305,9 +326,10 @@ export function createGitHub(options) {
         read: () => graphql({ query: "query { viewer { login } }", variables: {} }),
         fallback: null,
       })
-        .catch(() => {
-          // REASON: identity lookup has an explicit conservative fallback for restricted tokens.
-          return null;
+        .catch((error) => {
+          // A restricted token may not read its own viewer; any other failure is real and must not be masked.
+          if (isAuthorizationError(error)) return null;
+          throw error;
         })
         .then((data) => {
           const login = stringField({ record: isRecord(data) ? data["viewer"] : undefined, key: "login" });

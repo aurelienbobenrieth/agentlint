@@ -393,6 +393,32 @@ export async function runCommand(ctx) {
     await surface.reply(`@${surface.login} needs write access to this repository to run agentlint commands.`);
     return 0;
   }
+  try {
+    return await runAuthorized({ ctx, surface, pull });
+  } catch (error) {
+    // The commenter is owed an answer: without one, a failed fetch, install, commit, or publish only shows in the log.
+    const output = error instanceof Error ? error.message : String(error);
+    try {
+      await surface.reply(renderFailureReply({ heading: "agentlint could not run the command:", output }));
+    } catch (replyError) {
+      ctx.log.error(
+        `could not reply to the command: ${replyError instanceof Error ? replyError.message : String(replyError)}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Everything after the permission check. Repository code may run from here on.
+ *
+ * @param {object} input
+ * @param {Context} input.ctx
+ * @param {Surface} input.surface
+ * @param {PullRequest} input.pull
+ * @returns {Promise<number>}
+ */
+async function runAuthorized({ ctx, surface, pull }) {
   const implicit = await implicitSelector({ ctx, surface });
   if (surface.inReplyTo !== null && implicit === null) {
     await surface.reply(

@@ -12,6 +12,16 @@ describe("commentableLines", () => {
     expect(commentableLines("").size).toBe(0);
   });
 
+  it("handles patches far larger than the call stack", () => {
+    const added = Array.from({ length: 20_000 }, (_, index) => `+line ${index}`);
+    const patch = ["@@ -0,0 +1,20000 @@", ...added].join("\n");
+    const lines = commentableLines(patch);
+    expect(lines.size).toBe(20_000);
+    expect(lines.has(1)).toBe(true);
+    expect(lines.has(20_000)).toBe(true);
+    expect(lines.has(20_001)).toBe(false);
+  });
+
   it("counts added and context lines on the right side, skipping deletions", () => {
     const patch = ["@@ -1,4 +1,5 @@", " a", "-b", "+b2", "+b3", " c", " d"].join("\n");
     expect([...commentableLines(patch)]).toEqual([1, 2, 3, 4, 5]);

@@ -53,3 +53,46 @@ it("terminates a stalled subprocess", async () => {
     exec({ argv: [process.execPath, "-e", "setInterval(() => {}, 1000)"], options: { cwd: tmpdir(), timeoutMs: 100 } }),
   ).rejects.toThrow(/failed|killed|timed out/i);
 });
+
+it("falls back to the default identity when the token may not read its viewer", async () => {
+  await expect(client(async () => new Response("forbidden", { status: 403 })).identity()).resolves.toBe(
+    "github-actions[bot]",
+  );
+  await expect(client(async () => new Response("unauthorized", { status: 401 })).identity()).resolves.toBe(
+    "github-actions[bot]",
+  );
+  const forbidden = client(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: null,
+          errors: [{ type: "FORBIDDEN", message: "Resource not accessible by integration" }],
+        }),
+      ),
+  );
+  await expect(forbidden.identity()).resolves.toBe("github-actions[bot]");
+  const inaccessible = client(
+    async () =>
+      new Response(JSON.stringify({ data: null, errors: [{ message: "Resource not accessible by integration" }] })),
+  );
+  await expect(inaccessible.identity()).resolves.toBe("github-actions[bot]");
+});
+
+it("rethrows identity failures that are not about authorization", async () => {
+  await expect(client(async () => new Response("boom", { status: 502 })).identity()).rejects.toThrow(/failed with 502/);
+  await expect(
+    client(async () => {
+      throw new TypeError("fetch failed");
+    }).identity(),
+  ).rejects.toThrow(/fetch failed/);
+  await expect(
+    client(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }).identity(),
+  ).rejects.toThrow(/timeout/);
+  const otherGraphqlError = client(
+    async () =>
+      new Response(JSON.stringify({ data: null, errors: [{ type: "INTERNAL", message: "Something went wrong" }] })),
+  );
+  await expect(otherGraphqlError.identity()).rejects.toThrow(/failed with 200/);
+});
