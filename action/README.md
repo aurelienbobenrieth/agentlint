@@ -1,17 +1,29 @@
 # agentlint GitHub Action
 
-Runs the [agentlint](../packages/agentlint/README.md) gate on a pull request and puts the result where the reviewer already is:
+Runs the [agentlint](../packages/agentlint/README.md) gate on pull requests; reviewers approve findings from a comment.
 
-- a check run named **`agentlint`** on the head commit (the gate: `success`, `failure`, or `action_required`), with one annotation per finding;
-- one sticky summary comment on the pull request, edited in place on every run;
-- one inline review comment per finding that sits inside the pull request diff, resolved automatically once the finding is accepted or disappears;
-- `/agentlint approve ...` commands that record a human acceptance, commit it as the approver, push, and re-run the gate.
+```mermaid
+flowchart LR
+  PR[Push to PR] --> Gate[gate job]
+  Gate --> Check[agentlint check run]
+  Gate --> Comments[summary + inline comments]
+  Comments --> Cmd["/agentlint approve"]
+  Cmd --> Job[command job]
+  Job --> Push[commit + push acceptance]
+  Push --> Rerun[re-run gate on new head]
+  Rerun --> Check
+```
 
-The action is a composite action implemented with Node scripts, Effect, the global `fetch`, and `git`. The agentlint CLI itself is fetched with `npx` from the version you pin, or run from a checkout you built.
+| Surface                   | Behavior                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Check run **`agentlint`** | The gate on the head commit: `success`, `failure`, or `action_required`. One annotation per unresolved finding. |
+| Summary comment           | One per pull request, edited in place each run.                                                                 |
+| Inline comments           | One per finding inside the diff; resolved once the finding is accepted or disappears.                           |
+| `/agentlint approve ...`  | Records a human acceptance, commits it as the approver, pushes, re-runs the gate.                               |
 
-## Usage
+A composite action: dependency-free Node scripts, global `fetch`, and `git`. The CLI runs through `npx` at your pinned version, or from a checkout you built.
 
-Two jobs: one runs the gate on `pull_request`, the other handles commands from comments. They need different permissions, so keep them separate.
+## Setup: two jobs, two permission sets
 
 ```yaml
 name: agentlint
@@ -80,74 +92,124 @@ jobs:
           install: "true"
 ```
 
-`fetch-depth: 0` matters: change rules diff against the merge base with `origin/<base>`.
+- `fetch-depth: 0`: change rules diff against the merge base with `origin/<base>`.
+- **Mark the `agentlint` check as required** on the base branch (protection rules or ruleset). The check run is the gate, not the workflow conclusion. Accepting forks? Read [Fork pull requests](#fork-pull-requests) first.
 
-Neither job persists the checkout credentials. The install and the agentlint CLI run repository code (lifecycle scripts, `.agentlint/config.ts`), so the action starts them, and every `git` command, without the `github-token` input, `GITHUB_TOKEN`, `GH_TOKEN`, the `ACTIONS_*` runtime and OIDC variables, `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or any `INPUT_*` variable. The token is used for GitHub API calls from the action's own process, and for the fetches and the approval push, where it is passed to that one `git` command as an HTTP header and never written to `.git/config`. Do not put other secrets in the `env` of these jobs: only the names above are removed.
+### Credentials stay out of repository code
 
-Then **mark the `agentlint` check as required** in the branch protection rules or the ruleset of the base branch. The check run is the gate; the workflow's own conclusion is not. Read [Fork pull requests](#fork-pull-requests) first if the repository accepts them.
+The install and CLI execute repository code (lifecycle scripts, `.agentlint/config.ts`).
 
-### Concurrent commands
+| Process                                   | Gets the token?                                                                                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The action's own GitHub API calls         | Yes                                                                                                                                                             |
+| `git fetch` and the approval `git push`   | Yes, as an HTTP header on that one command, never in `.git/config`                                                                                              |
+| Install, agentlint CLI, every other `git` | No. Started without `github-token`, `GITHUB_TOKEN`, `GH_TOKEN`, the `ACTIONS_*` runtime and OIDC variables, `NODE_AUTH_TOKEN`, `NPM_TOKEN`, and every `INPUT_*` |
 
-GitHub keeps one running and one pending run per concurrency group, and a newer pending run cancels the older pending one. A group at workflow level would therefore drop approvals: every comment on the pull request enters it, and three quick `/agentlint approve` replies leave one running, one pending, and one cancelled. The group above is on the `command` job, behind its `if`, so only commands enter it, and it is there to save runner time, not for correctness: when the branch moved between the fetch and the push, the action fetches the new head, records the approval again there, and pushes again, up to three times, never with force. With the group in place a burst of more than two commands can still lose the middle ones to the same GitHub rule; the commenter sees no rocket reaction and sends the command again. Remove the `concurrency` block if that matters more than runner time.
+> [!WARNING]
+> Only those names are removed. Put no other secrets in these jobs' `env`.
+
+### Concurrency saves runner time, not correctness
+
+A concurrency group holds one running and one pending run; a newer pending run cancels the older one. At workflow level every comment enters, so three quick approvals leave one cancelled. On the `command` job, only commands enter, but a burst of more than two can still drop the middle ones: no rocket reaction, the commenter resends. Remove the `concurrency` block if that matters more than runner time.
+
+Correctness never depends on it: if the branch moved between fetch and push, the action refetches, re-records the approval on the new head, and pushes again, up to three times, never with force.
 
 ## Inputs
 
-| Input               | Default                  | Meaning                                                                                                                                                                                                                                                                                           |
-| ------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`           | `0.1.5`                  | `@aurelienbbn/agentlint` version to run through `npx --yes`, or `file:<path>` to run `<path>/dist/bin.mjs` from a checkout you built (path from the workspace root). When the repository installed its own copy (`install: true`), that copy runs instead, with a warning if its version differs. |
-| `base`              | `${{ github.base_ref }}` | Base branch, slashes included (`release/1.x`). The action passes `origin/<base>` to `--base`, fetching it if the checkout does not have it. `HEAD`, `origin/...`, and `refs/...` are passed as is.                                                                                                |
-| `working-directory` | `.`                      | Directory that holds `.agentlint/config.ts`.                                                                                                                                                                                                                                                      |
-| `install`           | `false`                  | Run the repository install first: `pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, `yarn install --immutable`, or `npm ci`, chosen from the lockfile in the working directory, then the workspace.                                                                              |
-| `github-token`      | `${{ github.token }}`    | Token for the check run, the comments, the fetches, and the approval push. See [The approval push](#the-approval-push).                                                                                                                                                                           |
-| `comment`           | `true`                   | Post the sticky summary and the inline review comments. `false` keeps only the check run.                                                                                                                                                                                                         |
-| `dry-run`           | `false`                  | Read everything, write nothing. Every planned write is printed and returned in `dry-run-plan`.                                                                                                                                                                                                    |
+| Input               | Default                  | Meaning                                                                                                                                                                                                                                                   |
+| ------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`           | `0.1.5`                  | `@aurelienbbn/agentlint` version for `npx --yes`, or `file:<path>` to run `<path>/dist/bin.mjs` from a built checkout (relative to the workspace root). A copy installed by the repository (`install: true`) wins, with a warning if its version differs. |
+| `base`              | `${{ github.base_ref }}` | Base branch, slashes allowed (`release/1.x`). Passed to `--base` as `origin/<base>`, fetched if missing. `HEAD`, `origin/...`, `refs/...` pass through.                                                                                                   |
+| `working-directory` | `.`                      | Directory holding `.agentlint/config.ts`.                                                                                                                                                                                                                 |
+| `install`           | `false`                  | Install first, by lockfile (working directory, then workspace): `pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, `yarn install --immutable`, or `npm ci`.                                                                               |
+| `github-token`      | `${{ github.token }}`    | For the check run, comments, fetches, and approval push. See [The approval push](#the-approval-push).                                                                                                                                                     |
+| `comment`           | `true`                   | Post the summary and inline comments. `false` keeps only the check run.                                                                                                                                                                                   |
+| `dry-run`           | `false`                  | Read everything, write nothing; planned writes are printed and returned in `dry-run-plan`.                                                                                                                                                                |
 
-## Outputs
+## Outputs and exit codes
 
-| Output         | Meaning                                                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `gate`         | `open`, `closed`, or `error` (CLI exit code 0, 1, or 2).                                                                            |
-| `unresolved`   | Number of unresolved findings.                                                                                                      |
-| `human`        | Number of unresolved findings that need human authority.                                                                            |
-| `artifact`     | Absolute path of the detached review artifact, uploaded as `agentlint-review-<pr>`. Open it locally with `agentlint review --from`. |
-| `dry-run-plan` | JSON array of `{ method, url, body }` for every write a dry run would have made.                                                    |
+| Output         | Meaning                                                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gate`         | `open`, `closed`, or `error` (CLI exit 0, 1, 2)                                                                                             |
+| `unresolved`   | Unresolved findings                                                                                                                         |
+| `human`        | Unresolved findings needing human authority                                                                                                 |
+| `artifact`     | Absolute path of the detached review artifact, uploaded as `agentlint-review-<pr>` (30-day retention). Open with `agentlint review --from`. |
+| `dry-run-plan` | JSON array of `{ method, url, body }`, one per write a dry run skipped                                                                      |
 
-The main step exits with the gate code on `pull_request` (0, 1, or 2), so the job fails while the gate is closed. Command runs exit 0 when the command was answered, including a refusal, and non-zero when the action failed or the approval could not be pushed.
+On `pull_request` the step exits with the gate code, so the job fails while the gate is closed. Command runs exit 0 once the command is answered, refusals included, and non-zero when the action failed or the approval could not be pushed.
 
 ## Commands
 
-Only members with `write`, `maintain`, or `admin` permission can run commands, and only from a user account. Anyone else gets a thumbs down and a reply. Commands on fork pull requests are refused: the token cannot push to the fork.
+| Where                                | Command                                                                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pull request conversation            | `/agentlint approve <digest> --reason "why it satisfies the standard"`: `<digest>` is 7+ hex characters of the fingerprint, or `path:line` |
+| Reply to an agentlint inline comment | `/agentlint approve <reason>`: approves the thread's finding                                                                               |
+| Anywhere on the pull request         | `/agentlint check`: re-runs the gate                                                                                                       |
 
-| Where                                | Command                                                                                                                                                              |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pull request conversation            | `/agentlint approve <digest> --reason "why it satisfies the standard"` where `<digest>` is at least 7 hex characters of the fingerprint, or `path:line` (see below). |
-| Reply to an agentlint inline comment | `/agentlint approve <reason>`; the finding is the one in the thread.                                                                                                 |
-| Anywhere on the pull request         | `/agentlint check` re-runs the gate.                                                                                                                                 |
+| Commenter                                 | Result                                     |
+| ----------------------------------------- | ------------------------------------------ |
+| User with `write`, `maintain`, or `admin` | Runs                                       |
+| User without write access                 | Thumbs-down reaction and a reply           |
+| Bot or other non-user account             | Ignored                                    |
+| Anyone, on a fork pull request            | Refused: the token cannot push to the fork |
 
-An approval runs `agentlint approve` with `AGENTLINT_ACTOR=human:<login>`, commits `.agentlint/acceptances.jsonl` with the approver as author and `github-actions[bot]` as committer (`chore(agentlint): accept <rule> at <file>:<line>`, trailer `Approved-by: @<login>`), pushes to the pull request branch, re-runs the gate on the new head, updates the check run and the summary, resolves the inline thread, and reacts with a rocket. Reasons are trimmed to 1000 characters. Agent-authority findings are accepted locally with `agentlint accept` and pushed; the action does not accept on the agent's behalf.
+### An approval commits as the approver
 
-A digest names one finding and its evidence, and so does a reply on an inline comment. `path:line` names whatever finding is on that line when the queued job runs, so it is accepted only while the pull request head is still the commit in the `Head` of the action's latest summary comment. After a push in between, the command is refused and the reply asks for the digest. The action reads markers and summaries only from comments posted by the account its own token acts as (`github-actions[bot]` for the default token); a marker quoted by anyone else, another bot included, is ignored.
+```mermaid
+sequenceDiagram
+  participant R as Reviewer
+  participant A as command job
+  participant B as PR branch
+  R->>A: /agentlint approve ...
+  A->>A: agentlint approve as the human commenter
+  A->>B: commit acceptances.jsonl, push
+  A->>A: re-run gate on new head
+  A->>R: update check + summary, resolve thread, rocket
+```
+
+- CLI env: `AGENTLINT_ACTOR=human:<login>`. Commits `.agentlint/acceptances.jsonl`.
+- Author: the approver. Committer: `github-actions[bot]`. Subject `chore(agentlint): accept <rule> at <file>:<line>`, trailer `Approved-by: @<login>`.
+- Reasons are truncated to 1000 characters.
+- The action never accepts for an agent. Agent-authority findings are accepted locally with `agentlint accept` and pushed.
+
+### Approve by digest; `path:line` goes stale
+
+A digest, or a reply in an inline thread, names one finding and its evidence. `path:line` names whatever is on that line when the queued job runs, so it works only while the head is still the commit in the `Head` of the action's latest summary. After a push in between, it is refused and the reply asks for the digest.
+
+Markers and summaries count only from comments by the token's own account (`github-actions[bot]` by default). A marker quoted by anyone else, another bot included, is ignored.
 
 ### The approval push
 
-The push authenticates with `github-token`, which needs `contents: write`. With the default `GITHUB_TOKEN`, GitHub does not start workflows for the pushed commit: the `command` job itself re-runs the gate and publishes the `agentlint` check run on the new head, but **other required checks will not run on the approval commit**, and the pull request waits for them until someone pushes again. Pass a GitHub App installation token or a fine-grained personal access token as `github-token` if the base branch requires other checks. Comments and the check run are then posted by that account.
+The push uses `github-token`, which needs `contents: write`.
 
-When the push is refused (branch rules, a token without `contents: write`), or the branch keeps moving for three attempts, the action replies to the commenter with Git's message and the run fails. Nothing is recorded in that case.
+> [!WARNING]
+> With the default `GITHUB_TOKEN`, GitHub starts no workflows for the pushed commit. The `command` job still publishes the `agentlint` check there, but **other required checks never run** and the pull request waits for another push. If the base branch requires other checks, pass a GitHub App installation token or a fine-grained PAT; comments and the check run are then posted by that account.
+
+A failed push records nothing and fails the run:
+
+- **Refused** (branch rules, no `contents: write`): the reply quotes Git's message.
+- **Branch moved three times**: the reply asks to resend the command.
 
 ## Fork pull requests
 
-**A fork pull request never gets the `agentlint` check run.** GitHub gives `pull_request` runs from a fork a read-only token, so the action cannot write a check run or a comment there. It still runs the gate and uploads the artifact, prints the findings as workflow annotations (`::error` for human findings, `::warning` for agent findings), says so in the log and the step summary, and exits with the gate code. `/agentlint` commands on a fork pull request are refused.
+**A fork pull request never gets the `agentlint` check run.** Fork `pull_request` runs get a read-only token, so no check run or comment. The action still runs the gate, uploads the artifact, prints findings as workflow annotations (`::error` human, `::warning` agent), notes this in the log and step summary, and exits with the gate code. `/agentlint` commands are refused.
 
-Two consequences when the `agentlint` check is required:
+With the `agentlint` check required:
 
-- A fork pull request cannot be merged as it is: the required check never reports.
-- **Do not require the `gate` job's status instead.** On a fork pull request that status is computed from the fork's own `.agentlint/config.ts` and `.agentlint/acceptances.jsonl`: the contributor can delete a binding or add an acceptance, and the job turns green. It is information for the contributor, not a gate. `pull_request_target` is not a way around this either; the action rejects it, because it would run the fork's configuration with a write token.
+- A fork pull request cannot merge as is: the check never reports.
+- **Do not require the `gate` job's status instead.** On a fork it comes from the fork's own `.agentlint/config.ts` and `.agentlint/acceptances.jsonl`; the contributor can delete a binding or add an acceptance to turn it green. It informs, it does not gate.
+- `pull_request_target` is no workaround: the action rejects it, since it would run the fork's configuration with a write token.
 
-The supported path: a maintainer reviews the fork's commits, including any change under `.agentlint/`, pushes them to a branch in this repository (`gh pr checkout <number>`, then `git push origin HEAD:refs/heads/<branch>`), and opens the pull request from that branch. The normal flow then applies: check run, comments, and `/agentlint approve`.
+**Supported path:** a maintainer reviews the fork's commits, including `.agentlint/` changes, pushes them to a branch here, and opens the pull request from it. The normal flow applies.
 
-## Dry run and testing the action itself
+```sh
+gh pr checkout <number>
+git push origin HEAD:refs/heads/<branch>
+```
 
-`dry-run: true` performs every read and records every write. Use it with `file:` to test an unpublished build:
+## Test an unpublished build with a dry run
+
+`dry-run: true` does every read and records every write, so read permissions suffice. Pair it with `file:`:
 
 ```yaml
 - run: pnpm install --frozen-lockfile && pnpm build
@@ -163,10 +225,21 @@ The supported path: a maintainer reviews the fork's commits, including any chang
     GATE: ${{ steps.smoke.outputs.gate }}
 ```
 
-A dry run only needs read permissions. See [`.github/workflows/action-smoke.yml`](../.github/workflows/action-smoke.yml) for the full example.
+Full example: [`.github/workflows/action-smoke.yml`](../.github/workflows/action-smoke.yml).
 
-## Executable configuration and artifact confidentiality
+## Limits and security
 
-HTTP requests have a 30-second deadline. Subprocesses have a five-minute deadline. REST and review-thread pagination reject repeated cursors/pages and stop with an error above 1,000 pages; REST pagination must retain the API origin. Incomplete pagination is never returned as a successful partial inventory.
+| Limit        | Value                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HTTP request | 30 s deadline                                                                                                                                                      |
+| Subprocess   | 5 min deadline                                                                                                                                                     |
+| Pagination   | REST and review threads: repeated cursors or pages rejected, error above 1,000 pages. REST must stay on the API origin. Never returns a partial result as success. |
 
-The action rejects `pull_request_target`: checking a repository executes its configuration and detectors. Untrusted pull requests need an isolated runner without secrets or a write token. A privileged follow-up job must not execute untrusted repository code. The `command` job runs the code of same-repository branches (a bot's branch, an agent's branch) and holds `contents: write`, which is why the action keeps every credential out of the install, the CLI, and `git`, and why the job should carry no other secret. Detached artifacts include full source files with findings and review reasons; restrict their audience and retention like the repository itself. See [the security model](../SECURITY.md).
+Checking a repository executes its configuration and detectors:
+
+- `pull_request_target` is rejected.
+- Untrusted pull requests need an isolated runner with no secrets or write token. A privileged follow-up job must not execute untrusted code.
+- The `command` job runs same-repository branches (a bot's, an agent's) with `contents: write`. Hence the credential scrubbing above, and no other secret in that job.
+- Detached artifacts contain full source files with findings and review reasons. Restrict their audience and retention like the repository's.
+
+See [the security model](../SECURITY.md).

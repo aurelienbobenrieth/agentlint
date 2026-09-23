@@ -5,7 +5,7 @@
  *
  * - `library_version` in every packaged SKILL.md
  * - The `version` input default in <repo>/action/action.yml and its fallback in action/src/inputs.mjs
- * - The `agentlint/action@v<version>` references and `version` values in the action and package READMEs
+ * - The `agentlint/action@v<version>` references and `version` values in the action and package READMEs and the CI guide
  *
  * Run automatically after `changeset version` via scripts/version.sh.
  */
@@ -68,6 +68,7 @@ const targets = [
   },
   { file: join(repoRoot, "action", "README.md"), sync: syncDocumentedVersion },
   { file: join(root, "README.md"), sync: syncDocumentedVersion },
+  { file: join(repoRoot, "docs", "guide", "ci.md"), sync: syncDocumentedVersion },
 ];
 
 const updated = targets.filter(({ file, sync }) => {

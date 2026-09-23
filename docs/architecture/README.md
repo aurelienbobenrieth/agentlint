@@ -1,22 +1,46 @@
 # Architecture
 
-The repository is organized by ownership first and role second. A reader should be able to infer a module's direction
-from its path:
+A module's path says which way its imports may point: ownership first, role second.
 
-- `domain/` contains value contracts and pure domain behavior.
-- `shared/pipeline/` coordinates detection without depending on product features.
-- `shared/infrastructure/` owns process, filesystem, Git, and persistence adapters.
-- `features/<name>/` colocates a use case's request, handler, and tests.
-- `apps/review/features/<name>/` owns one review UI capability; `apps/review/shared/` cannot import a feature.
-- Prefer a folder for a multi-part concern (`git/command.ts`, `git/service.ts`, `rule/context/model.ts`) instead of
-  encoding hierarchy in a dashed or dotted filename. Apply that pattern when a concern is added or structurally
-  refactored; a single cohesive leaf may remain one file.
+```text
+packages/agentlint/src/
+├── domain/                  value contracts, pure domain behavior
+├── shared/pipeline/         coordinates detection, no product features
+├── shared/infrastructure/   process, filesystem, Git, persistence adapters
+└── features/<name>/         one use case: request, handler, tests
+apps/review/src/
+├── features/<name>/         one review UI capability
+└── shared/
+action/src/                  standalone composite Action
+```
 
-`pnpm architecture:check` resolves the production import graph and rejects cycles and forbidden reverse dependencies.
-`pnpm architecture:graph` regenerates [dependencies.mmd](./dependencies.mmd), an area-level Mermaid graph. The graph is
-intentionally coarse: file-level graphs hide boundaries in noise.
+## Imports point toward the domain
 
-Imports should point entrypoints → features → adapters/pipeline → domain. Infrastructure and pipeline
-may both depend on domain; infrastructure may not depend on the application pipeline. The review contract is a special
-browser-safe boundary and may depend only on Effect. The composite Action is standalone and may use only local modules
-and Node built-ins at runtime.
+```mermaid
+flowchart LR
+  EP[entrypoints] --> F[features]
+  F --> P[pipeline]
+  F --> I[infrastructure]
+  P --> I
+  P --> D[domain]
+  I --> D
+  F --> D
+```
+
+## `pnpm architecture:check` rejects
+
+- any import cycle in the production graph;
+- `domain/` importing outside `domain/`;
+- `shared/` importing a feature, or `apps/review/src/shared/` importing a review feature;
+- `shared/infrastructure/` importing `shared/pipeline/`;
+- the browser-safe review contract (`features/review/contract.ts`) importing any package but `effect`;
+- `action/src/` importing anything at runtime but local modules and `node:` built-ins;
+- an untagged `new Error(` in `packages/agentlint/src/`.
+
+## `pnpm architecture:graph` regenerates the real graph
+
+It writes [dependencies.mmd](./dependencies.mmd), a generated area-level Mermaid graph; don't edit it by hand. It is coarse on purpose: file-level graphs hide boundaries in noise.
+
+## Name concerns with folders, not dashes
+
+Prefer a folder for a multi-part concern (`git/command.ts`, `git/service.ts`, `rule/context/model.ts`) over a dashed or dotted filename. Apply this when a concern is added or structurally refactored; a single cohesive leaf may stay one file.

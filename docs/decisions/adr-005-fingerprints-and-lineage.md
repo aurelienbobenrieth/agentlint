@@ -7,150 +7,140 @@
 
 ## Decision
 
-An acceptance opens a gate only for one exact compatible finding identity.
+**An acceptance opens the gate for one exact finding identity. Material evidence change → new unresolved finding. A related prior acceptance is lineage context and never opens the gate. Only a complete check removes stale acceptances.**
 
-A material evidence change creates a new unresolved finding.
-
-The engine can show a related prior acceptance as lineage context. Lineage never opens the gate.
-
-Fingerprint algorithms and acceptance record schemas use separate versions.
-
-Complete checks remove stale acceptances. Partial checks never remove them.
+```mermaid
+flowchart LR
+  F["current finding"] --> K{"exact identity<br/>match?"}
+  K -- yes --> A{"authority<br/>satisfied?"}
+  A -- yes --> OPEN["accepted"]
+  A -- no --> U["unresolved"]
+  K -- no --> U
+  U -. same lineage key .-> L["prior reason<br/>(context only)"]
+```
 
 ## Context
 
-The model must keep valid acceptances through formatting changes, invalidate them after material evidence changes, preserve useful prior reasoning without preserving authority, and keep the current acceptance state small without a permanent lineage database.
+- Formatting and line moves must keep acceptances. Evidence changes must drop them.
+- Prior reasoning is useful. Its authority is not.
+- No permanent lineage database.
 
-## Finding identity
+## Identity = source + fingerprint
 
-A finding has a source identity and an evidence identity.
+```text
+acceptance key = canonical {
+  source: {                  FindingSource (ADR-004)
+    standardId, standardRevision, detectorId, detectorVersion,
+    bindingId, bindingDigest,
+    reviewEpoch?             only when the binding sets it
+  },
+  fingerprint: {
+    scheme,                  evidence family: "source-structure" | "git-change"
+    version,                 normalization algorithm of that scheme
+    digest                   SHA-256 of canonical JSON evidence
+  }
+}
+```
 
-The `FindingSource` contains `standardId`, `standardRevision`, `detectorId`, `detectorVersion`, `bindingId`, and `bindingDigest`. [ADR-004](./adr-004-rule-composition.md) defines these values.
+- **Canonical JSON:** sorted keys, exact Unicode strings, `-0` → `0`. Non-finite numbers, cycles, and non-plain objects fail with the exported `FingerprintError`.
+- **Paths:** `\` → `/`, `.` and `..` resolved, empty segments dropped, case kept (a case rename is a move). Absolute paths and paths that escape the repository fail with `FingerprintError`.
+- **Line endings:** CRLF and CR become LF when the engine reads a source file, a binding dependency, or Git change content. `core.autocrlf` and LF checkouts fingerprint equally.
 
-The `Fingerprint` contains a `scheme`, a `version`, and a `digest`.
+## State evidence: `source-structure` v3
 
-The scheme identifies the evidence family. The version identifies the normalization algorithm for that scheme. The digest is a SHA-256 hash of canonical JSON evidence with sorted object keys and exact Unicode strings.
+| In                                                                                                         | Out                                       |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| normalized path                                                                                            | line and column positions                 |
+| containing-file structure: preorder node types + child counts, leaf text, text between inner-node children | whitespace-only gaps (they enter as `""`) |
+| digest of declared binding dependency contents                                                             | line-ending style                         |
+| detector-reported `evidence`, if any                                                                       |                                           |
+| occurrence key: structural child path (`<nodeType>:<i/j/k>`) or a unique detector key                      |                                           |
 
-The acceptance key contains the complete source identity and the complete fingerprint.
+- A non-whitespace gap between children enters verbatim. Grammars leave text outside every node, such as the literal parts of a TypeScript template literal type.
+- **Stable:** formatting and line movement with equal node structure.
+- **Invalidates:** a file move, any structure change in the containing file, a dependency change, a reported-evidence change.
+- Equal occurrences in one file get different structural paths (document order), and removing one changes the file structure. An acceptance cannot transfer to an equal sibling.
 
-## State evidence
+## Change evidence: `git-change` v2
 
-The `source-structure` scheme has version 3. It hashes these values:
+| In                                             | Out                |
+| ---------------------------------------------- | ------------------ |
+| detector-selected `evidence`                   | commit identifiers |
+| normalized before and after paths              | line positions     |
+| operation: `add`, `delete`, `modify`, `rename` |                    |
+| detector-owned occurrence `key`                |                    |
 
-- The normalized repository-relative path.
-- The semantic structure of the containing file. The structure is a preorder list of node types and child counts, the text of each leaf, and the source text between the children of each inner node. It excludes positions.
-- An occurrence key. The key contains a structural child path or a unique detector-owned key.
+- An equal normalized change survives a rebase. A new base invalidates only when it changes the material comparison. A rename or move is material.
+- The detector owns its evidence semantics. `key` must be non-empty, unique per file, and stable across line movement.
 
-A grammar can leave source text outside every node. The literal parts of a TypeScript template literal type are an example. A gap between children that contains anything other than whitespace is evidence and enters the structure verbatim. A gap that contains only whitespace is formatting and enters as an empty string.
+## Two version fields, two jobs
 
-The engine converts CRLF and CR line endings to LF when it reads a source file or a binding dependency. A checkout with `core.autocrlf` and an LF checkout produce equal fingerprints.
+| Field                                | Controls                   |
+| ------------------------------------ | -------------------------- |
+| `AcceptanceRecord.schemaVersion`     | decoding the stored record |
+| `Fingerprint.version` (per `scheme`) | comparing evidence         |
 
-Formatting and line movement do not change the fingerprint when the node structure stays equal. A file move or a change to the containing file structure invalidates the acceptance. Explicit binding dependency contents and optional reported evidence also enter the fingerprint.
+`AcceptanceRecord` = `schemaVersion`, `source`, `fingerprint`, `lineageKey?`, `reason`, `authority`, `actor?`, `acceptedAt`. Version 0.2 decodes `schemaVersion: 1` only and never infers equivalence between fingerprint versions.
 
-Two equal occurrences in one file get different fingerprints. Structural paths follow document order. The file structure also changes when an occurrence disappears. An acceptance cannot transfer to an equal sibling.
+## The gate opens only when all four hold
 
-## Change evidence
+1. The engine supports the acceptance fingerprint and the finding fingerprint: only `source-structure` v3 and `git-change` v2.
+2. Every `FindingSource` field is equal, `reviewEpoch` included.
+3. `scheme`, `version`, and `digest` are equal.
+4. Authority suffices: `human` satisfies both policies, `agent` only `agent` policy. Moving a binding to `human` makes agent acceptances insufficient.
 
-The `git-change` scheme has version 2. It hashes these values:
+Anything else leaves the finding unresolved. A malformed or duplicate record is a configuration error. A fingerprint error never opens a gate.
 
-- The detector-selected `evidence` value.
-- The normalized before path and after path.
-- The Git operation: `add`, `delete`, `modify`, or `rename`.
-- The detector-owned occurrence `key`.
+## Lineage is context, never authority
 
-The fingerprint does not use commit identifiers. An equal normalized change keeps its fingerprint after a rebase. A changed base invalidates the acceptance when it changes the material comparison. A rename or move is material.
+- **Key:** state = binding id + path + occurrence key. Change = the detector's key, else binding id + after path + occurrence key.
+- **Match:** same lineage key, standard id, detector id, and binding id, and the record does **not** satisfy the finding. The most recent wins.
+- **Shown by** `check`, `explain`, and the review SPA with reason, authority, and date, and by the GitHub action with the prior reason only. Always labelled context only.
+- An agent can use it to re-judge an agent-authority finding. A human-authority finding needs a new human acceptance.
 
-A change detector owns its evidence semantics. It must keep `key` stable across line movement.
+## Only a complete check removes stale records
 
-## Acceptance record and compatibility
+A record is stale when a complete check (`check --all`, no file or rule filter) has no equal finding.
 
-An `AcceptanceRecord` contains `schemaVersion`, `source`, `fingerprint`, an optional `lineageKey`, `reason`, `authority`, an optional `actor`, and `acceptedAt`.
+| Operation                             | Removes                      | Why                                           |
+| ------------------------------------- | ---------------------------- | --------------------------------------------- |
+| complete `check`, `acceptances clean` | stale records                | It sees every finding.                        |
+| partial `check`                       | nothing                      | It cannot see unexamined findings.            |
+| accept, approve, import               | only the same exact identity | Related lineage never removes another record. |
 
-The record schema version controls decoding. The fingerprint version controls evidence comparison. The implementation does not use one version field for both concerns.
+`acceptances import` checks every decision against a complete scan and the reviewed source, all-or-nothing. Git keeps old reasons; the core keeps no archive or ledger.
 
-An acceptance opens a gate only when all these conditions are true:
+## Consequences
 
-- The engine supports both fingerprint schemes and versions.
-- Every `FindingSource` field is equal.
-- The fingerprint scheme, version, and digest are equal.
-- The acceptance authority satisfies the finding authority.
+| Gain                                                          | Cost                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Conservative reuse: formatting and line moves keep decisions. | Any structure change in the containing file needs a new review.     |
+| Prior reasoning cuts rework without keeping dead authority.   | Detector authors own evidence semantics as public contract.         |
+|                                                               | Every fingerprint change is a compatibility event in release notes. |
 
-Any mismatch keeps the finding unresolved.
+## Rejected options
 
-A `human` acceptance satisfies `agent` and `human` policy. An `agent` acceptance satisfies only `agent` policy. A binding change from `agent` to `human` authority makes existing agent acceptances insufficient.
+| Option                                   | Why not                                                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Keep acceptance after any related change | Approval survives after the evidence that justified it changes.                                         |
+| Invalidate on any text change            | Safe but noisy: formatting and line moves force new judgment.                                           |
+| One version number                       | Storage and fingerprint semantics change for different reasons; one field hides the migration boundary. |
+| Permanent lineage records                | Recreates an event ledger. Git already keeps old records.                                               |
+| Delete stale records after every check   | A partial check can delete a valid acceptance it did not examine.                                       |
 
-An unknown scheme or version keeps the finding unresolved. A malformed or duplicate acceptance record causes a configuration error. The engine never opens a gate after a fingerprint error. Version 0.2 decodes schema version 1 only and does not infer equivalence between fingerprint versions.
-
-## Lineage context
-
-Lineage helps an agent or a human understand a related prior decision. Lineage does not transfer acceptance.
-
-Every finding has a `lineageKey`. A state finding derives it from the binding identifier, the path, and the occurrence key. A change detector can supply its own key. Otherwise the engine derives it from the binding identifier, the path, and the occurrence key.
-
-The engine finds lineage when a stored record has the same lineage key, standard identifier, detector identifier, and binding identifier, and the record does not satisfy the finding. It returns the most recent related record.
-
-The check output, the `explain` command, and the review SPA show the prior reason, authority, and date. They label it as context only.
-
-An agent can use lineage to make a new judgment for an agent-authority finding. A human-authority finding needs a new human acceptance after invalidation.
-
-## Stale record cleanup
-
-A stale acceptance has no equal finding in a complete check.
-
-A complete check removes stale records. A partial check cannot prove that a record is stale and never removes one.
-
-A writer replaces only the same exact acceptance identity. Related lineage never removes another record during a partial update; a complete check proves which identities are stale.
-
-`acceptances import` validates each record against a complete check and rejects records that no longer match.
-
-Git preserves prior reasons after cleanup. The core does not keep a lineage archive or event ledger.
-
-## Rejected alternatives
-
-### Keep acceptance after any related change
-
-This model reduces repeated review. It can preserve approval after the evidence that justified it changes.
-
-### Always invalidate on text change
-
-This model is safe but noisy. Formatting and line movement would create unnecessary repeated judgment.
-
-### One version number
-
-Storage format and fingerprint semantics change for different reasons. One version number hides the migration boundary.
-
-### Permanent lineage records
-
-This model recreates an event ledger. Git already preserves old acceptance records.
-
-### Delete stale records after every check
-
-A partial check cannot know whether an unexamined finding still exists. This model can delete a valid acceptance.
-
-## Reconsideration conditions
-
-Reconsider this model when one condition occurs:
+## Reconsider when
 
 - The engine can prove canonical evidence equivalence for a specific fingerprint upgrade.
 - JSONL current-state storage becomes too large or too slow.
 - A provider needs signed human authority.
 
-## Consequences
+<details>
+<summary>Revision history</summary>
 
-Acceptance reuse stays conservative.
+- 2026-08-10: Proposed, then extended with standard revisions, binding digests, and independent authority validation. Accepted after the 0.2 implementation and compatibility tests.
+- 2026-08-28: Condensed and aligned with 0.2.
+- 2026-09-05: `source-structure` v2 keeps Unicode distinctions and adds containing-file structure and declared dependencies, because probes showed node-only evidence kept decisions after a guard was removed. Structural occurrence identity fixes lineage collisions. Partial updates keep other exact identities even when lineage matches. v1 stays readable but needs new review.
+- 2026-09-20: `source-structure` v3 adds text between child nodes and reads with LF line endings, because v2 gave template literal types with different literal text one fingerprint, and CRLF and LF checkouts different ones. v2 stays readable but needs new review.
+- 2026-09-23: Reformatted. Recorded `reviewEpoch`, path rules, `FingerprintError`, the change lineage fallback, and all-or-nothing import. Decision unchanged.
 
-Prior reasoning reduces repeated work without keeping dead authority alive.
-
-Detector authors define evidence semantics as part of their public contract.
-
-A fingerprint change is a documented compatibility event in the release notes.
-
-## Revision history
-
-- 2026-08-10: The team proposed versioned fingerprints, non-authoritative lineage, and complete-view cleanup.
-- 2026-08-10: The team added standard revisions, binding digests, and independent authority validation.
-- 2026-08-10: The team accepted the record after the 0.2 implementation and compatibility tests.
-- 2026-08-28: Condensed and aligned with the 0.2 implementation.
-
-- 2026-09-05: Version 2 preserves Unicode distinctions and includes containing-file structure and declared dependencies. Regression probes showed that node-only evidence retained decisions after guard removal. Structural occurrence identity fixes lineage collisions. Partial updates preserve other exact identities even when lineage matches. Version 1 fingerprints remain readable but require new review.
-- 2026-09-20: Version 3 of `source-structure` adds the source text that lies between child nodes and reads sources and dependencies with LF line endings. A pre-release review showed that version 2 gave two template literal types with different literal text the same fingerprint, and gave one file different fingerprints on CRLF and LF checkouts. Version 2 fingerprints remain readable but require new review.
+</details>

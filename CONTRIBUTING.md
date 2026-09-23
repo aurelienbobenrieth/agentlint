@@ -1,42 +1,37 @@
 # Contributing
 
-agentlint is a personal open-source project maintained by Aurelien Bobenrieth. Code contributions and pull requests are not currently accepted. Issues and discussions are welcome for bug reports, questions, and design feedback.
+agentlint is a personal open-source project maintained by Aurelien Bobenrieth. **Issues and discussions are welcome** for bug reports, questions, and design feedback. **Code contributions and pull requests are not currently accepted.**
 
-The sections below document the maintainer workflow. Read [`AGENTS.md`](AGENTS.md) for the repository invariants and [`docs/decisions/`](docs/decisions/README.md) for the reasons behind them.
+What follows is the maintainer workflow. Invariants live in [`AGENTS.md`](AGENTS.md); their reasons in [`docs/decisions/`](docs/decisions/README.md).
 
 ## Setup
 
-Node 22.19+ and pnpm 10+. The repository declares its package manager, so Corepack picks the right pnpm.
+Node 22.19+ and pnpm 10+ (Corepack picks the declared pnpm). Point your editor at the workspace TypeScript so the Effect language service plugin loads.
 
 ```bash
 pnpm install
 pnpm build      # CLI, declarations, review UI (dist/ui), grammar WASM (dist/wasm)
-pnpm check      # typecheck (sources and tests), oxlint, oxfmt, knip, skill validation, tests
-```
+pnpm check      # architecture, typecheck (sources and tests), oxlint, oxfmt, knip,
+                # skill validation, action smoke test, tests, coverage
 
-Other useful commands:
-
-```bash
 pnpm test:watch                      # package tests in watch mode
 pnpm --filter @agentlint/review dev  # review SPA against a running `agentlint review --port 4973`
 pnpm fmt                             # format everything
 pnpm refs:sync                       # refresh the reference clones under .agents/ref-repos
 ```
 
-Configure your editor to use the workspace TypeScript so the Effect language service plugin loads.
+## Maintainer rules
 
-## Maintainer workflow
-
-1. Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI separate. A feature lives in `packages/agentlint/src/features/<name>/` as a `request.ts` and a `handler.ts`.
-2. Prefer Effect services for infrastructure and Effect Schema for anything public or persisted.
-3. Product rules belong in consumer repositories or rule packages, never in the core.
-4. Acceptance compatibility is gate-critical. Changes to source identity, fingerprints, authority, lineage, or cleanup need tests.
-5. Add a changeset (`pnpm changeset`) for anything a user can notice: public API, CLI, persisted data, dependencies, packaged skills. Use conventional commit prefixes.
+1. Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI apart. A feature is `packages/agentlint/src/features/<name>/` with a `request.ts` and a `handler.ts`.
+2. Effect services for infrastructure; Effect Schema for anything public or persisted.
+3. Product rules live in consumer repositories or rule packages, never in the core.
+4. Acceptance compatibility is gate-critical: changes to source identity, fingerprints, authority, lineage, or cleanup need tests.
+5. Anything a user can notice (public API, CLI, persisted data, dependencies, packaged skills) needs a changeset: `pnpm changeset`. Use conventional commit prefixes.
 6. Run `pnpm fmt` and `pnpm check` before opening the pull request.
 
-## Verifying the package
+## Smoke-test the tarball after dependency, build, or CLI-entry changes
 
-CI packs the tarball and installs it in an empty project. Do the same locally when you touch dependencies, the build, or the CLI entry:
+CI packs the tarball and installs it in an empty project. Locally:
 
 ```bash
 pnpm --filter @aurelienbbn/agentlint pack --pack-destination /tmp
@@ -45,8 +40,16 @@ node scripts/smoke-package.mjs /tmp/aurelienbbn-agentlint-*.tgz
 
 ## Releasing
 
-`release.yml` turns pending changesets into a version pull request. Merging it bumps the package and the skill frontmatter (`scripts/version.sh`). Pushing the matching `v*.*.*` tag runs `publish.yml`, which rebuilds, checks, smoke-tests, and publishes with provenance.
+```mermaid
+flowchart LR
+  C[Pending changesets] --> R[release.yml runs scripts/version.sh<br/>and opens a version PR]
+  R --> M[Merge bumps package,<br/>skill frontmatter, action refs]
+  M --> T[Push matching<br/>v*.*.* tag]
+  T --> P[publish.yml]
+```
+
+`publish.yml` rejects a tag that doesn't match the package version or isn't on `main`, then rebuilds, checks, smoke-tests, publishes with provenance, and creates the GitHub release.
 
 ## Writing rules
 
-The package README covers the rule API. In short: one `defineRule` value composes a revisioned `standard`, a versioned `detector`, and a repository `binding`. Fixtures are proof samples, not a catalogue of mistakes. Run `agentlint rules test` and calibrate with `agentlint rules scan --review` before enabling a binding.
+One `defineRule` composes a revisioned `standard`, a versioned `detector`, and a repository `binding` ([guide](docs/guide/writing-rules.md)). Fixtures are proof samples, not a catalogue of mistakes. Before enabling a binding, run `agentlint rules test` and calibrate with `agentlint rules scan --review`.

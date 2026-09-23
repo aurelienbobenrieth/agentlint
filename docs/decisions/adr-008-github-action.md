@@ -7,78 +7,90 @@
 
 ## Decision
 
-agentlint ships one reusable GitHub action at `action/` in this repository. Consumers reference it as `aurelienbobenrieth/agentlint/action@<tag>`.
-
-The action is a thin adapter over the CLI. It runs the same `check` as a developer runs locally, publishes the result on the pull request, and lets a human with write access record an acceptance from the pull request.
-
-The `agentlint` check run is the gate. A consumer marks it as a required status check.
+**One reusable action, `aurelienbobenrieth/agentlint/action@<tag>` (in `action/`), thinly wraps the CLI: it runs the same `check` as a developer, publishes the result on the pull request, and lets a collaborator with write access approve there. The `agentlint` check run is the gate; consumers make it a required status check.**
 
 ## Context
 
-An agent that works autonomously ends its work with a pull request. Findings with `agent` authority are resolved inside the agent loop. Findings with `human` authority wait for a person.
+- An autonomous agent ends with a pull request. `agent` findings resolve in the agent loop. `human` findings wait for a person.
+- That person had to download the artifact, open it, export, import, and push. Each step is small; together they stop the review from happening.
+- A disposable review site per pull request cannot write to the repository: it removes one download and adds a deployment.
 
-Before this record, the only path for that person was to download the review artifact, open it locally, export decisions, import them, and push. Each step is small. Together they are enough friction that the review does not happen.
+## One run, three surfaces
 
-A disposable review site per pull request was considered and rejected. It cannot write to the repository, so it removes one download and adds a deployment.
+| Surface                                      | Content                                                                                                                      |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `agentlint` check run on the head commit     | `success` = open gate, `failure` = unresolved findings, `action_required` = configuration error. One annotation per finding. |
+| One sticky summary comment                   | Edited in place. Every finding with a file:line link, authority, and the exact command that resolves it.                     |
+| One inline thread per finding on a diff line | Standard, agent proposal if any, prior reason (context only) after an invalidation.                                          |
 
-## Surface on the pull request
+- GitHub allows inline comments only on diff lines, so other findings appear only in the summary.
+- Threads reconcile by finding digest: still present → kept; accepted or gone → one reply, then resolved.
 
-One run of the action produces three things.
+## Approving from the pull request
 
-A check run named `agentlint` on the head commit. Its conclusion follows the CLI exit code: `success` for an open gate, `failure` for unresolved findings, `action_required` for a configuration error. It carries one annotation per finding.
+```mermaid
+sequenceDiagram
+  actor H as Collaborator (write / maintain / admin)
+  participant A as Action job
+  participant B as PR branch
+  H->>A: reply "/agentlint approve <reason>"<br/>or "/agentlint approve <digest|path:line> --reason ..."
+  A->>A: refuse forks, then check permission
+  A->>A: agentlint approve, AGENTLINT_ACTOR=human:<login>
+  A->>B: commit acceptances.jsonl (author = approver), push
+  Note over A,B: a GITHUB_TOKEN push starts no workflow
+  A->>A: check once more
+  A->>H: update check run, summary, threads
+```
 
-One sticky summary comment, edited in place on every run. It lists every finding with a link to the file and line, the authority, and the exact command that resolves it.
+- The gate opens when the last acceptance lands. No workflow rerun per approval.
+- `/agentlint check` rescans and republishes.
+- If the branch moves during the push, the approval is reapplied on the new head, where the CLI rechecks the evidence, up to 3 attempts. Correctness does not depend on serialized runs.
+- Authority is accountability, not identity: the record names the GitHub login and the push is in branch history, the same boundary as a local acceptance.
 
-One inline review thread per finding that sits on a line of the pull request diff. The thread shows the standard, the agent proposal when there is one, and the prior reason after an invalidation. Findings outside the diff appear only in the summary, because GitHub accepts inline comments only on diff lines.
+## Forks get no gate
 
-The action reconciles threads by finding digest. A finding that is still present keeps its thread. A finding that is accepted or gone gets one reply and its thread is resolved.
+With a read-only token, the action prints workflow annotations, uploads the artifact, exits with the gate code, writes no comment or check run, and refuses approval commands.
 
-## Human authority from the pull request
+> [!WARNING]
+> A fork's job status comes from the fork's own configuration and acceptances, so it is not a trustworthy gate. A maintainer pushes the commits to a branch here to run the real gate. `pull_request_target` is refused because repository configuration executes code.
 
-A collaborator with `write`, `maintain`, or `admin` permission replies `/agentlint approve <reason>` in a finding thread, or comments `/agentlint approve <digest> --reason "..."` on the pull request.
+## Local side: `agentlint pr <number>`
 
-The action runs `agentlint approve` on the pull request branch with `AGENTLINT_ACTOR=human:<login>`, commits `.agentlint/acceptances.jsonl` with the approver as author, and pushes. The commit does not start a new workflow run. The same job runs `check` once more and updates the check run, the summary, and the thread.
-
-The gate opens when the last acceptance lands. No workflow run is repeated per approval.
-
-Authority stays accountability, not identity. The acceptance record names the GitHub login. The push is visible in the branch history. This is the same security boundary as a local acceptance.
-
-## Read-only pull requests
-
-A pull request from a fork runs with a read-only token. The action prints workflow annotations, uploads the artifact, and exits with the gate code. It does not comment, does not create a check run, and refuses approval commands.
-
-## Local agent
-
-`agentlint pr <number>` downloads the review artifact of a pull request with the `gh` CLI and opens it in the review workspace. It is a client convenience over the artifact contract, not a bot, and it keeps the core free of GitHub credentials.
+Downloads the pull request's review artifact with `gh` and opens it in the review SPA. A client convenience over the artifact contract, not a bot, so the core holds no GitHub credentials.
 
 ## Testing
 
-Logic lives in plain Node modules under `action/src` and is tested with recorded event payloads and a mocked `fetch`. A `dry-run` input makes the action compute and print every write instead of sending it. This repository runs the action in dry-run mode against `examples/demo` on every pull request. A separate throwaway repository, `agentlint-playground`, consumes the action from a branch to exercise real threads, approvals, and pushes.
-
-## Rejected alternatives
-
-Disposable review site per pull request: It cannot write acceptances, it publishes review data, and it costs a deployment per pull request.
-
-Approve by GitHub review: One "Approve" would accept every human finding at once, without a reason per finding.
-
-Workflow re-run per approval: Each approval would repeat the full pipeline. The check run already carries the gate state, so one CLI scan inside the approval job is enough.
-
-Bot review with "request changes": Some teams forbid bots from blocking merges, and a bot approval is misleading. The action never submits an approving or blocking review. The check run carries the decision.
-
-Mandatory personal access token: The default `GITHUB_TOKEN` is enough because no workflow needs to be re-triggered.
-
-## Reconsideration conditions
-
-Add a GitHub App identity if a consumer needs a signed, non-repudiable acceptance rather than an accountable login.
-
-Add a second provider adapter only when a consumer on that provider needs it. The artifact contract and the CLI stay the shared surface.
+- Plain Node modules in `action/src`, tested with recorded event payloads and a mocked `fetch`.
+- `dry-run: true` prints every write instead of sending it. The `Action smoke` workflow runs it on `examples/demo` for every pull request.
+- The throwaway `agentlint-playground` repository uses the action from a branch for real threads, approvals, and pushes.
 
 ## Consequences
 
-GitHub-specific code exists only in `action/` and in the `pr` command. The engine, the acceptance model, and the artifact contract are unchanged.
+| Gain                                                       | Cost                                                                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Human review happens on the pull request.                  | GitHub-specific code in `action/` and the `pr` command.                                                                         |
+| Engine, acceptance model, and artifact contract unchanged. | The action's default `version` is pinned to the package; both move at release (`packages/agentlint/scripts/sync-versions.mjs`). |
+| The default `GITHUB_TOKEN` is enough.                      | Fork pull requests cannot be gated or approved from GitHub.                                                                     |
 
-The action version is pinned to the package version and both move together at release.
+## Rejected options
 
-## Revision history
+| Option                            | Why not                                                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Disposable review site per PR     | Cannot write acceptances, publishes review data, costs a deployment each time.                                                                             |
+| Approve by GitHub review          | One "Approve" would accept every human finding at once, with no reason per finding.                                                                        |
+| Workflow rerun per approval       | Repeats the pipeline. The check run holds gate state, so one scan in the approval job suffices.                                                            |
+| Bot review with "request changes" | Some teams forbid bots from blocking merges, and a bot approval misleads. The action never submits an approving or blocking review; the check run decides. |
+| Mandatory personal access token   | Nothing needs retriggering, so `GITHUB_TOKEN` is enough.                                                                                                   |
+
+## Reconsider when
+
+- A consumer needs a signed, non-repudiable acceptance, not an accountable login → add a GitHub App identity.
+- A consumer on another provider needs it → add that adapter. The artifact contract and CLI stay the shared surface.
+
+<details>
+<summary>Revision history</summary>
 
 - 2026-08-30: Accepted.
+- 2026-09-23: Reformatted. Recorded the version sync script, the `path:line` selector, `/agentlint check`, the push retry, the untrusted fork status, and the `pull_request_target` refusal. Decision unchanged.
+
+</details>

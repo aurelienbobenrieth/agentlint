@@ -7,120 +7,129 @@
 
 ## Decision
 
-Each detector has one lifecycle. The lifecycle is `state` or `change`.
+**Each detector has one lifecycle, `state` or `change`. One standard can mix both, and the binding enables each detector on its own.**
 
-One standard can use multiple detectors. Detectors for one standard can have different lifecycles.
-
-A repository binding enables each detector independently.
-
-AST matching, path selection, diffs, and repository inspection are detection capabilities. They are not lifecycles.
+AST matching, path selection, diffs, and repository inspection are detection capabilities, not lifecycles.
 
 ## Context
 
-The first agentlint engine found AST nodes in current source files.
+- The first engine only found AST nodes in current files.
+- Some concerns exist only as a before-and-after relationship. Both kinds must fit without a general event system.
+- The model must fix how long a finding and its acceptance live.
 
-Some recurring review concerns depend on a before-and-after relationship. The project needs a model that supports both concerns without one general event system.
+## Two questions, two lifetimes
 
-The model must also define the lifetime of a finding and its acceptance.
+|                    | `state`                                  | `change`                                                       |
+| ------------------ | ---------------------------------------- | -------------------------------------------------------------- |
+| Asks               | Does the condition exist now?            | Did this change make it?                                       |
+| Examples           | unbounded query, unguarded auth route    | removed public export, added dependency, destructive migration |
+| Detector           | `match` and/or `createOnce`              | `detect({ context, options })` over a `ChangeSet`              |
+| Finding lives      | while the normalized evidence stays      | while the change exists. Git keeps the acceptance after merge  |
+| `check` runs it on | changed files. `--all`: whole repository | every run                                                      |
+| Fingerprint        | `source-structure`                       | `git-change`                                                   |
 
-## State lifecycle
+- A state scan covers the whole repository without `--all` when any active state rule has `createOnce` (unless `scan: "file"`), `scan: "repository"`, or binding `dependencies`.
+- Change rules run every time because the final state may not hold enough evidence to find them again.
 
-A state rule asks: Does this judgment condition exist in the current repository?
+## Changes are diffs from a merge base
 
-Examples: an unbounded query exists, a dangerous API call exists, an authentication route lacks required handling.
+```mermaid
+flowchart LR
+  R{"base ref:<br/>--base, else config base,<br/>else origin/HEAD, origin/main,<br/>main, origin/master, master"} --> M["merge-base HEAD ref"]
+  M --> S["ChangeSet vs working tree"]
+  R -. none .-> E["error, exit 2"]
+  M -. "none (e.g. shallow clone)" .-> E
+```
 
-A state detector declares `match` patterns or a `createOnce` visitor. It receives the current source file. The finding stays applicable while the normalized evidence stays in the repository.
+- The working tree side includes committed, staged, unstaged, and untracked content.
+- `ChangeSet`: `baseline` (`ref`, `commit`) and one entry per file with `status`, `previousPath`, `before`/`after` snapshots, and `hunks`.
 
-`agentlint check` runs state rules on changed files. `agentlint check --all` runs them on the complete repository.
+## Capabilities
 
-## Change lifecycle
+| Capability     | State                                                    | Change                       |
+| -------------- | -------------------------------------------------------- | ---------------------------- |
+| File selection | binding `include`/`exclude`, config `ignores`            | same                         |
+| Syntax         | `match`: exactly one of `pattern` or tree-sitter `query` | none. `detect` parses itself |
+| Imperative     | `createOnce` escape hatch                                | `createOnce` is not allowed  |
 
-A change rule asks: Did this change make a judgment condition?
+```ts
+createOnce({ context, options }) {       // once per rule, before any file
+  return {
+    before(path) {},                     // each file, absolute path. Return false to skip
+    call_expression(node) {},            // any grammar node type
+    after() {},                          // once. Findings are drained after it
+  };
+}
+```
 
-Examples: a public export was removed, a dependency was added, a migration added a destructive operation.
+No separate text search. Prefer syntax when it is more precise.
 
-A change detector implements `detect(context, options)`. The context contains a normalized `ChangeSet`. The set has the selected Git baseline, one entry for each changed file with its status, previous path, before and after snapshots, and hunks.
+## One standard or two
 
-The engine compares the merge base of the selected ref with the complete working tree. `--base <ref>` or the config `base` selects the ref. Otherwise the engine detects an upstream or conventional main branch. The engine stops with an error when it cannot resolve a base.
+| Situation                                    | Model                                                                             |
+| -------------------------------------------- | --------------------------------------------------------------------------------- |
+| Detectors ask the same question              | One standard (e.g. destructive migration: dropped table, dropped column, raw SQL) |
+| Adoption needs state, precision needs change | One standard, a state and a change detector                                       |
+| Questions or guidance differ                 | Two standards                                                                     |
+| One detector wants two lifecycles            | Not allowed                                                                       |
 
-`agentlint check` runs every enabled change rule on each run. The final repository state might not contain sufficient evidence to make the finding again. Git keeps the acceptance after the change merges.
-
-## Detection capabilities
-
-A binding selects files with `include` and `exclude` globs. A config can add repository-wide `ignores`.
-
-A state detector matches syntax with a pattern or a tree-sitter query. `createOnce` is the imperative escape hatch. The engine calls `createOnce` one time for each rule before it visits files. The visitor examines every selected file. `before(path)` runs for each file with the absolute path of the file and can return `false` to skip it. `after()` runs one time at the end. The engine drains reported findings after `after()`.
-
-A change detector inspects the change set directly. It can parse changed content with its own logic. Do not use `createOnce` for change rules.
-
-Text search is not a separate capability. Use syntax matching when syntax gives better precision.
-
-## One standard or two standards
-
-Use one standard when multiple detectors ask the same review question. For example, one destructive migration standard can detect a dropped table, a dropped column, and irreversible raw SQL.
-
-One standard can have a state detector for adoption scans and a change detector for precise change evidence.
-
-Use two standards when the review questions or guidance differ. Do not give one detector two lifecycles.
-
-## Public API
-
-One `defineRule` function accepts both lifecycles. The `lifecycle` field discriminates the detector and fixture contracts. TypeScript overloads and a runtime validation reject invalid combinations.
+## One discriminated `defineRule`
 
 ```ts
 defineRule({
-  lifecycle: "change",
+  lifecycle: "change", // selects the detector and fixture contracts
   standard: { id: "api/public-exports", revision: 1, title: "...", guidance: { standard: "..." } },
-  detector: { id: "ts/public-export-removed", version: 1, detect(context) {} },
+  detector: { id: "ts/public-export-removed", version: 1, detect({ context }) {} },
   binding: { id: "api/public-exports", authority: "agent" },
 });
 ```
 
-Every finding uses one `FindingRecord`. It contains the rule id, lifecycle, authority, source identity, fingerprint, optional lineage key, file, position, message, and source snippet. A change finding does not need an AST node.
+- TypeScript overloads and runtime validation reject invalid combinations.
+- Every finding is one `FindingRecord` (rule id, lifecycle, authority, source, fingerprint, optional lineage key, file, position, message, snippet, related files). No AST node required.
 
-## Fixtures and fingerprints
+## Fixtures are regression evidence, not proof
 
-A detector can declare `mustReport` and `mustStaySilent` fixtures. A state fixture is a source string, a labeled source, or a small in-memory repository. A change fixture is a before and after repository pair or an exact change set. `agentlint rules test` runs them.
+- `mustReport` and `mustStaySilent`, run by `agentlint rules test`.
+- State: a source string, a labeled source, or a small in-memory repository. Change: a `before`/`after` repository pair or an exact `ChangeSet`.
+- A newly found missed case adds a fixture. Fixture code is never sent to the agent as guidance.
 
-Fixtures are regression evidence. They do not prove that a detector finds all cases. A newly found missed case adds a fixture. The engine never sends fixture code to the agent as guidance.
+## Fingerprints ignore line numbers
 
-A state fingerprint uses the `source-structure` scheme. It digests the normalized path, the semantic structure of the containing file, the contents of the declared binding dependencies, the optional reported evidence, and an occurrence key. The occurrence key is the structural child path of the reported node or a unique detector-owned key. Two equal conditions in one file get different fingerprints. Line numbers are not an input.
+| Scheme             | Digests                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `source-structure` | path, semantic structure of the file, declared dependency contents, optional `evidence`, occurrence key |
+| `git-change`       | detector `evidence`, before and after paths, file operation, detector `key`                             |
 
-A change fingerprint uses the `git-change` scheme. It digests the detector `evidence`, the before and after paths, the file operation, and the detector `key`. [ADR-005](./adr-005-fingerprints-and-lineage.md) defines the schemes.
-
-## Rejected alternatives
-
-AST as the rule type: This model makes an implementation capability the product boundary. It cannot represent concerns that exist only in a change.
-
-Source, file, change, project, session, and command scopes: This model mixes evidence location, lifecycle, and evaluation time. It creates overlapping terms and unclear acceptance lifetimes.
-
-One general event rule: This model gives maximum flexibility but removes useful constraints. It makes fixtures, fingerprints, and integrations more difficult to define.
-
-Lifecycle on the standard: This model prevents one review question from using state and change detectors. It couples durable policy to one detection strategy.
-
-## Reconsideration conditions
-
-The project reconsiders this model when a real concern needs a third acceptance lifetime.
-
-The project reconsiders the change baseline when an integration needs a comparison that is not a Git merge base.
+The occurrence key is the node's structural child path or a unique detector `key`, so two equal conditions in one file differ. See [ADR-005](./adr-005-fingerprints-and-lineage.md).
 
 ## Consequences
 
-The finding domain does not require an AST node.
+| Gain                                                             | Cost                                       |
+| ---------------------------------------------------------------- | ------------------------------------------ |
+| Findings need no AST node.                                       | Two detector contracts and fixture shapes. |
+| Lifecycle is separate from evaluation time. Run `check` anytime. | Change rules need a resolvable Git base.   |
+| Fixtures cover source, repository, and before-and-after.         | Two fingerprint schemes to version.        |
 
-The engine separates rule lifecycle from evaluation time. An integration can run `check` at any time.
+## Rejected alternatives
 
-The test API supports source, repository, and before-and-after fixtures.
+| Option                                            | Why not                                                                                |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| AST as the rule type                              | Makes a capability the product boundary. Cannot express change-only concerns.          |
+| Source/file/change/project/session/command scopes | Mixes evidence location, lifecycle, and evaluation time. Unclear acceptance lifetimes. |
+| One general event rule                            | Flexible but unconstrained. Fixtures, fingerprints, and integrations get harder.       |
+| Lifecycle on the standard                         | One question could not use both lifecycles. Couples policy to one detection strategy.  |
 
-The fingerprint design supports state and change evidence with separate schemes.
+## Reconsider when
 
-## Revision history
+- A real concern needs a third acceptance lifetime.
+- An integration needs a comparison other than a Git merge base.
 
-- 2026-08-10: The team proposed the state and change lifecycle model.
-- 2026-08-10: The team separated detector fixtures from positive agent guidance.
-- 2026-08-10: The team separated durable standards from executable detectors.
-- 2026-08-10: The team moved lifecycle from the standard to each detector.
-- 2026-08-10: The team accepted one discriminated `defineRule` API.
-- 2026-08-10: The team completed the state and change pipelines for 0.2.
+<details>
+<summary>Revision history</summary>
+
+- 2026-08-10: Proposed and accepted. Separated fixtures from agent guidance and standards from detectors, moved lifecycle to the detector, adopted one discriminated `defineRule`, completed both pipelines for 0.2.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-20: Aligned the `before` hook argument and the state fingerprint inputs with the implementation.
+- 2026-09-23: Reformatted for scanning. Recorded when a state scan covers the whole repository, the base fallback order, and the one-of `pattern` or `query` rule. Decision unchanged.
+
+</details>
