@@ -4,7 +4,15 @@ import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { PersistedReview } from "../../shared/model";
 
 export const fields = {
-  LoadedState: { state: ReviewStatePayload, saved: S.NullOr(PersistedReview), savedUnreadable: S.Boolean },
+  /**
+   * `savedError` reports a browser store that could not be read at all; the review then opens without saved drafts.
+   */
+  LoadedState: {
+    state: ReviewStatePayload,
+    saved: S.NullOr(PersistedReview),
+    savedUnreadable: S.Boolean,
+    savedError: S.NullOr(S.String),
+  },
   FailedLoadState: { message: S.String },
   ClickedReloadReview: {},
   /**

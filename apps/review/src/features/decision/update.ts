@@ -145,9 +145,39 @@ export const submit = ({
   });
 };
 
+/**
+ * A detached acceptance exports the reason as it stands at finish, so clearing it withdraws the acceptance instead of
+ * leaving one the import would reject.
+ */
+const editReason = ({
+  model,
+  findingId,
+  value,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+  readonly value: string;
+}): UpdateReturn => {
+  const edited = updateDraft({ model, findingId, change: (draft) => ({ ...draft, reason: value }) });
+  if (
+    model.screen._tag !== "Reviewing" ||
+    model.screen.state.transport !== "detached" ||
+    model.screen.state.mode !== "review" ||
+    draftFor({ model, findingId }).disposition !== "accept"
+  )
+    return persistLater(edited);
+  const finding = findingById({ state: model.screen.state, findingId });
+  if (finding === undefined || effectiveReason({ model: edited, finding }).length > 0) return persistLater(edited);
+  const notified = enqueueToast({
+    model: updateDraft({ model: edited, findingId, change: (draft) => ({ ...draft, disposition: "none" }) }),
+    message: "Acceptance withdrawn: accepting needs a reason.",
+    tone: "neutral",
+  });
+  return appendCommands({ result: persist(notified.model), commands: notified.commands ?? [] });
+};
+
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
-  UpdatedReason: ({ findingId, value }) =>
-    editDraft({ model, findingId, change: (draft) => ({ ...draft, reason: value }) }),
+  UpdatedReason: ({ findingId, value }) => editReason({ model, findingId, value }),
   SelectedCalibrationReason: ({ findingId, reason }) =>
     persist(updateDraft({ model, findingId, change: (draft) => ({ ...draft, calibrationReason: reason }) })),
   UpdatedNote: ({ findingId, value }) =>

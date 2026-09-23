@@ -1,4 +1,10 @@
-import { BrowserRequestError, errorMessage, postJson, responseJson } from "../../shared/browser-request";
+import {
+  BrowserRequestError,
+  errorMessage,
+  postJson,
+  responseJson,
+  responseMessage,
+} from "../../shared/browser-request";
 import { Clock, Effect, Schema as S } from "effect";
 import { Command } from "foldkit";
 
@@ -14,9 +20,8 @@ export const FinishReview = Command.define("FinishReview", {
   execute: Effect.gen(function* () {
     const response = yield* postJson({ url: "/api/finish", body: "{}" });
     if (!response.ok) {
-      return yield* Effect.fail(
-        new BrowserRequestError({ operation: "Finish rejected", detail: `HTTP ${response.status}` }),
-      );
+      const detail = yield* responseMessage({ response, fallback: `HTTP ${response.status}` });
+      return yield* Effect.fail(new BrowserRequestError({ operation: "Finish rejected", detail }));
     }
     const result = yield* responseJson(response).pipe(Effect.flatMap(decodeFinishResult));
     return Message.CompletedFinish({

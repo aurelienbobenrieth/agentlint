@@ -3,7 +3,7 @@ import { currentCalibrationReport } from "./features/calibration/selectors";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
+import { DetachedDecision, type ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { agentInstructions, detachedOutput } from "./features/decision/selectors";
 import { findingContext } from "./features/detail/selectors";
 import { decodeSavedReview } from "./features/session/command";
@@ -162,6 +162,39 @@ describe("review stories", () => {
     expect(current.screen.acceptanceOutput).toContain('"type":"accept"');
     expect(current.screen.acceptanceOutput).toContain('"authority":"human"');
     expect(current.screen.acceptanceOutput).toContain('"reviewedSource":');
+  });
+
+  it("withdraws a detached acceptance whose reason is cleared, so it never exports an empty reason", () => {
+    const cleared = sendAll(model("review"), [
+      Message.UpdatedReason({ findingId: "finding-1", value: "The query is capped upstream." }),
+      Message.ClickedAccept({ findingId: "finding-1" }),
+      Message.UpdatedReason({ findingId: "finding-1", value: "   " }),
+    ]);
+    expect(cleared.drafts["finding-1"]?.disposition).toBe("none");
+    expect(cleared.toasts.at(-1)?.message).toContain("Acceptance withdrawn");
+    expect(detachedOutput({ model: cleared, acceptedAt: "2026-08-10T18:00:00.000Z" }).acceptanceOutput).toBe("");
+  });
+
+  it("exports only decisions the import schema accepts and names the rest", () => {
+    const accepted = sendAll(model("review"), [
+      Message.UpdatedReason({ findingId: "finding-1", value: "The query is capped upstream." }),
+      Message.ClickedAccept({ findingId: "finding-1" }),
+    ]);
+    const valid = detachedOutput({ model: accepted, acceptedAt: "2026-08-10T18:00:00.000Z" });
+    expect(Schema.decodeUnknownSync(Schema.fromJsonString(DetachedDecision))(valid.acceptanceOutput)).toMatchObject({
+      type: "accept",
+      reason: "The query is capped upstream.",
+    });
+
+    // A draft restored from an older build can hold an acceptance without a reason.
+    const restored: Model = {
+      ...accepted,
+      drafts: { "finding-1": { ...emptyDraft(), disposition: "accept", reason: "" } },
+    };
+    const output = detachedOutput({ model: restored, acceptedAt: "2026-08-10T18:00:00.000Z" });
+    expect(output.acceptanceOutput).toBe("");
+    expect(output.summary).toContain("1 decision(s) could not be exported and stay unresolved: finding-1.");
+    expect(detachedOutput({ model: accepted, acceptedAt: "2026-08-10" }).acceptanceOutput).toBe("");
   });
 
   it("turns requested changes into an agent handoff", () => {
@@ -722,7 +755,12 @@ describe("loaded state", () => {
   }) =>
     update({
       model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
-      message: Message.LoadedState({ state: payload, saved: saved.saved, savedUnreadable: saved.unreadable }),
+      message: Message.LoadedState({
+        state: payload,
+        saved: saved.saved,
+        savedUnreadable: saved.unreadable,
+        savedError: null,
+      }),
     });
 
   it("rejects a state that repeats a finding id", () => {
@@ -786,6 +824,23 @@ describe("loaded state", () => {
   });
 });
 
+describe("unavailable browser storage", () => {
+  it("opens the review without saved drafts and warns the reviewer", () => {
+    const result = update({
+      model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
+      message: Message.LoadedState({
+        state: state("review"),
+        saved: null,
+        savedUnreadable: false,
+        savedError: "The operation is insecure.",
+      }),
+    });
+    expect(result.model.screen._tag).toBe("Reviewing");
+    expect(result.model.toasts.at(-1)).toMatchObject({ tone: "danger" });
+    expect(result.model.toasts.at(-1)?.message).toContain("The operation is insecure.");
+  });
+});
+
 describe("attached refresh failure", () => {
   it("reports a recorded decision as saved, releases the busy state and offers a reload", () => {
     const pending = send({
@@ -812,7 +867,12 @@ describe("attached refresh failure", () => {
 
     const reloaded = send({
       current: stillDown,
-      message: Message.LoadedState({ state: reviewing(pending), saved: null, savedUnreadable: false }),
+      message: Message.LoadedState({
+        state: reviewing(pending),
+        saved: null,
+        savedUnreadable: false,
+        savedError: null,
+      }),
     });
     expect(reloaded.refreshFailed).toBe(false);
   });

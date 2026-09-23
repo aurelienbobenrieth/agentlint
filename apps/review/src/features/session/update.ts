@@ -69,7 +69,7 @@ export const rejectDuplicateIds = ({ model, id }: { readonly model: Model; reado
 });
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
-  LoadedState: ({ state, saved, savedUnreadable }) => {
+  LoadedState: ({ state, saved, savedUnreadable, savedError }) => {
     const duplicate = duplicateFindingId(state);
     if (duplicate !== null) return rejectDuplicateIds({ model, id: duplicate });
     const restored = evo(model, {
@@ -94,6 +94,15 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       selectionSettled: () => true,
     });
     const commands = [MarkDirty({ dirty: hasUnexportedDecisions(selected) })];
+    if (savedError !== null)
+      return appendCommands({
+        result: enqueueToast({
+          model: selected,
+          message: `Decisions saved in this browser could not be read (${savedError}) and are not shown. New decisions may not be saved either.`,
+          tone: "danger",
+        }),
+        commands,
+      });
     if (!savedUnreadable) return { model: selected, commands };
     return appendCommands({
       result: enqueueToast({

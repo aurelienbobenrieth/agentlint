@@ -1,9 +1,14 @@
 import { currentCalibrationReport } from "../calibration/selectors";
-import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import { Array as A } from "effect";
+import {
+  DetachedDecision,
+  type DetachedAcceptance,
+  type DetachedRevocation,
+  type ReviewFindingPayload,
+  type ReviewStatePayload,
+} from "@aurelienbbn/agentlint/contract";
+import { Array as A, Result, Schema as S } from "effect";
 import type { Model } from "../../shared/model";
 import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
-import { encodeJson } from "../../shared/json";
 
 /**
  * Accepting an agent proposal without a note records the proposal itself as the reason.
@@ -94,6 +99,62 @@ export interface DetachedOutput {
   readonly acceptanceOutput: string;
 }
 
+const encodeDecision = S.encodeResult(S.fromJsonString(DetachedDecision));
+
+/**
+ * Each line goes through the import schema, so a record `agentlint acceptances import` would reject is never written. A
+ * rejected decision is left out and its finding stays unresolved.
+ */
+const encodeDecisions = (
+  decisions: ReadonlyArray<{ readonly findingId: string; readonly decision: DetachedDecision }>,
+): { readonly lines: ReadonlyArray<string>; readonly rejected: ReadonlyArray<string> } => {
+  const [rejected, lines] = A.partition(decisions, ({ findingId, decision }) =>
+    Result.mapError(encodeDecision(decision), () => findingId),
+  );
+  return { lines, rejected };
+};
+
+const acceptanceFor = ({
+  model,
+  state,
+  finding,
+  acceptedAt,
+}: {
+  readonly model: Model;
+  readonly state: ReviewStatePayload;
+  readonly finding: ReviewFindingPayload;
+  readonly acceptedAt: string;
+}): DetachedAcceptance => ({
+  schemaVersion: 1,
+  type: "accept",
+  source: finding.identity.source,
+  fingerprint: finding.identity.fingerprint,
+  ...(finding.identity.lineageKey === null ? {} : { lineageKey: finding.identity.lineageKey }),
+  reason: effectiveReason({ model, finding }),
+  authority: "human",
+  actor: "local-review",
+  acceptedAt,
+  reviewedSource: state.sources[finding.file] ?? "",
+});
+
+const revocationFor = ({
+  state,
+  finding,
+  acceptance,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly finding: ReviewFindingPayload;
+  readonly acceptance: NonNullable<ReviewFindingPayload["acceptance"]>;
+}): DetachedRevocation => ({
+  schemaVersion: 1,
+  type: "revoke",
+  source: finding.identity.source,
+  fingerprint: finding.identity.fingerprint,
+  expectedAcceptedAt: acceptance.at,
+  expectedReason: acceptance.reason,
+  reviewedSource: state.sources[finding.file] ?? "",
+});
+
 /**
  * What a detached review exports: acceptance JSONL with full identity, plus the agent handoff.
  */
@@ -113,56 +174,41 @@ export const detachedOutput = ({
       ? currentCalibrationReport({ state, model }).observations.length > 0
       : state.findings.some((finding) => carriesFeedback({ model, state, finding }));
   const feedback = hasFeedback ? agentInstructions(model) : "";
-  const acceptances = state.findings.flatMap((finding) =>
-    draftFor({ model, findingId: finding.id }).disposition === "accept" && state.mode === "review"
-      ? [
-          {
-            schemaVersion: 1,
-            type: "accept",
-            source: finding.identity.source,
-            fingerprint: finding.identity.fingerprint,
-            ...(finding.identity.lineageKey === null ? {} : { lineageKey: finding.identity.lineageKey }),
-            reason: effectiveReason({ model, finding }),
-            authority: "human",
-            actor: "local-review",
-            acceptedAt,
-            reviewedSource: state.sources[finding.file] ?? "",
-          },
-        ]
+  const acceptances = encodeDecisions(
+    state.mode === "review"
+      ? state.findings.flatMap((finding) =>
+          draftFor({ model, findingId: finding.id }).disposition === "accept"
+            ? [{ findingId: finding.id, decision: acceptanceFor({ model, state, finding, acceptedAt }) }]
+            : [],
+        )
       : [],
   );
-  const revocations =
+  const revocations = encodeDecisions(
     state.mode === "review"
-      ? state.findings.flatMap((finding) => {
-          const disposition = draftFor({ model, findingId: finding.id }).disposition;
-          return finding.acceptance !== null && disposition === "request_changes"
-            ? [
-                {
-                  schemaVersion: 1,
-                  type: "revoke",
-                  source: finding.identity.source,
-                  fingerprint: finding.identity.fingerprint,
-                  expectedAcceptedAt: finding.acceptance.at,
-                  expectedReason: finding.acceptance.reason,
-                  reviewedSource: state.sources[finding.file] ?? "",
-                },
-              ]
-            : [];
-        })
-      : [];
-  const decisions = [...acceptances, ...revocations];
-  const acceptanceOutput = decisions.length
-    ? `${A.map(decisions, (decision) => encodeJson(decision)).join("\n")}\n`
-    : "";
-  const summary =
+      ? state.findings.flatMap((finding) =>
+          finding.acceptance !== null && draftFor({ model, findingId: finding.id }).disposition === "request_changes"
+            ? [{ findingId: finding.id, decision: revocationFor({ state, finding, acceptance: finding.acceptance }) }]
+            : [],
+        )
+      : [],
+  );
+  const lines = [...acceptances.lines, ...revocations.lines];
+  const rejected = [...acceptances.rejected, ...revocations.rejected];
+  const acceptanceOutput = lines.length > 0 ? `${lines.join("\n")}\n` : "";
+  const accepted = acceptances.lines.length;
+  const outcome =
     state.mode === "calibration"
       ? "Calibration feedback is ready for the rule author."
-      : acceptances.length > 0 && feedback.length > 0
-        ? `Prepared ${acceptances.length} acceptance output(s) and an agent handoff.`
-        : acceptances.length > 0
-          ? `Prepared ${acceptances.length} acceptance output(s).`
+      : accepted > 0 && feedback.length > 0
+        ? `Prepared ${accepted} acceptance output(s) and an agent handoff.`
+        : accepted > 0
+          ? `Prepared ${accepted} acceptance output(s).`
           : feedback.length > 0
             ? "Requested changes are ready for the coding agent."
             : "The review closed without exported decisions.";
+  const summary =
+    rejected.length > 0
+      ? `${outcome} ${rejected.length} decision(s) could not be exported and stay unresolved: ${rejected.join(", ")}.`
+      : outcome;
   return { summary, feedback, acceptanceOutput };
 };
