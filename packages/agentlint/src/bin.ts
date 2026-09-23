@@ -110,10 +110,12 @@ const check = Command.make(
         `${result.accepted.length} accepted finding${result.accepted.length === 1 ? "" : "s"} hidden.`,
       );
     }
+    // JSONL stdout carries records only; status lines are diagnostics there.
+    const status = format === "jsonl" ? Console.error : Console.log;
     if (result.staleCount) {
-      yield* Console.log(`${result.staleCount} stale acceptance${result.staleCount === 1 ? "" : "s"} removed.`);
+      yield* status(`${result.staleCount} stale acceptance${result.staleCount === 1 ? "" : "s"} removed.`);
     }
-    if (reviewOutput) yield* Console.log(`Review artifact: ${yield* writeReviewArtifact(reviewOutput, result, base)}`);
+    if (reviewOutput) yield* status(`Review artifact: ${yield* writeReviewArtifact(reviewOutput, result, base)}`);
     yield* setExitCode(result.exitCode);
   }),
 ).pipe(Command.withDescription("Run the gate: report unresolved findings and exit 1 while any remain"));

@@ -16,3 +16,4 @@ Make every failure explicit and keep it off the gate verdict.
 - Explicit state globs accept either path separator, like change rules.
 - The review UI withdraws a detached acceptance whose reason is cleared, encodes exported decisions through the contract schemas (`DetachedDecision` in `/contract`), shows server messages for rejected loads and finishes, and opens even when browser storage is blocked. The server logs why an editor could not open a file.
 - The GitHub action handles patches of any size, clips annotations to GitHub's limits, falls back to the default bot identity only on authorization failures, and replies on the pull request when a command fails after its permission check.
+- `check --format jsonl` writes only finding records to stdout; the stale-acceptance count and the review artifact path go to stderr.
