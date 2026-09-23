@@ -25,10 +25,12 @@ interface IdentityRule {
 
 function materialBinding(rule: IdentityRule): CanonicalValue {
   return {
-    reviewEpoch: rule.binding.reviewEpoch ?? null,
+    // Present only when set, so bindings without an epoch keep the digest they had before epochs existed.
+    ...(rule.binding.reviewEpoch === undefined ? {} : { reviewEpoch: rule.binding.reviewEpoch }),
     include: [...(rule.binding.include ?? [])],
     exclude: [...(rule.binding.exclude ?? [])],
-    dependencies: [...(rule.binding.dependencies ?? [])].toSorted((left, right) => left.localeCompare(right)),
+    // Set semantics come from `bindingDigest`, which orders routing fields by code unit.
+    dependencies: [...(rule.binding.dependencies ?? [])],
     scan:
       rule.lifecycle === "state"
         ? (rule.detector.scan ?? (rule.detector.createOnce ? "repository" : "file"))

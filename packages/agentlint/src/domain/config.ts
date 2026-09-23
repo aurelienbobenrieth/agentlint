@@ -2,7 +2,7 @@
  * Repository configuration contracts. @module @since 0.2.0
  */
 
-import { Schema } from "effect";
+import { Result, Schema } from "effect";
 import { defineRule, type AgentlintRule } from "./rule/model.js";
 
 export interface AgentlintConfig {
@@ -38,11 +38,13 @@ export interface NormalizedConfig {
  * @category Errors
  */
 export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
-  reason: Schema.Literals(["empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
+  reason: Schema.Literals(["invalid_shape", "empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
   ruleId: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
     return {
+      invalid_shape: `Invalid config shape: ${this.detail}`,
       empty_base: "Config base must not be empty",
       empty_ignore: "Config ignore patterns must not be empty",
       duplicate_binding: `Duplicate rule binding id: ${this.ruleId}`,
@@ -51,15 +53,18 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
   }
 }
 
+const decodeConfigShape = Schema.decodeUnknownResult(
+  Schema.Struct({
+    extends: Schema.optional(Schema.Array(Schema.Unknown)),
+    rules: Schema.optional(Schema.Array(Schema.Unknown)),
+    ignores: Schema.optional(Schema.Array(Schema.String)),
+    base: Schema.optional(Schema.String),
+  }),
+);
+
 function assertConfig(config: AgentlintConfig): void {
-  Schema.decodeUnknownSync(
-    Schema.Struct({
-      extends: Schema.optional(Schema.Array(Schema.Unknown)),
-      rules: Schema.optional(Schema.Array(Schema.Unknown)),
-      ignores: Schema.optional(Schema.Array(Schema.String)),
-      base: Schema.optional(Schema.String),
-    }),
-  )(config);
+  const shape = decodeConfigShape(config);
+  if (Result.isFailure(shape)) throw new ConfigError({ reason: "invalid_shape", detail: shape.failure.message });
   if (config.base !== undefined && config.base.trim().length === 0) {
     throw new ConfigError({ reason: "empty_base" });
   }

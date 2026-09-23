@@ -133,10 +133,9 @@ export const prHandler = Effect.fn("prHandler")(function* (command: PrCommand) {
   yield* fs.writeFile(path.join(cacheDir, "agentlint-review.zip"), zip);
 
   const invalid = (detail: string) => new PrError({ reason: "invalid_artifact", number, repo, detail });
-  const json = yield* Effect.try({
-    try: () => readZipEntry({ bytes: zip, entry: ARTIFACT_ENTRY }),
-    catch: (error) => invalid(error instanceof Error ? error.message : String(error)),
-  });
+  const json = yield* Effect.fromResult(readZipEntry({ bytes: zip, entry: ARTIFACT_ENTRY })).pipe(
+    Effect.mapError((error) => invalid(error.message)),
+  );
   const artifactPath = path.join(cacheDir, ARTIFACT_ENTRY);
   yield* fs.writeFile(artifactPath, json);
 

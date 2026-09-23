@@ -7,6 +7,7 @@ import { Env } from "../config/env.js";
 import type { CheckResult } from "../features/check/request.js";
 import { ReviewArtifact } from "../features/review/contract.js";
 import { buildReviewPayload } from "../features/review/handler.js";
+import { ReviewServerError } from "../features/review/server.js";
 import { AcceptanceStoreError, parseDecisions } from "../shared/infrastructure/acceptance-store.js";
 import { encodePrettyJson } from "../shared/infrastructure/json.js";
 
@@ -17,7 +18,14 @@ export const readArtifact = Effect.fn("readArtifact")(function* (file: string) {
   const absolute = path.resolve(env.cwd, file);
   const raw = yield* fs.readFileString(absolute);
   const artifact = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewArtifact))(raw).pipe(
-    Effect.mapError((cause) => new Error(`${file} is not an agentlint review artifact: ${cause.message}`, { cause })),
+    Effect.mapError(
+      (cause) =>
+        new ReviewServerError({
+          reason: "invalid_artifact",
+          detail: `${file} is not an agentlint review artifact: ${cause.message}`,
+          cause,
+        }),
+    ),
   );
   return { state: artifact.state, source: absolute };
 });
@@ -54,6 +62,10 @@ export const readAcceptanceRecords = Effect.fn("readAcceptanceRecords")(function
     catch: (error) =>
       Schema.is(AcceptanceStoreError)(error)
         ? error
-        : new AcceptanceStoreError({ reason: "invalid_record", detail: "Decision parsing failed", line: undefined }),
+        : new AcceptanceStoreError({
+            reason: "invalid_record",
+            detail: error instanceof Error ? error.message : String(error),
+            line: undefined,
+          }),
   });
 });

@@ -41,7 +41,7 @@ Install @aurelienbbn/agentlint and follow its setup skill
 (node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/SKILL.md).
 ```
 
-The `setup` skill initializes the config, suggests plugins that match your dependencies, calibrates before enforcing, and installs the Claude Code or Codex hook. By hand:
+The `setup` skill initializes the config, helps you express the standards your repository already enforces, calibrates before enforcing, and installs the Claude Code or Codex hook. By hand:
 
 ```bash
 pnpm add -D @aurelienbbn/agentlint
@@ -265,7 +265,7 @@ pnpm agentlint propose 6 --summary "Added an idempotent backfill before the drop
 
 `agentlint next --format json` returns a version 1 handoff: one unresolved finding, full available source, detector excerpt, guidance, explicit related file paths, required authority, remaining count, scan scope and command argument arrays. Its ordering is stable by file, line and exact identity. An agent-authority finding offers acceptance; a human-authority finding offers a proposal and human review. Required reasons and summaries are supplied separately by the caller.
 
-`next` uses a complete scan by default and the same acceptance compatibility and stale cleanup as `check --all`. `--rule` narrows the scan and reports partial coverage. Every invocation rescans; a cleared filtered queue does not replace a complete checkpoint. Exit codes are 0 for clear scope, 1 for unresolved work and 2 for invalid configuration or evidence. Decode JSON with `NextResult` from `@aurelienbbn/agentlint/contract`.
+`next` uses a complete scan by default and the same acceptance compatibility and stale cleanup as `check --all`. `--rule` narrows the scan and reports partial coverage. Every invocation rescans; a cleared filtered queue does not replace a complete checkpoint. Exit codes are 0 for clear scope, 1 for unresolved work and 2 for invalid configuration or evidence; every command exits 2, never 1, on an internal error. The suggested actions and the JSON `selector` use the full finding key, which selects the same finding regardless of the ordinal cache left by the last `check`. Decode JSON with `NextResult` from `@aurelienbbn/agentlint/contract`.
 
 ## Acceptance identity
 
@@ -469,9 +469,9 @@ Provider adapters (pull-request comments, ownership routing, signed human author
 - `defineConfig` and `defineRule`, with the `AgentlintConfig`, `AgentlintRule`, `StateRule`, `ChangeRule`, `RuleBinding`, `RuleStandard`, `Guidance`, `RuleMatch`, and `Visitors` types.
 - `RuleContext` (`absolutePath`, `path`, `source`, `report`) and `ChangeRuleContext` for detector implementations, plus `AgentlintNode` and `TreeSitterNodeType`.
 - The change evidence schemas (`ChangeSet`, `ChangedFile`, `ChangeHunk`, `ChangeLine`, `FileSnapshot`, `ChangeBaseline`), `FindingRecord`, `OutcomeKind`, and `OutcomeRecord` as runtime values, so a consumer can construct or decode them.
-- Tagged errors: `RuleDefinitionError`, `ConfigError`, `PatternError`, `ParserError`.
+- Tagged errors: `RuleDefinitionError`, `ConfigError`, `DetectorContractError`, `FingerprintError`, `PatternError`, `ParserError`. `defineRule` throws only `RuleDefinitionError` and `defineConfig` only `ConfigError`. A detector that breaks the reporting contract (a duplicate or empty key, evidence outside the change set, undeclared related context) or returns a promise from a hook fails its rule with a `DetectorContractError` cause: detectors report synchronously.
 
-`@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, `testRuleOnSources`, and `testRuleOnChange`, plus `normalizeChangeFixture`, `FixtureReport`, and `FixtureFailure`. The public API does not require consumers to construct engine services or import Effect. `testRuleOnSources` accepts `[path, source]` pairs, including all declared dependencies.
+`@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, `testRuleOnSources`, and `testRuleOnChange`, plus `normalizeChangeFixture`, `ChangeFixtureError`, `FixtureReport`, and `FixtureFailure`. Every helper reports detector failures as a rejected promise. The public API does not require consumers to construct engine services or import Effect. `testRuleOnSources` accepts `[path, source]` pairs, including all declared dependencies.
 
 Compact change fixtures use an actual line comparison with three context lines. For very large fixtures or precise rename evidence, supply an explicit `ChangeSet`. Fixtures test detector activation; file scope is calibrated against a repository with `rules scan`.
 
@@ -479,7 +479,7 @@ The package intentionally exports no bundled standards, detectors, rules, or pre
 
 ## Scan and storage guarantees
 
-State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
+State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration lists files through Git (tracked and unignored untracked files), so `.gitignore` decides what is scanned and a tracked `dist/` file is scanned. Outside a Git work tree the directory walk skips only `node_modules` and `.git`. `.agentlint/.cache/` and config `ignores` are excluded in both modes. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
 
 Acceptance, proposal and outcome updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds the corresponding `.agentlint/*.lock` for milliseconds. Locks carry an ownership token and a writer only releases its own lock. A lock is never stolen based on age because a paused process may still resume and write; after an abrupt process death, remove the orphaned lock manually. The CLI fails clearly after a bounded wait. Git retains historical decisions and outcomes. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
 

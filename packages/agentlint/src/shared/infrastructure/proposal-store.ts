@@ -8,7 +8,7 @@
  * @since 0.2.0
  */
 
-import { Context, Effect, FileSystem, Layer, Path, Schema, type PlatformError } from "effect";
+import { Context, Effect, FileSystem, Layer, Path, Result, Schema, type PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { Env } from "../../config/env.js";
 import { compareStrings } from "../../domain/compare.js";
@@ -31,29 +31,25 @@ export class ProposalStoreError extends Schema.TaggedError<ProposalStoreError>()
 }
 
 const PROPOSAL_PATH = [".agentlint", "proposals.jsonl"] as const;
-const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(ProposalRecord));
+const decodeRecord = Schema.decodeUnknownResult(Schema.fromJsonString(ProposalRecord));
 const encodeRecord = Schema.encodeUnknownSync(Schema.fromJsonString(ProposalRecord));
 
 /**
  * Parse a JSONL proposal file. Later records for the same identity win.
  */
-function parseProposals(content: string): ProposalRecord[] {
+function parseProposals(content: string): Result.Result<ProposalRecord[], ProposalStoreError> {
   const byKey = new Map<string, ProposalRecord>();
   for (const [index, rawLine] of content.split(/\r?\n/).entries()) {
     const line = rawLine.trim();
     if (line.length === 0) continue;
-    try {
-      const record = decodeRecord(line);
-      byKey.set(proposalKey(record), record);
-    } catch (error) {
-      throw new ProposalStoreError({
-        reason: "invalid_record",
-        detail: error instanceof Error ? error.message : String(error),
-        line: index + 1,
-      });
-    }
+    const decoded = decodeRecord(line);
+    if (Result.isFailure(decoded))
+      return Result.fail(
+        new ProposalStoreError({ reason: "invalid_record", detail: decoded.failure.message, line: index + 1 }),
+      );
+    byKey.set(proposalKey(decoded.success), decoded.success);
   }
-  return sortProposals([...byKey.values()]);
+  return Result.succeed(sortProposals([...byKey.values()]));
 }
 
 function sortProposals(records: ReadonlyArray<ProposalRecord>): ProposalRecord[] {
@@ -101,24 +97,13 @@ export class ProposalStore extends Context.Service<
 
       const readRecords = (): Effect.Effect<ProposalRecord[], ProposalStoreError> =>
         fs.exists(file).pipe(
-          Effect.orElseSucceed(() => false),
+          // A failed probe is an I/O error, not an empty store: `upsert` would rewrite the file with one record.
+          Effect.mapError(io),
           Effect.flatMap((exists) =>
             exists
               ? fs.readFileString(file).pipe(
                   Effect.mapError(io),
-                  Effect.flatMap((content) =>
-                    Effect.try({
-                      try: () => parseProposals(content),
-                      catch: (error) =>
-                        error instanceof ProposalStoreError
-                          ? error
-                          : new ProposalStoreError({
-                              reason: "invalid_record",
-                              detail: String(error),
-                              line: undefined,
-                            }),
-                    }),
-                  ),
+                  Effect.flatMap((content) => Effect.fromResult(parseProposals(content))),
                 )
               : Effect.succeed([]),
           ),

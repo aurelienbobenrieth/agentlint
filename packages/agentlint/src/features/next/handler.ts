@@ -57,7 +57,9 @@ export const nextHandler = Effect.fn("nextHandler")(function* (command: NextComm
     scope: check.scope,
     base: check.base ?? null,
     remaining: check.unresolved.length,
-    selector: first?.selector ?? null,
+    // `next` never writes the ordinal selector cache, so an ordinal here would resolve against another run's
+    // numbering. The full finding key selects this exact finding regardless of the cache.
+    selector: first === undefined ? null : findingKey(first),
     executedBindings: check.availableRules,
     finding,
     source: finding === null ? null : (check.sources[finding.file] ?? null),

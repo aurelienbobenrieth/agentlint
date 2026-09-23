@@ -248,10 +248,11 @@ export function resolveFiles<E>({
         const globPatterns: string[] = [];
         for (const file of options.positionalFiles) {
           if (hasGlobSyntax(file)) {
-            globPatterns.push(file);
+            // Same separator handling as change rules (`explicitPathMatcher`): either separator on every platform.
+            globPatterns.push(file.replace(/\\/g, "/").replace(/^\.\//, ""));
           } else {
             const target = yield* fs.realPath(path.resolve(cwd, file)).pipe(Effect.mapError(filesystemError));
-            yield* Effect.try({
+            const projectPath = yield* Effect.try({
               try: () => toProjectPath({ file: target, cwd, path }),
               catch: (cause) =>
                 new FileResolverError({ reason: "filesystem", detail: "Path leaves the repository", cause }),
@@ -259,7 +260,7 @@ export function resolveFiles<E>({
             const info = yield* fs.stat(target).pipe(Effect.mapError(filesystemError));
             if (info.type === "Directory")
               literalFiles.push(...(yield* listAllFiles({ dir: target, base: cwd, fs, path, ignored })));
-            else literalFiles.push(toProjectPath({ file: target, cwd, path }));
+            else literalFiles.push(projectPath);
           }
         }
 

@@ -1,24 +1,22 @@
-import { normalizeChangeFixture } from "./change-fixture.js";
+import { changeFixture } from "./change-fixture.js";
 import type { FixtureReport, FixtureFailure } from "../../domain/fixture-report.js";
 /**
  * Detector fixture runners. @module @since 0.2.0
  */
 
 import { Effect, Schema } from "effect";
-import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
 import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import {
   type AgentlintRule,
   type ChangeFixture,
   type ChangeRule,
-  type ChangeSet,
   type StateFixture,
   type StateRule,
 } from "../../domain/rule/model.js";
 import { grammarForExtension } from "./language-map.js";
 import { PatternError } from "../../domain/pattern-error.js";
-import { collectStateFindings } from "./collect-findings.js";
+import { collectStateFindings, detectChange } from "./collect-findings.js";
 
 /**
  * Run one state detector against an in-memory repository.
@@ -51,20 +49,18 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
 });
 
 /**
- * Run one change detector against an already normalized change. Findings use the same fingerprint and lineage
- * construction as `agentlint check`; the absolute path is the fixture path itself.
+ * Normalize one change fixture and run the detector against it. Findings use the same fingerprint and lineage
+ * construction as `agentlint check`.
  */
-export function runRuleOnChange({
+export const runRuleOnChangeFixture = Effect.fn("runRuleOnChangeFixture")(function* ({
   rule,
-  change,
+  fixture,
 }: {
   readonly rule: ChangeRule;
-  readonly change: ChangeSet;
-}): ReadonlyArray<FindingRecord> {
-  const context = new ChangeRuleContextImpl({ rule, change });
-  rule.detector.detect({ context, options: rule.binding.options });
-  return context.findings;
-}
+  readonly fixture: ChangeFixture;
+}) {
+  return yield* detectChange({ rule, change: yield* changeFixture(fixture) });
+});
 
 function stateFiles(fixture: StateFixture): ReadonlyArray<readonly [string, string]> {
   if (Schema.is(Schema.String)(fixture)) return [["fixture.tsx", fixture]];
@@ -135,17 +131,17 @@ export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: Age
   const mustReport = rule.detector.fixtures?.mustReport ?? [];
   const mustStaySilent = rule.detector.fixtures?.mustStaySilent ?? [];
   for (const [index, fixture] of mustReport.entries()) {
-    const change = normalizeChangeFixture(fixture);
-    const findings = runRuleOnChange({ rule, change });
-    const replay = runRuleOnChange({ rule, change });
+    const change = yield* changeFixture(fixture);
+    const findings = yield* detectChange({ rule, change });
+    const replay = yield* detectChange({ rule, change });
     if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
     if (findings.length === 0)
       failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
   }
   for (const [index, fixture] of mustStaySilent.entries()) {
-    const change = normalizeChangeFixture(fixture);
-    const findings = runRuleOnChange({ rule, change });
-    const replay = runRuleOnChange({ rule, change });
+    const change = yield* changeFixture(fixture);
+    const findings = yield* detectChange({ rule, change });
+    const replay = yield* detectChange({ rule, change });
     if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
     if (findings.length > 0)
       failures.push({

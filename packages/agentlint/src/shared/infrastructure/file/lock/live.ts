@@ -61,6 +61,7 @@ export const withFileLock =
       );
     });
 
+    // A failed release is a typed store failure: the write may have landed, but the lock was not ours to remove.
     const release = (acquiredOwner: string) =>
       fs.readFileString(lock).pipe(
         Effect.mapError(fail),
@@ -69,7 +70,6 @@ export const withFileLock =
             ? fs.remove(lock).pipe(Effect.mapError(fail))
             : Effect.fail(fail(`Lock ownership changed while the store was open: ${lock}`)),
         ),
-        Effect.orDie,
       );
 
     return Effect.acquireUseRelease(acquire, () => operation, release);

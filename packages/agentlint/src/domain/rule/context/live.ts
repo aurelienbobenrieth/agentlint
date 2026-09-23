@@ -2,13 +2,13 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState, normalizeRepositoryPath } from "../../fingerprint.js";
-import { Schema } from "effect";
+import { canonicalDigest, fingerprintState, repositoryPath } from "../../fingerprint.js";
+import { Result, Schema } from "effect";
 import type { CanonicalValue } from "../../fingerprint.js";
 import { type FindingOptions, FindingRecord } from "../../finding.js";
 import type { AgentlintNode, Position } from "../../node.js";
 import { findingSourceForRule } from "../identity.js";
-import type { StateRule } from "../model.js";
+import { DetectorContractError, type StateRule } from "../model.js";
 import type { RuleContext } from "./model.js";
 
 /**
@@ -209,6 +209,10 @@ export class RuleContextImpl implements RuleContext {
     this.#visiting = { node, position: [...position] };
   }
 
+  #reportError(reason: DetectorContractError["reason"], detail: string): DetectorContractError {
+    return new DetectorContractError({ ruleId: this.rule.binding.id, reason, detail });
+  }
+
   report(options: FindingOptions): void {
     const visiting = this.#visiting;
     this.reportAt({
@@ -241,19 +245,25 @@ export class RuleContextImpl implements RuleContext {
       this.#fileStructure = canonicalDigest(semanticStructure({ root: root.node, source: this.#source }));
     }
     const occurrenceKey = options.key ?? `${options.node.type}:${position.join("/")}`;
-    if (!occurrenceKey.trim() || this.#keys.has(occurrenceKey)) {
-      throw new Error(`Rule ${this.rule.binding.id} reported a duplicate or empty finding key: ${occurrenceKey}`);
-    }
+    if (!occurrenceKey.trim()) throw this.#reportError("empty_key", occurrenceKey);
+    if (this.#keys.has(occurrenceKey)) throw this.#reportError("duplicate_key", occurrenceKey);
     this.#keys.add(occurrenceKey);
     const structure = {
       file: this.#fileStructure,
       dependencies: this.#dependencyDigest,
       evidence: options.evidence ?? null,
     };
-    const relatedFiles = [...new Set((options.relatedFiles ?? []).map(normalizeRepositoryPath))].toSorted();
+    const relatedFiles = [
+      ...new Set(
+        (options.relatedFiles ?? []).map((file) => {
+          const normalized = repositoryPath(file);
+          if (Result.isFailure(normalized)) throw this.#reportError("invalid_path", normalized.failure.detail);
+          return normalized.success;
+        }),
+      ),
+    ].toSorted();
     for (const related of relatedFiles) {
-      if (!(related in this.dependencies))
-        throw new Error(`Rule ${this.rule.binding.id} reported undeclared related context: ${related}`);
+      if (!Object.hasOwn(this.dependencies, related)) throw this.#reportError("undeclared_related", related);
     }
 
     this.findings.push(

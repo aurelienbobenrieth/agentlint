@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { Array as A, Schema } from "effect";
+import { Array as A, Result, Schema } from "effect";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
@@ -29,18 +29,6 @@ export type CanonicalValue = null | boolean | number | string | ReadonlyArray<Ca
 export interface CanonicalObject {
   readonly [key: string]: CanonicalValue;
 }
-
-const CanonicalValueSchema: Schema.Codec<CanonicalValue> = Schema.suspend(() =>
-  Schema.Union([
-    Schema.Null,
-    Schema.Boolean,
-    Schema.Number,
-    Schema.String,
-    Schema.Array(CanonicalValueSchema),
-    Schema.Record(Schema.String, CanonicalValueSchema),
-  ]),
-);
-const decodeCanonicalValue = Schema.decodeUnknownSync(CanonicalValueSchema);
 
 /**
  * The rule components that produced a finding.
@@ -65,9 +53,12 @@ export class Fingerprint extends Schema.Class<Fingerprint>("Fingerprint")({
 }) {}
 
 /**
- * A canonicalization failure.
+ * A canonicalization failure: the value is not canonical JSON data, or the path is not repository-relative.
+ *
+ * @since 0.2.0
+ * @category Errors
  */
-class FingerprintError extends Schema.TaggedError<FingerprintError>()("agentlint/FingerprintError", {
+export class FingerprintError extends Schema.TaggedError<FingerprintError>()("agentlint/FingerprintError", {
   reason: Schema.Literals(["invalid_value", "invalid_path"]),
   detail: Schema.String,
 }) {
@@ -139,9 +130,25 @@ function encode({ value, ancestors }: { readonly value: unknown; readonly ancest
 
 /**
  * Encode JSON data with stable object key ordering, preserving exact Unicode values.
+ *
+ * The recursive encoder throws internally; this is the only place its failure leaves the module, as a typed value.
+ */
+export function canonicalJson(value: unknown): Result.Result<string, FingerprintError> {
+  return Result.try({
+    try: () => encode({ value, ancestors: new Set() }),
+    catch: (cause) =>
+      cause instanceof FingerprintError
+        ? cause
+        : new FingerprintError({ reason: "invalid_value", detail: String(cause) }),
+  });
+}
+
+/**
+ * Encode JSON data with stable object key ordering. Throws `FingerprintError` for values the type system cannot rule
+ * out (non-finite numbers, cycles, class instances); use `canonicalJson` where the input is not already trusted.
  */
 export function canonicalStringify(value: CanonicalValue): string {
-  return encode({ value, ancestors: new Set() });
+  return Result.getOrThrow(canonicalJson(value));
 }
 
 /**
@@ -154,28 +161,30 @@ export function canonicalDigest(value: CanonicalValue): string {
 /**
  * Normalize a repository-relative path without hiding moves or case changes.
  */
-export function normalizeRepositoryPath(input: string): string {
+export function repositoryPath(input: string): Result.Result<string, FingerprintError> {
+  const invalid = (detail: string) => Result.fail(new FingerprintError({ reason: "invalid_path", detail }));
   const value = input.replaceAll("\\", "/");
-  if (value.startsWith("/") || /^[A-Za-z]:\//.test(value)) {
-    throw new FingerprintError({ reason: "invalid_path", detail: `path must be repository-relative: ${input}` });
-  }
+  if (value.startsWith("/") || /^[A-Za-z]:\//.test(value)) return invalid(`path must be repository-relative: ${input}`);
 
   const parts: string[] = [];
   for (const part of value.split("/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") {
-      if (parts.length === 0) {
-        throw new FingerprintError({ reason: "invalid_path", detail: `path escapes the repository: ${input}` });
-      }
+      if (parts.length === 0) return invalid(`path escapes the repository: ${input}`);
       parts.pop();
       continue;
     }
     parts.push(part);
   }
-  if (parts.length === 0) {
-    throw new FingerprintError({ reason: "invalid_path", detail: "path must identify a repository file" });
-  }
-  return parts.join("/");
+  if (parts.length === 0) return invalid("path must identify a repository file");
+  return Result.succeed(parts.join("/"));
+}
+
+/**
+ * Normalize a repository-relative path. Throws `FingerprintError`; use `repositoryPath` for a typed result.
+ */
+export function normalizeRepositoryPath(input: string): string {
+  return Result.getOrThrow(repositoryPath(input));
 }
 
 /**
@@ -201,7 +210,7 @@ function canonicalizeBindingConfig(materialConfig: CanonicalValue): CanonicalVal
 export function bindingDigest(materialConfig: CanonicalValue): string {
   return canonicalDigest({
     kind: "agentlint-binding",
-    materialConfig: canonicalizeBindingConfig(decodeCanonicalValue(materialConfig)),
+    materialConfig: canonicalizeBindingConfig(materialConfig),
   });
 }
 

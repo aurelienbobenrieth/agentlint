@@ -5,7 +5,7 @@
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Console, Effect, FileSystem, Layer, Path, Result } from "effect";
+import { Cause, Console, Effect, FileSystem, Layer, Path, Result } from "effect";
 import { Argument, CliError, CliOutput, Command, Flag } from "effect/unstable/cli";
 import {
   baseFlag,
@@ -20,6 +20,7 @@ import { formatCheckJsonl, formatCheckText } from "./cli/reporter.js";
 import { readAcceptanceRecords, readArtifact, writeReviewArtifact } from "./cli/review-artifact.js";
 import { openReviewSession, printAcceptances, setExitCode } from "./cli/runtime.js";
 import { Env } from "./config/env.js";
+import { compareStrings } from "./domain/compare.js";
 import { acceptHandler } from "./features/accept/handler.js";
 import { AcceptCommand } from "./features/accept/request.js";
 import { acceptancesHandler } from "./features/acceptances/handler.js";
@@ -55,7 +56,7 @@ import { SelectorCache } from "./shared/infrastructure/selector-cache.js";
 declare const __AGENTLINT_VERSION__: string;
 
 const TAGLINE = "Deterministic findings. Explicit judgment. Repository-owned review decisions.";
-const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage or configuration error.";
+const EXIT_CODES = "Exit codes: 0 gate open; 1 unresolved findings; 2 usage, configuration, or internal error.";
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -138,7 +139,7 @@ const next = Command.make(
               `Required authority: ${result.finding.authority}`,
               ...result.actions.map(
                 (action) =>
-                  `${action.purpose}: agentlint argv=${encodeJson(action.argv.map((arg) => (arg === result.finding?.id ? (result.selector ?? arg) : arg)))}${action.requiredInput ? ` + ${action.requiredInput}` : ""}`,
+                  `${action.purpose}: agentlint argv=${encodeJson(action.argv)}${action.requiredInput ? ` + ${action.requiredInput}` : ""}`,
               ),
             ].join("\n")
           : result.status === "no_matching_rules"
@@ -459,7 +460,7 @@ const outcomesList = Command.make(
     }
     yield* Console.log(
       [...counts.entries()]
-        .toSorted(([left], [right]) => left.localeCompare(right))
+        .toSorted(([left], [right]) => compareStrings({ left, right }))
         .map(([key, count]) => `${key}: ${count}`)
         .join("\n"),
     );
@@ -520,6 +521,13 @@ const program = Effect.gen(function* () {
     Effect.gen(function* () {
       const message = error instanceof Error ? error.message : String(error);
       yield* Console.error(`agentlint: ${message}`);
+      yield* setExitCode(2);
+    }),
+  ),
+  // A defect is a bug or an unexpected throw, never a gate verdict. Exit 1 would read as "unresolved findings".
+  Effect.catchDefect((defect) =>
+    Effect.gen(function* () {
+      yield* Console.error(`agentlint: internal error\n${Cause.pretty(Cause.die(defect))}`);
       yield* setExitCode(2);
     }),
   ),

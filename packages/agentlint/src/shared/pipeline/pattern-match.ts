@@ -277,7 +277,12 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
 
   for (const context of PATTERN_CONTEXTS) {
     const result = yield* parser.parse({ source: context(pattern), grammar }).pipe(Effect.result);
-    if (result._tag === "Failure") continue;
+    if (result._tag === "Failure") {
+      // Only this context failing to parse the snippet is a reason to try the next one. A grammar that cannot load is
+      // an engine failure, not a pattern written in another language.
+      if (result.failure.reason === "parse_failed") continue;
+      return yield* result.failure;
+    }
     const tree = result.success;
     const root = wrapNode(tree.rootNode);
     const node = hasErrorNode(root) ? undefined : toPatternNode(effectivePatternNode(root));

@@ -2,7 +2,7 @@
  * Review payload and action application. @module @since 0.2.0
  */
 
-import { Array as A, Clock, Effect, Path } from "effect";
+import { Array as A, Clock, Effect, Path, Schema } from "effect";
 import type { CheckResult } from "../check/request.js";
 import { acceptanceKey, lookupAcceptance } from "../../domain/acceptance.js";
 import { Env } from "../../config/env.js";
@@ -80,6 +80,17 @@ export interface BuildReviewPayloadOptions {
   readonly applications?: ReadonlyArray<EditorApplication> | undefined;
 }
 
+/**
+ * Findings and rules come from one cached configuration load, so this is an engine invariant, not a user error.
+ */
+class ReviewRuleMissing extends Schema.TaggedError<ReviewRuleMissing>()("agentlint/ReviewRuleMissing", {
+  ruleId: Schema.String,
+}) {
+  override get message(): string {
+    return `Finding ${this.ruleId} has no rule in the loaded configuration`;
+  }
+}
+
 export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (options: BuildReviewPayloadOptions) {
   const env = yield* Env;
   const path = yield* Path.Path;
@@ -104,7 +115,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
   for (const finding of collection.findings) {
     const rule = config.rulesById.get(finding.ruleId);
     // Findings come from this configuration. Skipping one would show a clear queue for unreviewed work.
-    if (!rule) return yield* Effect.die(new Error(`Finding ${finding.ruleId} has no rule in the loaded configuration`));
+    if (!rule) return yield* Effect.die(new ReviewRuleMissing({ ruleId: finding.ruleId }));
     const id = findingKey(finding);
     const acceptance = lookupAcceptance({ acceptances: snapshot, finding });
     const stored = snapshot.byKey.get(id);

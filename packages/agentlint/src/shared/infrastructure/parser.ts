@@ -52,6 +52,8 @@ export function resolvePackagedWasmPath({
  *   });
  *   ```;
  */
+const errorDetail = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export class Parser extends Context.Service<
   Parser,
   {
@@ -112,7 +114,7 @@ export class Parser extends Context.Service<
             catch: (error) =>
               new ParserError({
                 reason: "init_failed",
-                detail: error instanceof Error ? error.message : String(error),
+                detail: errorDetail(error),
               }),
           });
           state.parser = parser;
@@ -134,7 +136,7 @@ export class Parser extends Context.Service<
             new ParserError({
               reason: "load_failed",
               grammar,
-              detail: error instanceof Error ? error.message : String(error),
+              detail: errorDetail(error),
             }),
         });
         state.languages = HashMap.set(state.languages, grammar, lang);
@@ -151,8 +153,15 @@ export class Parser extends Context.Service<
         }) {
           const parser = yield* ensureInit;
           const lang = yield* loadLanguage(grammar);
-          parser.setLanguage(lang);
-          const tree = parser.parse(source);
+          // Both calls throw: `setLanguage` on a grammar ABI the runtime does not support, `parse` on a WASM trap.
+          yield* Effect.try({
+            try: () => parser.setLanguage(lang),
+            catch: (cause) => new ParserError({ reason: "load_failed", grammar, detail: errorDetail(cause) }),
+          });
+          const tree = yield* Effect.try({
+            try: () => parser.parse(source),
+            catch: (cause) => new ParserError({ reason: "parse_failed", grammar, detail: errorDetail(cause) }),
+          });
           if (!tree) return yield* new ParserError({ reason: "parse_failed", grammar });
           return tree;
         }),

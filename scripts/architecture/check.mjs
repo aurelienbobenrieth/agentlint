@@ -42,6 +42,15 @@ for (const module of modules.values()) {
       violations.push(`${module.id}: browser contract imports ${dependency}; only effect is allowed`);
     }
   }
+  if (module.id.startsWith("packages/agentlint/src/")) {
+    // Failures are tagged errors with structured fields. An untagged Error hides the failure shape from callers and
+    // from the typed error channel.
+    for (const [index, line] of module.source.split("\n").entries()) {
+      if (/\bnew Error\(/u.test(line)) {
+        violations.push(`${module.id}:${index + 1}: untagged Error; use a Schema.TaggedError with structured fields`);
+      }
+    }
+  }
   if (module.id.startsWith("action/src/")) {
     for (const dependency of module.imports.filter(
       (specifier) => !specifier.startsWith(".") && !specifier.startsWith("node:"),

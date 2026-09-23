@@ -1,7 +1,7 @@
 /**
  * Repository storage for delayed review outcomes. @module @since 0.2.0
  */
-import { Context, Effect, FileSystem, Layer, Path, Schema, type PlatformError } from "effect";
+import { Context, Effect, FileSystem, Layer, Path, Result, Schema, type PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { Env } from "../../config/env.js";
 import { compareStrings } from "../../domain/compare.js";
@@ -20,29 +20,25 @@ export class OutcomeStoreError extends Schema.TaggedError<OutcomeStoreError>()("
   }
 }
 
-const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(OutcomeRecord));
+const decodeRecord = Schema.decodeUnknownResult(Schema.fromJsonString(OutcomeRecord));
 const encodeRecord = Schema.encodeUnknownSync(Schema.fromJsonString(OutcomeRecord));
 
 function sort(records: ReadonlyArray<OutcomeRecord>): OutcomeRecord[] {
   return records.toSorted((left, right) => compareStrings({ left: outcomeKey(left), right: outcomeKey(right) }));
 }
 
-function parse(content: string): OutcomeRecord[] {
+function parse(content: string): Result.Result<OutcomeRecord[], OutcomeStoreError> {
   const records = new Map<string, OutcomeRecord>();
   for (const [index, raw] of content.split(/\r?\n/).entries()) {
     if (!raw.trim()) continue;
-    try {
-      const record = decodeRecord(raw);
-      records.set(outcomeKey(record), record);
-    } catch (error) {
-      throw new OutcomeStoreError({
-        reason: "invalid_record",
-        detail: error instanceof Error ? error.message : String(error),
-        line: index + 1,
-      });
-    }
+    const decoded = decodeRecord(raw);
+    if (Result.isFailure(decoded))
+      return Result.fail(
+        new OutcomeStoreError({ reason: "invalid_record", detail: decoded.failure.message, line: index + 1 }),
+      );
+    records.set(outcomeKey(decoded.success), decoded.success);
   }
-  return sort([...records.values()]);
+  return Result.succeed(sort([...records.values()]));
 }
 
 export class OutcomeStore extends Context.Service<
@@ -69,20 +65,13 @@ export class OutcomeStore extends Context.Service<
       const locked = withFileLock({ fs, directory, lock: path.resolve(directory, "outcomes.lock"), fail: io });
       const read = (): Effect.Effect<OutcomeRecord[], OutcomeStoreError> =>
         fs.exists(file).pipe(
-          Effect.orElseSucceed(() => false),
+          // A failed probe is an I/O error, not an empty store: `upsert` would rewrite the file with one record.
+          Effect.mapError(io),
           Effect.flatMap((exists) =>
             exists
               ? fs.readFileString(file).pipe(
                   Effect.mapError(io),
-                  Effect.flatMap((content) =>
-                    Effect.try({
-                      try: () => parse(content),
-                      catch: (error) =>
-                        error instanceof OutcomeStoreError
-                          ? error
-                          : new OutcomeStoreError({ reason: "invalid_record", detail: String(error), line: undefined }),
-                    }),
-                  ),
+                  Effect.flatMap((content) => Effect.fromResult(parse(content))),
                 )
               : Effect.succeed([]),
           ),

@@ -22,9 +22,10 @@ import { normalizeConfig, type AgentlintConfig, type NormalizedConfig } from "..
  * @category Errors
  */
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agentlint/ConfigLoadError", {
-  reason: Schema.Literals(["not_found", "import_failed", "invalid_shape"]),
+  reason: Schema.Literals(["not_found", "import_failed", "invalid_shape", "io"]),
   path: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
   /**
    * Nearest ancestor of `path` that has a config, when the working directory has none.
    */
@@ -37,6 +38,7 @@ export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("agen
         : `No agentlint config found. Create .agentlint/config.ts in ${this.path}`,
       import_failed: `Failed to load ${this.path}: ${this.detail}`,
       invalid_shape: `Invalid config at ${this.path}: ${this.detail ?? "must export an agentlint config object"}`,
+      io: `Cannot look for the agentlint config at ${this.path}: ${this.detail}`,
     }[this.reason];
   }
 }
@@ -106,14 +108,23 @@ const discoverConfig = Effect.fn("ConfigLoader.discoverConfig")(function* ({
   readonly path: Path.Path;
   readonly cwd: string;
 }) {
+  // An unreadable directory is an I/O error, not a missing config.
+  const exists = (file: string) =>
+    fs
+      .exists(file)
+      .pipe(
+        Effect.mapError(
+          (error) => new ConfigLoadError({ reason: "io", path: file, detail: error.message, cause: error }),
+        ),
+      );
   const candidate = path.resolve(cwd, ...CONFIG_PATH);
-  if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
+  if (yield* exists(candidate)) {
     return candidate;
   }
   // A second config scaffolded in a subdirectory would split the repository's decisions: name the existing one.
   const findAncestor: (dir: string) => Effect.Effect<string, ConfigLoadError> = Effect.fn("ConfigLoader.findAncestor")(
     function* (dir: string) {
-      if (yield* fs.exists(path.resolve(dir, ...CONFIG_PATH)).pipe(Effect.orElseSucceed(() => false)))
+      if (yield* exists(path.resolve(dir, ...CONFIG_PATH)))
         return yield* new ConfigLoadError({ reason: "not_found", path: cwd, ancestor: dir });
       const parent = path.dirname(dir);
       if (dir === parent) return yield* new ConfigLoadError({ reason: "not_found", path: cwd });
@@ -174,7 +185,8 @@ export class ConfigLoader extends Context.Service<
             new ConfigLoadError({
               reason: "import_failed",
               path: configPath,
-              detail: Schema.is(Schema.instanceOf(Error))(error) ? error.message : "Configuration import failed",
+              detail: Schema.is(Schema.instanceOf(Error))(error) ? error.message : String(error),
+              cause: error,
             }),
         });
 
@@ -185,6 +197,7 @@ export class ConfigLoader extends Context.Service<
               reason: "invalid_shape",
               path: configPath,
               detail: error instanceof Error ? error.message : String(error),
+              cause: error,
             }),
         });
       });

@@ -9,21 +9,24 @@
  */
 
 import { inflateRawSync } from "node:zlib";
-import { Schema } from "effect";
+import { Result, Schema } from "effect";
 
 /**
  * @since 0.2.0 @category errors
  */
-class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
-  reason: Schema.Literals(["not_zip", "entry_missing", "unsupported_method"]),
+export class ZipError extends Schema.TaggedError<ZipError>()("agentlint/ZipError", {
+  reason: Schema.Literals(["not_zip", "truncated", "entry_missing", "unsupported_method", "inflate_failed"]),
   entry: Schema.String,
   method: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
     return {
       not_zip: "The downloaded file is not a ZIP archive",
+      truncated: `The archive is truncated or corrupt near ${this.entry}`,
       entry_missing: `The archive has no ${this.entry} entry`,
       unsupported_method: `${this.entry} uses unsupported compression method ${this.method}`,
+      inflate_failed: `${this.entry} cannot be decompressed: ${this.detail}`,
     }[this.reason];
   }
 }
@@ -51,32 +54,38 @@ const findEndRecord = (archive: Buffer): number => {
 };
 
 /**
- * Extract one entry by exact name.
+ * Extract one entry by exact name. Every offset read from the archive is bounds-checked first, so a truncated or
+ * crafted download is a typed `ZipError`, never a `RangeError`.
  *
  * @since 0.2.0
- * @throws ZipError when the buffer is not a ZIP archive, the entry is absent, or its method is unsupported.
  */
-export function readZipEntry({ bytes, entry }: { readonly bytes: Uint8Array; readonly entry: string }): Uint8Array {
+export function readZipEntry({
+  bytes,
+  entry,
+}: {
+  readonly bytes: Uint8Array;
+  readonly entry: string;
+}): Result.Result<Uint8Array, ZipError> {
   const archive = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const fail = (reason: ZipError["reason"], extra: { method?: number; detail?: string } = {}) =>
+    Result.fail(new ZipError({ reason, entry, ...extra }));
+  const fits = (offset: number, length: number) => offset >= 0 && offset + length <= archive.length;
   const endRecord = findEndRecord(archive);
-  if (endRecord < 0) throw new ZipError({ reason: "not_zip", entry });
+  if (endRecord < 0) return fail("not_zip");
 
   const entryCount = archive.readUInt16LE(endRecord + 10);
   const cursor = { index: 0, offset: archive.readUInt32LE(endRecord + 16) };
 
   while (cursor.index < entryCount) {
-    if (
-      cursor.offset + CENTRAL_HEADER_SIZE > archive.length ||
-      archive.readUInt32LE(cursor.offset) !== CENTRAL_HEADER
-    ) {
-      throw new ZipError({ reason: "not_zip", entry });
-    }
+    if (!fits(cursor.offset, CENTRAL_HEADER_SIZE)) return fail("truncated");
+    if (archive.readUInt32LE(cursor.offset) !== CENTRAL_HEADER) return fail("not_zip");
     const method = archive.readUInt16LE(cursor.offset + 10);
     const compressedSize = archive.readUInt32LE(cursor.offset + 20);
     const nameLength = archive.readUInt16LE(cursor.offset + 28);
     const extraLength = archive.readUInt16LE(cursor.offset + 30);
     const commentLength = archive.readUInt16LE(cursor.offset + 32);
     const localOffset = archive.readUInt32LE(cursor.offset + 42);
+    if (!fits(cursor.offset + CENTRAL_HEADER_SIZE, nameLength)) return fail("truncated");
     const name = archive.toString(
       "utf8",
       cursor.offset + CENTRAL_HEADER_SIZE,
@@ -86,14 +95,24 @@ export function readZipEntry({ bytes, entry }: { readonly bytes: Uint8Array; rea
     cursor.index += 1;
 
     if (name !== entry) continue;
-    if (archive.readUInt32LE(localOffset) !== LOCAL_HEADER) throw new ZipError({ reason: "not_zip", entry });
+    if (!fits(localOffset, LOCAL_HEADER_SIZE)) return fail("truncated");
+    if (archive.readUInt32LE(localOffset) !== LOCAL_HEADER) return fail("not_zip");
     const dataStart =
       localOffset + LOCAL_HEADER_SIZE + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
+    if (!fits(dataStart, compressedSize)) return fail("truncated");
     const data = archive.subarray(dataStart, dataStart + compressedSize);
-    if (method === STORED) return data;
-    if (method === DEFLATE) return inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES });
-    throw new ZipError({ reason: "unsupported_method", entry, method });
+    if (method === STORED) return Result.succeed(data);
+    if (method !== DEFLATE) return fail("unsupported_method", { method });
+    return Result.try({
+      try: (): Uint8Array => inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES }),
+      catch: (cause) =>
+        new ZipError({
+          reason: "inflate_failed",
+          entry,
+          detail: cause instanceof Error ? cause.message : String(cause),
+        }),
+    });
   }
 
-  throw new ZipError({ reason: "entry_missing", entry });
+  return fail("entry_missing");
 }

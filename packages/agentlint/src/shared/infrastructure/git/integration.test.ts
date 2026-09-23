@@ -104,6 +104,36 @@ it("matches compact fixture evidence against real staged, unstaged, and untracke
   });
 });
 
+it("keeps hunks independent of the user's diff configuration", async () => {
+  const lines = Array.from({ length: 30 }, (_, index) => (index % 5 === 0 ? "" : `line ${index}`));
+  const before = { "notes.txt": `${lines.join("\n")}\n` };
+  const edited = [...lines];
+  edited[3] = "changed 3";
+  edited[11] = "changed 11";
+  const after = { "notes.txt": `${edited.join("\n")}\n` };
+  const hunksWith = async (config: ReadonlyArray<readonly [string, string]>) => {
+    let result: unknown;
+    await withRepository({
+      seed: before,
+      body: async ({ git, write, run }) => {
+        for (const [key, value] of config) git("config", key, value);
+        write({ file: "notes.txt", content: after["notes.txt"] });
+        result = (await run({ use: (service) => service.changeSet({ baseRef: "main" }) })).files[0]?.hunks;
+      },
+    });
+    return result;
+  };
+  const plain = await hunksWith([]);
+  expect(plain).toEqual(normalizeChangeFixture({ before, after }).files[0]?.hunks);
+  expect(
+    await hunksWith([
+      ["diff.suppressBlankEmpty", "true"],
+      ["diff.interHunkContext", "10"],
+      ["diff.algorithm", "histogram"],
+    ]),
+  ).toEqual(plain);
+});
+
 it("diffs a bracketed route file as one literal path", async () => {
   const seed = { "pages/[id].tsx": "a\n", "pages/i.tsx": "a\n", "pages/d.tsx": "a\n" };
   await withRepository({

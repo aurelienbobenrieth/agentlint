@@ -217,7 +217,7 @@ describe("binary check and acceptance loop", () => {
           }),
         ).pipe(Effect.provide(TestLayer)),
       );
-      expect(failure).toMatchObject({ ruleId: "missing" });
+      expect(failure).toMatchObject({ _tag: "agentlint/UnknownBindingError", bindingId: "missing" });
     }),
   );
   it.effect("preserves formatting-only decisions and invalidates material evidence with transient lineage", () =>

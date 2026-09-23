@@ -49,6 +49,19 @@ it("rejects undeclared state context and change context outside the selected evi
   await expect(testRuleOnSources({ rule: state, sources: [["src/a.ts", "run();"]] })).rejects.toThrow(
     "undeclared related context",
   );
+  // Prototype keys are not declared dependencies.
+  const prototypeKey = defineRule({
+    ...state,
+    detector: {
+      ...state.detector,
+      createOnce: ({ context }) => ({
+        call_expression: (node) => context.report({ node, message: "Review.", relatedFiles: ["toString"] }),
+      }),
+    },
+  });
+  await expect(testRuleOnSources({ rule: prototypeKey, sources: [["src/a.ts", "run();"]] })).rejects.toThrow(
+    "undeclared related context: toString",
+  );
 
   const change = defineRule({
     lifecycle: "change",
@@ -67,7 +80,10 @@ it("rejects undeclared state context and change context outside the selected evi
         }),
     },
   });
-  expect(() => testRuleOnChange({ rule: change, fixture: { before: {}, after: { "src/a.ts": "run();" } } })).toThrow(
-    "outside the change set",
-  );
+  await expect(
+    testRuleOnChange({ rule: change, fixture: { before: {}, after: { "src/a.ts": "run();" } } }),
+  ).rejects.toMatchObject({
+    _tag: "agentlint/DetectionError",
+    cause: { _tag: "agentlint/DetectorContractError", reason: "outside_change_set", detail: "src/missing.ts" },
+  });
 });

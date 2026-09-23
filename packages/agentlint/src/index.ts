@@ -8,7 +8,8 @@
  */
 
 export { defineConfig, ConfigError } from "./domain/config.js";
-export { defineRule, RuleDefinitionError } from "./domain/rule/model.js";
+export { defineRule, RuleDefinitionError, DetectorContractError } from "./domain/rule/model.js";
+export { FingerprintError } from "./domain/fingerprint.js";
 export { PatternError } from "./domain/pattern-error.js";
 export { ParserError } from "./domain/parser-error.js";
 

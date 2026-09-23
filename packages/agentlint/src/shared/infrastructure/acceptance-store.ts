@@ -8,7 +8,7 @@
  * @since 0.2.0
  */
 
-import { Context, Effect, FileSystem, Layer, Path, Schema, type PlatformError } from "effect";
+import { Context, Effect, FileSystem, Layer, Path, Result, Schema, type PlatformError } from "effect";
 import { Env } from "../../config/env.js";
 import {
   AcceptanceDecision,
@@ -56,23 +56,28 @@ const ACCEPTANCE_PATH = [".agentlint", "acceptances.jsonl"] as const;
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
 const encodeRecord = Schema.encodeUnknownSync(Schema.fromJsonString(AcceptanceRecord));
 
+const decodeDecision = Schema.decodeUnknownResult(Schema.fromJsonString(AcceptanceDecision));
+
 /**
- * Decode a portable decision batch. Conflicting decisions for one identity are rejected.
+ * Decode a portable decision batch. Conflicting decisions for one identity are rejected. Throws `AcceptanceStoreError`;
+ * callers wrap it at one boundary.
  */
 export function parseDecisions(content: string): AcceptanceDecision[] {
-  const decode = Schema.decodeUnknownSync(Schema.fromJsonString(AcceptanceDecision));
   const seen = new Set<string>();
   return content.split(/\r?\n/).flatMap((line, index) => {
     if (!line.trim()) return [];
-    try {
-      const decision = decode(line);
-      const key = acceptanceKey(decision);
-      if (seen.has(key)) throw new Error("duplicate decision identity");
-      seen.add(key);
-      return [decision];
-    } catch (error) {
-      throw new AcceptanceStoreError({ reason: "invalid_record", detail: String(error), line: index + 1 });
-    }
+    const decoded = decodeDecision(line);
+    if (Result.isFailure(decoded))
+      throw new AcceptanceStoreError({ reason: "invalid_record", detail: decoded.failure.message, line: index + 1 });
+    const key = acceptanceKey(decoded.success);
+    if (seen.has(key))
+      throw new AcceptanceStoreError({
+        reason: "duplicate_record",
+        detail: `conflicting decisions for one finding identity on line ${index + 1}`,
+        line: index + 1,
+      });
+    seen.add(key);
+    return [decoded.success];
   });
 }
 

@@ -8,8 +8,8 @@
  * @since 0.2.0
  */
 
-import { Predicate, Schema } from "effect";
-import { canonicalStringify, normalizeRepositoryPath, type CanonicalValue } from "../fingerprint.js";
+import { Predicate, Result, Schema } from "effect";
+import { canonicalJson, repositoryPath, type CanonicalValue } from "../fingerprint.js";
 import type { AgentlintNode } from "../node.js";
 import type { TreeSitterNodeType } from "../node-types.js";
 import { Guidance } from "../guidance.js";
@@ -323,9 +323,41 @@ export class RuleDefinitionError extends Schema.TaggedError<RuleDefinitionError>
   }
 }
 
-const StandardDecoder = Schema.decodeUnknownSync(RuleStandard);
-const MatchDecoder = Schema.decodeUnknownSync(RuleMatch);
-const AuthorityDecoder = Schema.decodeUnknownSync(RuleAuthority);
+/**
+ * Raised when a detector breaks the engine contract: an invalid `context.report` call, or a hook that returns a
+ * promise. The engine wraps it in a detection failure for the rule, so the gate stays closed.
+ *
+ * @since 0.2.0
+ * @category Errors
+ */
+export class DetectorContractError extends Schema.TaggedError<DetectorContractError>()(
+  "agentlint/DetectorContractError",
+  {
+    ruleId: Schema.String,
+    reason: Schema.Literals([
+      "invalid_path",
+      "outside_change_set",
+      "empty_key",
+      "duplicate_key",
+      "undeclared_related",
+      "async_hook",
+    ]),
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return {
+      invalid_path: `Rule ${this.ruleId} reported an invalid repository path: ${this.detail}`,
+      outside_change_set: `Rule ${this.ruleId} reported evidence outside the change set: ${this.detail}`,
+      empty_key: `Rule ${this.ruleId} reported an empty finding key`,
+      duplicate_key: `Rule ${this.ruleId} reported a duplicate finding key: ${this.detail}`,
+      undeclared_related: `Rule ${this.ruleId} reported undeclared related context: ${this.detail}`,
+      async_hook: `Rule ${this.ruleId} returned a promise from ${this.detail}; detectors must report synchronously`,
+    }[this.reason];
+  }
+}
+
+const MatchesShape = Schema.Union([RuleMatch, Schema.Array(RuleMatch)]);
 const RuleShape = Schema.Struct({
   lifecycle: Lifecycle,
   standard: RuleStandard,
@@ -357,23 +389,28 @@ function assertNonEmpty({
   if (value.trim().length === 0) throw new RuleDefinitionError({ ruleId, reason: "empty_field", field });
 }
 
+function shapeError({ ruleId, field }: { readonly ruleId: string; readonly field: string }): RuleDefinitionError {
+  return new RuleDefinitionError({ ruleId, reason: "invalid_shape", field });
+}
+
 function validateCommon(rule: AgentlintRule): void {
-  try {
-    Schema.decodeUnknownSync(RuleShape)(rule);
-  } catch {
-    throw new RuleDefinitionError({ ruleId: "unknown", reason: "invalid_shape" });
+  const binding: unknown = Predicate.isObject(rule) ? Reflect.get(rule, "binding") : undefined;
+  const bindingId: unknown = Predicate.isObject(binding) ? Reflect.get(binding, "id") : undefined;
+  const shape = Schema.decodeUnknownResult(RuleShape)(rule);
+  if (Result.isFailure(shape)) {
+    throw shapeError({
+      ruleId: Predicate.isString(bindingId) && bindingId ? bindingId : "unknown",
+      field: shape.failure.message,
+    });
   }
   const ruleId = rule.binding.id;
   const dependencies = Reflect.get(rule.binding, "dependencies");
   if (rule.lifecycle === "change" && dependencies !== undefined)
-    throw new RuleDefinitionError({
+    throw shapeError({
       ruleId,
-      reason: "invalid_shape",
       field: "dependencies are for state bindings; change detectors report explicit evidence",
     });
-  StandardDecoder(rule.standard);
   assertNonEmpty({ ruleId, value: ruleId, field: "binding id" });
-  AuthorityDecoder(rule.binding.authority);
   assertNonEmpty({ ruleId, value: rule.detector.id, field: "detector id" });
   if (!Number.isSafeInteger(rule.detector.version) || rule.detector.version < 1) {
     throw new RuleDefinitionError({ ruleId, reason: "invalid_detector_version" });
@@ -381,14 +418,13 @@ function validateCommon(rule: AgentlintRule): void {
   for (const pattern of [...(rule.binding.include ?? []), ...(rule.binding.exclude ?? [])]) {
     assertNonEmpty({ ruleId, value: pattern, field: "scope pattern" });
   }
-  canonicalStringify(rule.binding.options ?? null);
+  const options = canonicalJson(rule.binding.options ?? null);
+  if (Result.isFailure(options)) throw shapeError({ ruleId, field: `options: ${options.failure.detail}` });
   for (const dependency of rule.binding.dependencies ?? []) {
-    if (normalizeRepositoryPath(dependency) !== dependency || /[*?[\]{}]/.test(dependency)) {
-      throw new RuleDefinitionError({
-        ruleId,
-        reason: "invalid_shape",
-        field: "dependencies must be exact normalized repository paths",
-      });
+    const normalized = repositoryPath(dependency);
+    if (Result.isFailure(normalized)) throw shapeError({ ruleId, field: `dependencies: ${normalized.failure.detail}` });
+    if (normalized.success !== dependency || /[*?[\]{}]/.test(dependency)) {
+      throw shapeError({ ruleId, field: "dependencies must be exact normalized repository paths" });
     }
   }
 }
@@ -410,9 +446,10 @@ export function defineRule(rule: AgentlintRule): AgentlintRule {
   validateCommon(rule);
   const ruleId = rule.binding.id;
   if (rule.lifecycle === "state") {
+    const declared = Schema.decodeUnknownResult(MatchesShape)(rule.detector.match ?? []);
+    if (Result.isFailure(declared)) throw shapeError({ ruleId, field: `match: ${declared.failure.message}` });
     const matches = ruleMatches(rule);
     for (const match of matches) {
-      MatchDecoder(match);
       if ((match.pattern === undefined) === (match.query === undefined)) {
         throw new RuleDefinitionError({ ruleId, reason: "ambiguous_match" });
       }

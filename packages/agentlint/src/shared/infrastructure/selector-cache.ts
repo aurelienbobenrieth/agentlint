@@ -31,7 +31,6 @@ export const SelectorCachePayload = Schema.Struct({
 export type SelectorCachePayload = Schema.Schema.Type<typeof SelectorCachePayload>;
 
 const CACHE_PATH = [".agentlint", ".cache", "last-check.json"] as const;
-const PayloadDecoder = Schema.decodeUnknownSync(SelectorCachePayload);
 const decodePayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SelectorCachePayload));
 
 export class SelectorCache extends Context.Service<
@@ -66,9 +65,10 @@ export class SelectorCache extends Context.Service<
         write: Effect.fn("SelectorCache.write")(function* (entries) {
           return yield* Effect.gen(function* () {
             const payload: SelectorCachePayload = { version: 1, findings: [...entries] };
-            PayloadDecoder(payload);
+            // Encoding stays inside the error channel so a failed write can never become a defect.
+            const content = yield* Effect.try(() => `${encodePrettyJson(payload)}\n`);
             yield* fs.makeDirectory(cacheDir, { recursive: true });
-            yield* fs.writeFileString(cachePath, `${encodePrettyJson(payload)}\n`);
+            yield* fs.writeFileString(cachePath, content);
           }).pipe(Effect.orElseSucceed(() => undefined));
         }),
       });

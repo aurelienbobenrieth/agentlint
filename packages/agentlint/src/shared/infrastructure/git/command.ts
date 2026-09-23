@@ -50,6 +50,13 @@ export const runGitCommand = ({
             "diff.algorithm=myers",
             "-c",
             "diff.indentHeuristic=false",
+            // User settings that would otherwise change hunk text or boundaries for the same repository state.
+            "-c",
+            "diff.suppressBlankEmpty=false",
+            "-c",
+            "diff.interHunkContext=0",
+            "-c",
+            "diff.renameLimit=1000",
             "--no-optional-locks",
             ...(literalPathspecs ? ["--literal-pathspecs"] : []),
             ...args,
@@ -73,5 +80,13 @@ export const runGitCommand = ({
           },
         );
       }),
-    catch: (failure) => Schema.decodeUnknownSync(GitCommandFailureSchema)(failure),
+    // `execFile` can also throw synchronously (e.g. an invalid argument); keep that a typed failure too.
+    catch: (failure) =>
+      Schema.is(GitCommandFailureSchema)(failure)
+        ? failure
+        : {
+            exitCode: undefined,
+            code: undefined,
+            detail: failure instanceof Error ? failure.message : String(failure),
+          },
   });

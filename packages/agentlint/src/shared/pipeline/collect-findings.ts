@@ -3,7 +3,7 @@
  */
 
 import { Array as A, Effect, FileSystem, Path, Schema } from "effect";
-import { DetectionError, UnparseableFilesError } from "./detection-error.js";
+import { DetectionError, synchronousHook, UnknownBindingError, UnparseableFilesError } from "./detection-error.js";
 import { Env } from "../../config/env.js";
 import { compareStrings } from "../../domain/compare.js";
 import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
@@ -11,6 +11,7 @@ import { FindingRecord } from "../../domain/finding.js";
 import {
   ruleMatches,
   type ChangeRule,
+  type ChangeSet,
   type RuleMatch,
   type StateRule,
   type Visitors,
@@ -33,6 +34,24 @@ import { visitorKeys, walkFile } from "./tree-walker.js";
 import { filterRules, scopeMatcher, sortFindings, type ScopeMatcher } from "./finding/rules.js";
 
 export { ruleEnabledForFile } from "./finding/rules.js";
+
+/**
+ * Run one change detector against its filtered change. Every detector failure, including a broken report contract, is a
+ * typed `DetectionError`.
+ */
+export const detectChange = ({ rule, change }: { readonly rule: ChangeRule; readonly change: ChangeSet }) =>
+  Effect.try({
+    try: () => {
+      const context = new ChangeRuleContextImpl({ rule, change });
+      synchronousHook({
+        ruleId: rule.binding.id,
+        hook: "detect",
+        value: rule.detector.detect({ context, options: rule.binding.options }),
+      });
+      return context.findings;
+    },
+    catch: (cause) => new DetectionError({ ruleId: rule.binding.id, cause }),
+  });
 
 const CollectResult = Schema.Struct({
   findings: Schema.Array(FindingRecord),
@@ -122,9 +141,18 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       dependencies[dependency] = yield* readSource({ file: dependency, label: "dependency" });
       capture?.sources.set(dependency, dependencies[dependency]);
     }
-    const context = new RuleContextImpl({ rule, dependencies });
-    const visitors = yield* Effect.try({
-      try: () => rule.detector.createOnce?.({ context, options: rule.binding.options }) ?? {},
+    const { context, visitors } = yield* Effect.try({
+      // Constructing the context computes the binding digest, which can throw for a rule mutated after definition.
+      try: () => {
+        const created = new RuleContextImpl({ rule, dependencies });
+        const hooks: Visitors =
+          synchronousHook({
+            ruleId: rule.binding.id,
+            hook: "createOnce",
+            value: rule.detector.createOnce?.({ context: created, options: rule.binding.options }),
+          }) ?? {};
+        return { context: created, visitors: hooks };
+      },
       catch: (cause) => new DetectionError({ ruleId: rule.binding.id, cause }),
     });
     entries.push({
@@ -179,7 +207,12 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       for (const entry of applicable) {
         entry.context.setFile({ absolutePath, file, source });
         const enabled = yield* Effect.try({
-          try: () => entry.visitors.before?.(absolutePath),
+          try: () =>
+            synchronousHook({
+              ruleId: entry.rule.binding.id,
+              hook: "before",
+              value: entry.visitors.before?.(absolutePath),
+            }),
           catch: (cause) => new DetectionError({ ruleId: entry.rule.binding.id, cause }),
         });
         if (enabled === false) continue;
@@ -245,7 +278,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     const reportedBeforeAfter = reportedCount();
     for (const entry of entries) {
       yield* Effect.try({
-        try: () => entry.visitors.after?.(),
+        try: () => synchronousHook({ ruleId: entry.rule.binding.id, hook: "after", value: entry.visitors.after?.() }),
         catch: (cause) => new DetectionError({ ruleId: entry.rule.binding.id, cause }),
       });
       findings.push(...entry.context.drainFindings());
@@ -268,7 +301,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     .toSorted((left, right) => compareStrings({ left, right }));
   for (const requested of options.rules) {
     if (!config.rulesById.has(requested))
-      return yield* new DetectionError({ ruleId: requested, cause: new Error("Unknown binding") });
+      return yield* new UnknownBindingError({ bindingId: requested, available: availableRules });
   }
   const activeRules = filterRules({ config, requested: options.rules });
   const scope: CollectResult["scope"] =
@@ -343,12 +376,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
         capture.scanned.add(file.path);
         capture.sources.set(file.path, file.after?.content ?? file.before?.content ?? "");
       }
-      const context = new ChangeRuleContextImpl({ rule, change: filteredChange });
-      yield* Effect.try({
-        try: () => rule.detector.detect({ context, options: rule.binding.options }),
-        catch: (cause) => new DetectionError({ ruleId: rule.binding.id, cause }),
-      });
-      findings.push(...context.findings);
+      findings.push(...(yield* detectChange({ rule, change: filteredChange })));
     }
   }
 

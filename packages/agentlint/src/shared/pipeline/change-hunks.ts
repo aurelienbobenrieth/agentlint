@@ -1,9 +1,25 @@
 import type { ChangeHunk, ChangeLine } from "../../domain/rule/model.js";
 import { textLines } from "../../domain/source-text.js";
-import { Array as A } from "effect";
+import { Array as A, Schema } from "effect";
 
 /**
- * Small in-memory fixtures use an exact line diff with the same three-line context as Git.
+ * A compact change fixture that cannot be normalized in memory.
+ *
+ * @since 0.2.0
+ * @category Errors
+ */
+export class ChangeFixtureError extends Schema.TaggedError<ChangeFixtureError>()("agentlint/ChangeFixtureError", {
+  reason: Schema.Literal("too_large"),
+  lines: Schema.Struct({ before: Schema.Number, after: Schema.Number }),
+}) {
+  override get message(): string {
+    return `Compact change fixture is too large (${this.lines.before} × ${this.lines.after} lines). Supply an explicit normalized ChangeSet.`;
+  }
+}
+
+/**
+ * Small in-memory fixtures use an exact line diff with the same three-line context as Git. Throws `ChangeFixtureError`
+ * when the fixture is too large for the in-memory diff.
  */
 export function fixtureHunks({
   before,
@@ -16,7 +32,7 @@ export function fixtureHunks({
   const newLines = textLines(after);
   const width = newLines.length + 1;
   if ((oldLines.length + 1) * width > 4_000_000) {
-    throw new Error("Compact change fixture is too large. Supply an explicit normalized ChangeSet.");
+    throw new ChangeFixtureError({ reason: "too_large", lines: { before: oldLines.length, after: newLines.length } });
   }
   const lengths = new Uint32Array((oldLines.length + 1) * width);
   for (const oldIndex of oldLines.keys()) {

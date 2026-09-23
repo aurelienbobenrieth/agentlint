@@ -345,8 +345,12 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
           column: finding.column,
         });
         sendJson({ response, status: 200, payload: { ok: true, message: `Opened in ${openRequest.application}.` } });
-      } catch {
+      } catch (error) {
         // REASON: launcher details stay server-side; clients receive a stable editor failure.
+        const detail = Schema.is(Schema.instanceOf(Error))(error) ? error.message : String(error);
+        run(
+          Console.error(`agentlint review: ${openRequest.application} could not open ${finding.file}: ${detail}`),
+        ).catch(() => undefined);
         sendJson({
           response,
           status: 409,

@@ -7,7 +7,7 @@
  * @module
  */
 
-import { DetectionError } from "./detection-error.js";
+import { DetectionError, synchronousHook } from "./detection-error.js";
 import type { Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../infrastructure/parsed-node.js";
@@ -26,9 +26,8 @@ const visitorHandler = ({
 }): VisitorHandler | undefined => {
   const value = Reflect.get(visitors, key);
   return Predicate.isFunction(value)
-    ? (node) => {
-        Reflect.apply(value, undefined, [node]);
-      }
+    ? // The return value is kept so the walker can refuse a promise-returning visitor.
+      (node) => Reflect.apply(value, undefined, [node])
     : undefined;
 };
 
@@ -75,7 +74,7 @@ export function walkFile({
       if (!visit) continue;
       const handler: VisitorHandler = (node) => {
         try {
-          visit(node);
+          synchronousHook({ ruleId: entry.ruleId, hook: key, value: visit(node) });
         } catch (cause) {
           throw new DetectionError({ ruleId: entry.ruleId, cause });
         }

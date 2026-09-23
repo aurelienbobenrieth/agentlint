@@ -197,6 +197,9 @@ describe("next handoff", () => {
         expect(first.source).toBe(source);
         expect(first.finding?.guidance.standard).toBe("Review danger calls.");
         expect(first.actions[0]?.argv[0]).toBe("accept");
+        // The stale cache maps "1" to another finding: `next` must select by full key, never by ordinal.
+        expect(first.selector).toBe(first.finding?.id);
+        expect(first.actions[0]?.argv[1]).toBe(first.finding?.id);
         expect((yield* nextHandler(command)).finding?.id).toBe(first.finding?.id);
         const finding = A.getUnsafe(first.finding === null ? [] : [first.finding], 0);
         yield* applyReviewAction(

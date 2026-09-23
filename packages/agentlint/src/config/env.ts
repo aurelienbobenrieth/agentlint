@@ -68,14 +68,24 @@ export class Env extends Context.Service<
   static readonly layer: Layer.Layer<Env> = Layer.sync(Env, () => {
     const isTTY = process.stdout.isTTY;
     const rawEnv = process.env;
-    const username = rawEnv["USER"] ?? rawEnv["USERNAME"] ?? userInfo().username;
+    // Resolved only when needed: `userInfo()` throws for a uid without a passwd entry, as in `docker run --user`.
+    const username = () => {
+      const fromEnv = rawEnv["USER"]?.trim() || rawEnv["USERNAME"]?.trim();
+      if (fromEnv) return fromEnv;
+      try {
+        return userInfo().username.trim() || "unknown";
+      } catch {
+        return "unknown";
+      }
+    };
+    // A blank override is treated as unset: actors are non-empty in every persisted record.
     const actor =
-      rawEnv["AGENTLINT_ACTOR"] ??
+      rawEnv["AGENTLINT_ACTOR"]?.trim() ||
       (rawEnv["CODEX_SANDBOX"] || rawEnv["CODEX_ENV_PWD"]
         ? "agent:codex"
         : rawEnv["CLAUDECODE"] || rawEnv["CLAUDE_CODE"]
           ? "agent:claude"
-          : `human:${username}`);
+          : `human:${username()}`);
 
     return Env.of({
       cwd: process.cwd(),

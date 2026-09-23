@@ -2,9 +2,11 @@
  * Change detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintChange, normalizeRepositoryPath } from "../../fingerprint.js";
+import { Result } from "effect";
+import { canonicalDigest, fingerprintChange, repositoryPath } from "../../fingerprint.js";
 import { FindingRecord } from "../../finding.js";
 import { findingSourceForRule } from "../identity.js";
+import { DetectorContractError } from "../model.js";
 import type { ChangeFindingOptions, ChangeRule, ChangeRuleContext, ChangeSet, ChangedFile } from "../model.js";
 
 function operation(file: ChangedFile): "add" | "delete" | "modify" | "rename" {
@@ -30,17 +32,24 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
     this.#sourceIdentity = findingSourceForRule(rule);
   }
 
+  #reportError(reason: DetectorContractError["reason"], detail: string): DetectorContractError {
+    return new DetectorContractError({ ruleId: this.rule.binding.id, reason, detail });
+  }
+
+  #path(input: string): string {
+    const normalized = repositoryPath(input);
+    if (Result.isFailure(normalized)) throw this.#reportError("invalid_path", normalized.failure.detail);
+    return normalized.success;
+  }
+
   report(options: ChangeFindingOptions): void {
-    const filePath = normalizeRepositoryPath(options.file);
+    const filePath = this.#path(options.file);
     const changed = this.change.files.find((entry) => entry.path === filePath || entry.previousPath === filePath);
-    if (!changed) {
-      throw new Error(`Rule ${this.rule.binding.id} reported evidence outside the change set: ${filePath}`);
-    }
+    if (!changed) throw this.#reportError("outside_change_set", filePath);
 
     const identity = canonicalDigest({ path: changed.path, key: options.key });
-    if (!options.key.trim() || this.#keys.has(identity)) {
-      throw new Error(`Rule ${this.rule.binding.id} reported a duplicate or empty finding key: ${options.key}`);
-    }
+    if (!options.key.trim()) throw this.#reportError("empty_key", options.key);
+    if (this.#keys.has(identity)) throw this.#reportError("duplicate_key", options.key);
     this.#keys.add(identity);
     const beforePath = changed.previousPath ?? changed.path;
     const afterPath = changed.path;
@@ -48,10 +57,10 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
     const endLine = options.endLine ?? line;
     const excerpt =
       options.excerpt ?? changed.after?.content?.split(/\r?\n/)[Math.max(0, line - 1)]?.trim() ?? options.message;
-    const relatedFiles = [...new Set((options.relatedFiles ?? []).map(normalizeRepositoryPath))].toSorted();
+    const relatedFiles = [...new Set((options.relatedFiles ?? []).map((file) => this.#path(file)))].toSorted();
     for (const related of relatedFiles) {
-      if (!this.change.files.some((entry) => entry.path === related || entry.previousPath === related))
-        throw new Error(`Rule ${this.rule.binding.id} reported related context outside the change set: ${related}`);
+      if (!this.change.files.some((entry) => entry.path === related))
+        throw this.#reportError("outside_change_set", related);
     }
 
     this.findings.push(
