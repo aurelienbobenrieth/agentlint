@@ -89,6 +89,45 @@ const renderCodePanel = ({
  */
 const codePanel = createKeyedLazy();
 
+const relatedContext = ({
+  finding,
+  state,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly h: HtmlBuilder<Message>;
+}): Html | null => {
+  const files = finding.relatedFiles.filter((file) => file !== finding.file && state.sources[file] !== undefined);
+  if (files.length === 0) return null;
+  return h.section(
+    [h.Class("related-context")],
+    [
+      h.h2([], ["Related review context"]),
+      ...files.map((file) =>
+        h.details(
+          [h.Class("guidance")],
+          [
+            h.summary([h.Class("guidance__summary")], [icon({ name: "file", h }), h.code([], [file])]),
+            h.pre(
+              [h.Class("code__lines")],
+              highlightedLines({ source: state.sources[file] ?? "", file }).map((markup, index) =>
+                h.code(
+                  [h.Class("line")],
+                  [
+                    h.span([h.Class("line__n")], [String(index + 1)]),
+                    h.span([h.Class("line__c"), h.InnerHTML(markup)], []),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+};
+
 const diffBlock = ({
   diff,
   file,
@@ -486,6 +525,7 @@ export const detail = ({
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
   const hidden = independentHidden({ model, findingId: finding.id });
   const proposal = hidden ? null : proposalCard({ finding, state, h });
+  const related = relatedContext({ finding, state, h });
   const acceptance =
     !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard({ finding, state, h }) : null;
   return h.main(
@@ -540,6 +580,7 @@ export const detail = ({
           }),
         [finding, state.sources[finding.file] ?? "", model.codeView, canOpen, preferred, h],
       ),
+      ...(related === null ? [] : [related]),
       ...(proposal === null ? [] : [proposal]),
       ...(acceptance === null ? [] : [acceptance]),
       ...(hidden || finding.lineageReason === null

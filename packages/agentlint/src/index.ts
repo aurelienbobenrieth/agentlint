@@ -15,6 +15,7 @@ export { ParserError } from "./domain/parser-error.js";
 // Runtime schemas a consumer may need to construct or decode.
 export { FindingRecord, findingId } from "./domain/finding.js";
 export { ChangeBaseline, ChangedFile, ChangeHunk, ChangeLine, ChangeSet, FileSnapshot } from "./domain/rule/model.js";
+export { OutcomeKind, OutcomeRecord } from "./domain/outcome.js";
 
 export type { AgentlintConfig } from "./domain/config.js";
 export type { AgentlintNode, Position } from "./domain/node.js";

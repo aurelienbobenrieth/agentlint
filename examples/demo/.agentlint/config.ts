@@ -116,6 +116,71 @@ const dynamicCodeExecution = defineRule({
   },
 });
 
+const customerDataExports = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "privacy/customer-data-exports",
+    revision: 1,
+    title: "Customer-data exports follow the repository privacy contract",
+    guidance: {
+      standard:
+        "Customer-data exports contain only the documented fields, require an authenticated customer request, and retain an auditable purpose.",
+      checks: [
+        "Read the related privacy contract before deciding whether the selected fields and call site are allowed.",
+        "Verify authorization, purpose logging, retention, and deletion behavior at the actual export boundary.",
+      ],
+      examples: [
+        {
+          label: "Explicit export boundary",
+          code: "exportCustomerData({ customerId, fields: allowedExportFields, purpose: request.reason })",
+        },
+      ],
+    },
+  },
+  detector: {
+    id: "typescript/customer-data-export",
+    version: 1,
+    scan: "file",
+    createOnce({ context }) {
+      return {
+        call_expression(node) {
+          if (!node.text.startsWith("exportCustomerData(")) return;
+          context.report({
+            node,
+            message: "Customer data crosses an export boundary; review it with the repository privacy contract.",
+            relatedFiles: ["policy/customer-data-exports.md"],
+          });
+        },
+      };
+    },
+    fixtures: {
+      mustReport: [
+        {
+          files: {
+            "fixture.ts": "exportCustomerData({ customerId, fields });",
+            "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+          },
+        },
+      ],
+      mustStaySilent: [
+        {
+          files: {
+            "fixture.ts": "renderCustomerProfile({ customerId });",
+            "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+          },
+        },
+      ],
+    },
+  },
+  binding: {
+    id: "privacy/customer-data-exports",
+    authority: "human",
+    include: ["src/**/*.{ts,tsx}"],
+    dependencies: ["policy/customer-data-exports.md"],
+    reviewEpoch: 1,
+  },
+});
+
 const destructiveMigrations = defineRule({
   lifecycle: "change",
   standard: {
@@ -132,7 +197,7 @@ const destructiveMigrations = defineRule({
   detector: {
     id: "text/destructive-schema-addition",
     version: 1,
-    detect(context) {
+    detect({ context }) {
       for (const file of context.change.files) {
         for (const hunk of file.hunks) {
           const index = hunk.lines.findIndex(
@@ -183,7 +248,7 @@ const privilegeWidening = defineRule({
   detector: {
     id: "diff/administrative-role-addition",
     version: 1,
-    detect(context) {
+    detect({ context }) {
       for (const file of context.change.files) {
         for (const hunk of file.hunks) {
           let ordinal = 0;
@@ -221,6 +286,7 @@ export default defineConfig({
     idempotentPaymentCapture,
     focusedTests,
     dynamicCodeExecution,
+    customerDataExports,
     destructiveMigrations,
     privilegeWidening,
   ],

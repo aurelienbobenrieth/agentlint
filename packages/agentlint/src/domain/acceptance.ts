@@ -99,7 +99,11 @@ export function invalidationReasons({
   if (prior.source.standardRevision !== current.source.standardRevision) reasons.push("The standard revision changed.");
   if (prior.source.detectorVersion !== current.source.detectorVersion) reasons.push("The detector version changed.");
   if (prior.source.bindingDigest !== current.source.bindingDigest)
-    reasons.push("The binding scope, options, or declared dependencies changed.");
+    reasons.push(
+      prior.source.reviewEpoch !== current.source.reviewEpoch
+        ? "The repository advanced the review epoch."
+        : "The binding scope, options, or declared dependencies changed.",
+    );
   if (
     prior.fingerprint.version !== current.fingerprint.version ||
     prior.fingerprint.scheme !== current.fingerprint.scheme

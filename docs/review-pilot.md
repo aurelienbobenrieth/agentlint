@@ -31,6 +31,10 @@ For a representative set of tasks, compare normal repository instructions, expli
 
 Include the cost of initial rule authoring and repeated invalidations. Count a stored acceptance as a decision, not as a prevented defect.
 
+Record delayed evidence with `agentlint outcomes record`: useful interceptions, unnecessary reviews, escaped concerns,
+corrective changes, rollbacks and incidents. Use a commit, issue or incident identifier as the reference. The record is
+observational and does not retroactively prove that the original acceptance was right or wrong.
+
 ## Decide whether the rule earns its place
 
 - Which obligation became reliably visible?
@@ -39,5 +43,8 @@ Include the cost of initial rule authoring and repeated invalidations. Count a s
 - Did an acceptance survive a change that should have invalidated it?
 - Did a harmless change cause excessive review work?
 - Keep, refine or remove the rule, with a short reason.
+- If a policy period or architectural assumption changed independently of source evidence, increment the binding's
+  repository-controlled `reviewEpoch` and review the resulting invalidations. Do not use the epoch as a scheduled ritual
+  with no concrete reason.
 
 Expand only after this evidence shows that the first obligation is useful. The same process works for a personal rule and for a shared team standard.

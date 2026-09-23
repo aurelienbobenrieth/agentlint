@@ -4,6 +4,7 @@ const state = {
   version: 3,
   sources: {
     "src/query.ts": "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n",
+    "policy/query-bounds.md": "Production queries use a limit, cursor, or documented finite boundary.\n",
   },
   coverage: { scope: "complete", files: ["src/query.ts"], rules: ["data/bounded-query"] },
   mode: "review",
@@ -37,7 +38,7 @@ const state = {
       line: 4,
       column: 3,
       message: "Review this unbounded query.",
-      relatedFiles: ["src/query.ts"],
+      relatedFiles: ["policy/query-bounds.md", "src/query.ts"],
       invalidationReasons: [],
       editor: null,
       code: { focus: { startLine: 4, startColumn: 3, endLine: 4, endColumn: 21 } },
@@ -65,6 +66,9 @@ test("loads a review, supports keyboard help, and remains contained on mobile", 
 
   await expect(page.getByRole("heading", { name: "Bound database queries" })).toBeVisible();
   await expect(page.getByRole("main").getByText("Review this unbounded query.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Related review context" })).toBeVisible();
+  await page.getByText("policy/query-bounds.md", { exact: true }).click();
+  await expect(page.getByText("Production queries use a limit, cursor, or documented finite boundary.")).toBeVisible();
 
   await page.keyboard.press("?");
   const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts" });

@@ -1,6 +1,12 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { AcceptanceRecord, acceptanceSatisfies, authoritySatisfies, findLineage } from "./acceptance.js";
+import {
+  AcceptanceRecord,
+  acceptanceSatisfies,
+  authoritySatisfies,
+  findLineage,
+  invalidationReasons,
+} from "./acceptance.js";
 import { FindingRecord } from "./finding.js";
 import { Fingerprint, FindingSource } from "./fingerprint.js";
 
@@ -88,6 +94,7 @@ describe("acceptance compatibility", () => {
       { source: sourceWith({ detectorVersion: 2 }) },
       { source: sourceWith({ bindingId: "worker-queries" }) },
       { source: sourceWith({ bindingDigest: "binding-b" }) },
+      { source: sourceWith({ bindingDigest: "binding-b", reviewEpoch: 2 }) },
       { fingerprint: fingerprintWith({ scheme: "git-change" }) },
       { fingerprint: fingerprintWith({ version: 1 }) },
       { fingerprint: fingerprintWith({ digest: "evidence-b" }) },
@@ -95,6 +102,12 @@ describe("acceptance compatibility", () => {
     for (const changed of cases) {
       expect(acceptanceSatisfies({ acceptance: acceptance(changed), finding: finding() })).toBe(false);
     }
+  });
+
+  it("explains a repository-controlled review epoch separately from other binding changes", () => {
+    const prior = acceptance({ source: sourceWith({ bindingDigest: "binding-epoch-1", reviewEpoch: 1 }) });
+    const current = finding({ source: sourceWith({ bindingDigest: "binding-epoch-2", reviewEpoch: 2 }) });
+    expect(invalidationReasons({ prior, current })).toContain("The repository advanced the review epoch.");
   });
 
   it("applies the authority lattice", () => {

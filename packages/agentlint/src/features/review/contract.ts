@@ -77,6 +77,7 @@ export const ReviewFindingSource = Schema.Struct({
   detectorVersion: Schema.Number,
   bindingId: Schema.String,
   bindingDigest: Schema.String,
+  reviewEpoch: Schema.optional(Schema.Number),
 });
 export type ReviewFindingSource = Schema.Schema.Type<typeof ReviewFindingSource>;
 

@@ -48,6 +48,14 @@ const structureOf = async ({
 };
 
 describe("state evidence", () => {
+  it("carries a repository review epoch into finding identity", async () => {
+    const epochRule = defineRule({ ...danger, binding: { ...danger.binding, reviewEpoch: 2 } });
+    const original = EffectArray.getUnsafe(await testRuleOnSource({ rule: danger, source: "danger(x)" }), 0);
+    const advanced = EffectArray.getUnsafe(await testRuleOnSource({ rule: epochRule, source: "danger(x)" }), 0);
+    expect(advanced.source.reviewEpoch).toBe(2);
+    expect(advanced.source.bindingDigest).not.toBe(original.source.bindingDigest);
+  });
+
   it("distinguishes source text that the grammar exposes as no node", async () => {
     expect(await digestOf({ source: "danger(x as `/public/${string}`)" })).not.toBe(
       await digestOf({ source: "danger(x as `/admin/${string}`)" }),

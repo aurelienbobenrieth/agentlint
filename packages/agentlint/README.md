@@ -146,6 +146,7 @@ const boundedReads = defineRule({
   binding: {
     id: "data/bounded-reads",
     authority: "agent",
+    reviewEpoch: 1,
     include: ["src/**/*.ts"],
     exclude: ["**/*.test.ts"],
   },
@@ -247,7 +248,9 @@ pnpm agentlint review
 pnpm agentlint approve 1 --reason "Backfill and restore drill linked in the migration."
 ```
 
-An agent acceptance cannot satisfy a human binding. A human acceptance can satisfy either authority.
+An agent acceptance cannot satisfy a human binding. A human acceptance can satisfy either authority. Architectural,
+privacy, destructive-operation and public-contract rules normally use human authority: an agent may attach a proposal,
+but cannot ratify its own contextual conclusion.
 
 When an agent has done the work but cannot decide, it records a proposal so the reviewer sees the change next to the evidence:
 
@@ -271,14 +274,20 @@ pnpm agentlint propose 6 --summary "Added an idempotent backfill before the drop
 - standard id and revision;
 - detector id and version;
 - binding id and material binding digest;
+- repository-controlled review epoch, when configured;
 - fingerprint scheme, version, and evidence digest;
 - sufficient authority.
 
-State fingerprints (version 2) include the containing file syntax, the structural occurrence, optional reported evidence, and the contents of explicit `binding.dependencies`. Whitespace between syntax nodes retains acceptance; literal and comment contents remain material. Changes to the containing file structure invalidate it, even outside the matched call. This is intentionally conservative: changes elsewhere in a busy file may require another review. Unicode source values stay exact.
+State fingerprints (version 3) include the containing file syntax, the structural occurrence, optional reported evidence, and the contents of explicit `binding.dependencies`. Whitespace between syntax nodes retains acceptance; literal and comment contents remain material. Changes to the containing file structure invalidate it, even outside the matched call. This is intentionally conservative: changes elsewhere in a busy file may require another review. Unicode source values stay exact.
+
+`binding.reviewEpoch` is an optional positive integer controlled by the repository. Increment it when otherwise unchanged
+decisions need a fresh review because an assumption, policy period or ownership context changed. The epoch participates in
+finding identity and invalidates compatible acceptances without consulting wall-clock time; agentlint itself remains
+deterministic and never expires decisions merely because a date passed.
 
 For a state binding, when a justification relies on another file, add its exact normalized repository-relative path to `binding.dependencies`, for example `["src/http/pagination.ts"]`. Dependencies are required inputs, not globs. Their contents are available as `context.dependencies[path]`. Include them in repository fixtures too. A dependency change triggers a full scan of the binding, even if its matched file did not change. The engine does not infer runtime or transitive dependencies. Change detectors define their supporting evidence explicitly through `report({ evidence })`; `binding.dependencies` is rejected for change rules.
 
-Imperative state detectors default to repository scans. A detector that is independent for each file can declare `scan: "file"`. Node wrappers are valid during their file visitor only. In `after()`, use captured plain data rather than retaining syntax nodes. `context.report` accepts optional material JSON `evidence` and a unique, stable `key`; the containing file remains part of the fingerprint.
+Imperative state detectors default to repository scans. A detector that is independent for each file can declare `scan: "file"`. Node wrappers are valid during their file visitor only. In `after()`, use captured plain data rather than retaining syntax nodes. `context.report` accepts optional material JSON `evidence`, a unique stable `key`, and `relatedFiles` selected from declared binding dependencies. Change findings may select related files from their normalized change set. Related sources travel with review artifacts and appear as collapsible reading context; they do not become material evidence unless the detector also reports them in `evidence`.
 
 This pre-v1 draft supports the current format only and provides no migration or backward-compatibility layer. Regenerate artifacts and review findings again after a breaking change. Version fields remain part of the gate contract: unsupported evidence can never satisfy a finding. Change detectors own their material `evidence`; changing it invalidates acceptance. Optional lineage can show a prior reason after invalidation, but it never opens the new gate.
 
@@ -305,9 +314,25 @@ Use it on an existing codebase to label matches as applies, does not apply, or u
 
 ## Related and independent review
 
-The list's Filters menu offers Related grouping. Findings are connected by their containing files and explicit state-binding dependencies, including transitive shared connections. The UI shows the related file paths; it does not infer common causes or runtime dependencies. Groups change navigation only. Every finding still needs its own compatible decision.
+The list's Filters menu offers Related grouping. Findings are connected by their containing files and explicit state-binding dependencies, including transitive shared connections. A detector can narrow that reading set with `relatedFiles`; the UI packages and shows those sources next to the primary code. It does not infer callers, common causes or runtime dependencies. Groups change navigation only. Every finding still needs its own compatible decision.
 
 Independent review is an optional session-only presentation mode. It hides acceptance reasons, prior lineage reasons and proposals, including in copied context. Write an assessment before revealing the prior material; the assessment becomes the editable reason for the next decision. Keyboard decision actions follow the same restriction. This reduces anchoring; it is not a confidentiality or authorization boundary, and the original data remains in the browser payload. Enable it before starting the review of a finding.
+
+## Record delayed outcomes
+
+Immediate gate results do not establish long-term maintainability. When later work supplies evidence—a useful interception,
+unnecessary review, escaped concern, corrective change, rollback or incident—attach it to the current finding:
+
+```bash
+pnpm agentlint outcomes record 4 --kind corrective_change --reference commit:abc123 \
+  --note "A second owner drifted from the policy."
+pnpm agentlint outcomes list
+pnpm agentlint outcomes list --format json
+```
+
+`.agentlint/outcomes.jsonl` is a committed observational record. Outcomes never open or close a gate. Reusing the same
+finding, kind and reference updates the note; distinct outcomes remain. The summary groups observations by rule and kind
+so repositories can keep, refine or remove rules using delayed evidence instead of treating a green gate as proof.
 
 ## Measure detector calibration
 
@@ -366,6 +391,8 @@ agentlint next [--base ref] [--rule id] [--format text|json]
 agentlint rules calibration <reports...> [--format text|json]
 agentlint rules list|test|scan
 agentlint acceptances list|clean|import
+agentlint outcomes record <selector> --kind <kind> --reference "..." --note "..."
+agentlint outcomes list [--format text|json]
 agentlint init
 ```
 
@@ -441,7 +468,7 @@ Provider adapters (pull-request comments, ownership routing, signed human author
 
 - `defineConfig` and `defineRule`, with the `AgentlintConfig`, `AgentlintRule`, `StateRule`, `ChangeRule`, `RuleBinding`, `RuleStandard`, `Guidance`, `RuleMatch`, and `Visitors` types.
 - `RuleContext` (`absolutePath`, `path`, `source`, `report`) and `ChangeRuleContext` for detector implementations, plus `AgentlintNode` and `TreeSitterNodeType`.
-- The change evidence schemas (`ChangeSet`, `ChangedFile`, `ChangeHunk`, `ChangeLine`, `FileSnapshot`, `ChangeBaseline`) and `FindingRecord` as runtime values, so a consumer can construct or decode them.
+- The change evidence schemas (`ChangeSet`, `ChangedFile`, `ChangeHunk`, `ChangeLine`, `FileSnapshot`, `ChangeBaseline`), `FindingRecord`, `OutcomeKind`, and `OutcomeRecord` as runtime values, so a consumer can construct or decode them.
 - Tagged errors: `RuleDefinitionError`, `ConfigError`, `PatternError`, `ParserError`.
 
 `@aurelienbbn/agentlint/testing` exports the promise-based helpers `testRuleFixtures`, `testRuleOnSource`, `testRuleOnSources`, and `testRuleOnChange`, plus `normalizeChangeFixture`, `FixtureReport`, and `FixtureFailure`. The public API does not require consumers to construct engine services or import Effect. `testRuleOnSources` accepts `[path, source]` pairs, including all declared dependencies.
@@ -454,7 +481,7 @@ The package intentionally exports no bundled standards, detectors, rules, or pre
 
 State parsing supports JavaScript, TypeScript, TSX, and JSON. Change detectors consume Git evidence for other file types too. Full state enumeration skips `node_modules`, `.git`, `dist`, `coverage`, `.cache`, and `.agents`. Repository ignores apply before directory traversal. Explicit directories expand recursively. Missing explicit paths, failed reads, incomplete or unsupported syntax, paths outside the repository and invalid bindings fail the scan. A partial scan never qualifies for complete stale cleanup.
 
-Acceptance and proposal updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds `.agentlint/acceptances.lock` or `.agentlint/proposals.lock` for milliseconds. Locks carry an ownership token and a writer only releases its own lock. A lock is never stolen based on age because a paused process may still resume and write; after an abrupt process death, remove the orphaned lock manually. The CLI fails clearly after a bounded wait. Git retains historical decisions. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
+Acceptance, proposal and outcome updates use an exclusive cross-process lock and atomic file replacement. A failure before atomic replacement preserves the previous destination. After replacement, readers see the complete new file. Power-loss durability and network filesystem semantics are not certified. A transaction holds the corresponding `.agentlint/*.lock` for milliseconds. Locks carry an ownership token and a writer only releases its own lock. A lock is never stolen based on age because a paused process may still resume and write; after an abrupt process death, remove the orphaned lock manually. The CLI fails clearly after a bounded wait. Git retains historical decisions and outcomes. Lineage can explain invalidation from the pre-cleanup snapshot; it is not a persistent history service.
 
 ## Security boundary
 

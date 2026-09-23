@@ -48,6 +48,11 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
     const endLine = options.endLine ?? line;
     const excerpt =
       options.excerpt ?? changed.after?.content?.split(/\r?\n/)[Math.max(0, line - 1)]?.trim() ?? options.message;
+    const relatedFiles = [...new Set((options.relatedFiles ?? []).map(normalizeRepositoryPath))].toSorted();
+    for (const related of relatedFiles) {
+      if (!this.change.files.some((entry) => entry.path === related || entry.previousPath === related))
+        throw new Error(`Rule ${this.rule.binding.id} reported related context outside the change set: ${related}`);
+    }
 
     this.findings.push(
       new FindingRecord({
@@ -79,6 +84,7 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
         endColumn: 1,
         message: options.message,
         sourceSnippet: excerpt.length > 160 ? `${excerpt.slice(0, 157)}...` : excerpt,
+        relatedFiles,
       }),
     );
   }

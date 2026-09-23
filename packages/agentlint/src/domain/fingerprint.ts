@@ -52,6 +52,7 @@ export class FindingSource extends Schema.Class<FindingSource>("FindingSource")(
   detectorVersion: PositiveInteger,
   bindingId: NonEmptyString,
   bindingDigest: NonEmptyString,
+  reviewEpoch: Schema.optional(PositiveInteger),
 }) {}
 
 /**
@@ -270,7 +271,8 @@ export function sameFindingSource({
     left.detectorId === right.detectorId &&
     left.detectorVersion === right.detectorVersion &&
     left.bindingId === right.bindingId &&
-    left.bindingDigest === right.bindingDigest
+    left.bindingDigest === right.bindingDigest &&
+    left.reviewEpoch === right.reviewEpoch
   );
 }
 
@@ -309,6 +311,7 @@ export function findingIdentityKey({
       detectorVersion: source.detectorVersion,
       bindingId: source.bindingId,
       bindingDigest: source.bindingDigest,
+      ...(source.reviewEpoch === undefined ? {} : { reviewEpoch: source.reviewEpoch }),
     },
     fingerprint: {
       scheme: fingerprint.scheme,

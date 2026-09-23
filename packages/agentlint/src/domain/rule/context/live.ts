@@ -2,7 +2,7 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState } from "../../fingerprint.js";
+import { canonicalDigest, fingerprintState, normalizeRepositoryPath } from "../../fingerprint.js";
 import { Schema } from "effect";
 import type { CanonicalValue } from "../../fingerprint.js";
 import { type FindingOptions, FindingRecord } from "../../finding.js";
@@ -250,6 +250,11 @@ export class RuleContextImpl implements RuleContext {
       dependencies: this.#dependencyDigest,
       evidence: options.evidence ?? null,
     };
+    const relatedFiles = [...new Set((options.relatedFiles ?? []).map(normalizeRepositoryPath))].toSorted();
+    for (const related of relatedFiles) {
+      if (!(related in this.dependencies))
+        throw new Error(`Rule ${this.rule.binding.id} reported undeclared related context: ${related}`);
+    }
 
     this.findings.push(
       new FindingRecord({
@@ -276,6 +281,7 @@ export class RuleContextImpl implements RuleContext {
         endColumn,
         message: options.message,
         sourceSnippet,
+        relatedFiles,
       }),
     );
   }

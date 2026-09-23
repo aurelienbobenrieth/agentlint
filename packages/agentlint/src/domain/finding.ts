@@ -26,6 +26,11 @@ export interface FindingOptions {
    * Stable detector-owned occurrence identity, unique within the current file.
    */
   readonly key?: string;
+  /**
+   * Declared binding dependencies that a reviewer should read with this finding. These paths provide context only;
+   * material evidence still belongs in `evidence`.
+   */
+  readonly relatedFiles?: ReadonlyArray<string>;
 }
 
 /**
@@ -46,6 +51,7 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
   endColumn: Schema.Number,
   message: Schema.String,
   sourceSnippet: Schema.String,
+  relatedFiles: Schema.optional(Schema.Array(Schema.String)),
 }) {}
 
 /**
@@ -87,5 +93,6 @@ export function withSelector({
     endColumn: finding.endColumn,
     message: finding.message,
     sourceSnippet: finding.sourceSnippet,
+    relatedFiles: finding.relatedFiles,
   });
 }

@@ -38,6 +38,8 @@ import { prHandler } from "./features/pr/handler.js";
 import { PrCommand } from "./features/pr/request.js";
 import { proposeHandler } from "./features/propose/handler.js";
 import { ProposeCommand } from "./features/propose/request.js";
+import { listOutcomesHandler, recordOutcomeHandler } from "./features/outcomes/handler.js";
+import { RecordOutcomeCommand } from "./features/outcomes/request.js";
 import { rulesListHandler, rulesScanHandler, rulesTestHandler } from "./features/rules/handler.js";
 import { RulesListCommand, RulesScanCommand, RulesTestCommand } from "./features/rules/request.js";
 import { AcceptanceStore } from "./shared/infrastructure/acceptance-store.js";
@@ -47,6 +49,7 @@ import { Git } from "./shared/infrastructure/git/service.js";
 import { encodeJson, encodePrettyJson } from "./shared/infrastructure/json.js";
 import { Parser } from "./shared/infrastructure/parser.js";
 import { ProposalStore } from "./shared/infrastructure/proposal-store.js";
+import { OutcomeStore } from "./shared/infrastructure/outcome-store.js";
 import { SelectorCache } from "./shared/infrastructure/selector-cache.js";
 
 declare const __AGENTLINT_VERSION__: string;
@@ -413,6 +416,61 @@ const acceptances = Command.make("acceptances").pipe(
   Command.withSubcommands([acceptancesList, acceptancesClean, acceptancesImport]),
 );
 
+const outcomesRecord = Command.make(
+  "record",
+  {
+    selector: selectorArgument,
+    kind: Flag.Literals("kind", [
+      "useful_interception",
+      "unnecessary_review",
+      "escaped_concern",
+      "corrective_change",
+      "rollback",
+      "incident",
+    ]).pipe(Flag.withDescription("Observed result after review")),
+    reference: Flag.String("reference").pipe(Flag.withDescription("Commit, incident, issue, or review reference")),
+    note: Flag.String("note").pipe(Flag.withDescription("What the outcome taught about this rule or decision")),
+    base: baseFlag,
+  },
+  Effect.fn("outcomesRecord")(function* ({ selector, kind, reference, note, base }) {
+    const result = yield* recordOutcomeHandler(new RecordOutcomeCommand({ selector, kind, reference, note, base }));
+    yield* Console.log(result.message);
+    yield* setExitCode(result.exitCode);
+  }),
+).pipe(Command.withDescription("Attach a delayed real-world outcome to a current finding"));
+
+const outcomesList = Command.make(
+  "list",
+  { format: Flag.Literals("format", ["text", "json"]).pipe(Flag.withDefault("text")) },
+  Effect.fn("outcomesList")(function* ({ format }) {
+    const result = yield* listOutcomesHandler();
+    if (format === "json") {
+      yield* Console.log(encodePrettyJson({ version: 1, outcomes: result.records }));
+      return;
+    }
+    if (result.records.length === 0) {
+      yield* Console.log("No recorded outcomes.");
+      return;
+    }
+    const counts = new Map<string, number>();
+    for (const record of result.records) {
+      const key = `${record.ruleId} ${record.kind}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    yield* Console.log(
+      [...counts.entries()]
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([key, count]) => `${key}: ${count}`)
+        .join("\n"),
+    );
+  }),
+).pipe(Command.withDescription("Summarize delayed outcomes by rule and kind"));
+
+const outcomes = Command.make("outcomes").pipe(
+  Command.withDescription("Record and inspect longitudinal review evidence"),
+  Command.withSubcommands([outcomesRecord, outcomesList]),
+);
+
 const init = Command.make(
   "init",
   {
@@ -429,7 +487,20 @@ const init = Command.make(
 
 const agentlint = Command.make("agentlint").pipe(
   Command.withDescription(`${TAGLINE}\n\n${EXIT_CODES}`),
-  Command.withSubcommands([check, next, accept, approve, propose, explain, review, pr, rules, acceptances, init]),
+  Command.withSubcommands([
+    check,
+    next,
+    accept,
+    approve,
+    propose,
+    explain,
+    review,
+    pr,
+    rules,
+    acceptances,
+    outcomes,
+    init,
+  ]),
 );
 
 // ---------------------------------------------------------------------------
@@ -471,6 +542,7 @@ const AppLayer = Layer.mergeAll(
   Gh.layer,
   AcceptanceStore.layer,
   ProposalStore.layer,
+  OutcomeStore.layer,
   SelectorCache.layer,
   CliOutputLayer,
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, Env.layer)));

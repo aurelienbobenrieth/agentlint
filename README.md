@@ -24,6 +24,8 @@ An agent that touches a payment call, drops a column, or widens a permission usu
 - **Change rules** judge the Git change itself: a dropped table between the merge base and the working tree, a widened role.
 - **Authority** decides who may close the gate. An agent can accept a bounded query with a concrete reason. Only a human can accept a destructive migration.
 - **Fingerprints** keep an acceptance across formatting and line moves and invalidate it when the code materially changes.
+- **Review epochs** let a repository deliberately expire otherwise compatible decisions without making the engine depend on a clock.
+- **Outcomes** attach later corrections, rollbacks, incidents, useful interceptions, and unnecessary reviews to the finding that prompted the decision.
 
 ## Quick start
 

@@ -209,6 +209,10 @@ export interface ChangeFindingOptions {
   readonly excerpt?: string | undefined;
   readonly startLine?: number | undefined;
   readonly endLine?: number | undefined;
+  /**
+   * Other files in this normalized change that a reviewer should inspect with the primary finding.
+   */
+  readonly relatedFiles?: ReadonlyArray<string> | undefined;
 }
 
 export interface ChangeRuleContext {
@@ -227,6 +231,11 @@ export { Lifecycle, RuleAuthority } from "./primitives.js";
 export interface RuleBinding<Options extends CanonicalValue | undefined = CanonicalValue | undefined> {
   readonly id: string;
   readonly authority: RuleAuthority;
+  /**
+   * Repository-controlled review generation. Increment it to invalidate otherwise compatible acceptances without
+   * consulting a clock. Omit when decisions expire only as their evidence changes.
+   */
+  readonly reviewEpoch?: number | undefined;
   readonly include?: ReadonlyArray<string> | undefined;
   readonly exclude?: ReadonlyArray<string> | undefined;
   readonly options?: Options | undefined;
@@ -323,6 +332,7 @@ const RuleShape = Schema.Struct({
   binding: Schema.Struct({
     id: NonEmptyString,
     authority: RuleAuthority,
+    reviewEpoch: Schema.optional(PositiveInteger),
     include: Schema.optional(Schema.Array(NonEmptyString)),
     exclude: Schema.optional(Schema.Array(NonEmptyString)),
     dependencies: Schema.optional(Schema.Array(NonEmptyString)),

@@ -120,6 +120,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     const dependencies: Record<string, string> = {};
     for (const dependency of rule.binding.dependencies ?? []) {
       dependencies[dependency] = yield* readSource({ file: dependency, label: "dependency" });
+      capture?.sources.set(dependency, dependencies[dependency]);
     }
     const context = new RuleContextImpl({ rule, dependencies });
     const visitors = yield* Effect.try({
@@ -355,7 +356,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     findings: sortFindings(findings),
     scannedFiles: [...capture.scanned].toSorted((left, right) => compareStrings({ left, right })),
     sources: Object.fromEntries(
-      A.map([...new Set(A.map(findings, (finding) => finding.file))], (file) => [
+      A.map([...new Set(findings.flatMap((finding) => [finding.file, ...(finding.relatedFiles ?? [])]))], (file) => [
         file,
         capture.sources.get(file) ?? "",
       ]),

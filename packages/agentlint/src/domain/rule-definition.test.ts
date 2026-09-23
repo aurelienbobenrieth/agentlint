@@ -72,6 +72,12 @@ describe("defineRule rejects what the type system cannot see", () => {
     },
   );
 
+  it.each([0, -1, 1.5, Number.NaN])("requires a positive integer review epoch, not %s", (reviewEpoch) => {
+    expect(definitionError({ ...valid, binding: { ...valid.binding, reviewEpoch } })).toMatchObject({
+      reason: "invalid_shape",
+    });
+  });
+
   it("requires an executable implementation for each lifecycle", () => {
     expect(definitionError({ ...change, detector: { id: "sql/drop", version: 1 } })).toMatchObject({
       reason: "missing_change_detect",

@@ -152,7 +152,11 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       column: finding.column,
       message: finding.message,
       relatedFiles: [
-        ...new Set([finding.file, ...(rule.lifecycle === "state" ? (rule.binding.dependencies ?? []) : [])]),
+        ...new Set([
+          finding.file,
+          ...(finding.relatedFiles ?? []),
+          ...(rule.lifecycle === "state" ? (rule.binding.dependencies ?? []) : []),
+        ]),
       ].toSorted(),
       invalidationReasons: [...reasons],
       editor: options.transport === "attached" && isInsideRepository ? { canOpen: true } : null,

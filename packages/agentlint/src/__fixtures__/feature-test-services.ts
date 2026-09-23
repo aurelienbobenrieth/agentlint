@@ -8,6 +8,7 @@ import { ConfigLoader } from "../shared/infrastructure/config-loader.js";
 import { Git } from "../shared/infrastructure/git/service.js";
 import { Parser } from "../shared/infrastructure/parser.js";
 import { ProposalStore } from "../shared/infrastructure/proposal-store.js";
+import { OutcomeStore } from "../shared/infrastructure/outcome-store.js";
 import { SelectorCache } from "../shared/infrastructure/selector-cache.js";
 
 export const featureTestRule = ({
@@ -52,6 +53,7 @@ export const featureTestLayer = ({
     Parser.layer,
     AcceptanceStore.layer,
     ProposalStore.layer,
+    OutcomeStore.layer,
     SelectorCache.layer,
   ).pipe(
     Layer.provideMerge(

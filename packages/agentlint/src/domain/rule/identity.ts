@@ -15,6 +15,7 @@ interface IdentityRule {
   };
   readonly binding: {
     readonly id: string;
+    readonly reviewEpoch?: number | undefined;
     readonly include?: ReadonlyArray<string> | undefined;
     readonly exclude?: ReadonlyArray<string> | undefined;
     readonly dependencies?: ReadonlyArray<string> | undefined;
@@ -24,6 +25,7 @@ interface IdentityRule {
 
 function materialBinding(rule: IdentityRule): CanonicalValue {
   return {
+    reviewEpoch: rule.binding.reviewEpoch ?? null,
     include: [...(rule.binding.include ?? [])],
     exclude: [...(rule.binding.exclude ?? [])],
     dependencies: [...(rule.binding.dependencies ?? [])].toSorted((left, right) => left.localeCompare(right)),
@@ -46,5 +48,6 @@ export function findingSourceForRule(rule: IdentityRule): FindingSource {
     detectorVersion: rule.detector.version,
     bindingId: rule.binding.id,
     bindingDigest: bindingDigest(materialBinding(rule)),
+    ...(rule.binding.reviewEpoch === undefined ? {} : { reviewEpoch: rule.binding.reviewEpoch }),
   });
 }
