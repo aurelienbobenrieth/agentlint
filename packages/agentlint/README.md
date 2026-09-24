@@ -1,5 +1,9 @@
 # agentlint
 
+[![CI](https://github.com/aurelienbobenrieth/agentlint/actions/workflows/ci.yml/badge.svg)](https://github.com/aurelienbobenrieth/agentlint/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@aurelienbbn/agentlint.svg)](https://www.npmjs.com/package/@aurelienbbn/agentlint)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/aurelienbobenrieth/agentlint/blob/main/LICENSE)
+
 **Your `AGENTS.md` rules are followed most of the time. agentlint turns the important ones into a gate and keeps a committed record of every exception.**
 
 Agents get the mechanical part right and slip on judgment: a payment call without an idempotency key, a dropped column without a backfill, a fallback that hides a failure, an unbounded read that was fine in the fixture.
