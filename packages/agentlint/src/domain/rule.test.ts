@@ -183,6 +183,24 @@ describe("defineRule", () => {
   });
 });
 
+const drizzleRule = (ruleStandard: StateRule["standard"]) =>
+  defineRule({
+    lifecycle: "state",
+    standard: ruleStandard,
+    detector: {
+      id: "drizzle/select-without-limit",
+      version: 1,
+      match: { pattern: "$DB.select($$$ARGS)", message: "Review this query bound." },
+    },
+    binding: { id: "api/bounded-drizzle-query", authority: "agent" },
+  });
+
+const conflict = (config: Parameters<typeof normalizeConfig>[0]): ConfigError => {
+  const caught = catchError(() => normalizeConfig(config));
+  if (!(caught instanceof ConfigError)) throw new Error("Expected ConfigError");
+  return caught;
+};
+
 describe("defineConfig", () => {
   it("normalizes reusable layers without hiding bindings", () => {
     const shared = defineConfig({ rules: [stateRule], ignores: ["**/generated/**"], base: "main" });
@@ -204,6 +222,37 @@ describe("defineConfig", () => {
     expect(caught).toMatchObject({ reason: "duplicate_binding", ruleId: "api/bounded-prisma-query" });
     if (!(caught instanceof ConfigError)) throw new Error("Expected ConfigError");
     expect(caught.message).toBe("Duplicate rule binding id: api/bounded-prisma-query");
+  });
+
+  describe("standards shared across bindings", () => {
+    it("accepts detectors that carry an equal copy of one standard", () => {
+      const copy = { ...standard, summary: undefined, guidance: { ...standard.guidance } };
+      const config = normalizeConfig(defineConfig({ rules: [stateRule, drizzleRule(copy)] }));
+      expect(config.rules.map((rule) => rule.binding.id)).toEqual([
+        "api/bounded-prisma-query",
+        "api/bounded-drizzle-query",
+      ]);
+    });
+
+    it("rejects one standard id at two revisions", () => {
+      const caught = conflict(defineConfig({ rules: [stateRule, drizzleRule({ ...standard, revision: 2 })] }));
+      expect(caught).toMatchObject({
+        reason: "conflicting_standard",
+        standardId: "data/bounded-query",
+        ruleId: "api/bounded-drizzle-query",
+        conflictingRuleId: "api/bounded-prisma-query",
+      });
+      expect(caught.message).toBe(
+        "Standard data/bounded-query differs between bindings api/bounded-prisma-query and api/bounded-drizzle-query; share one standard definition",
+      );
+    });
+
+    it("rejects diverging guidance across config layers", () => {
+      const shared = defineConfig({ rules: [stateRule] });
+      const edited = drizzleRule({ ...standard, guidance: { ...standard.guidance, checks: ["Paginate reads."] } });
+      const caught = conflict(defineConfig({ extends: [shared], rules: [edited] }));
+      expect(caught).toMatchObject({ reason: "conflicting_standard", ruleId: "api/bounded-drizzle-query" });
+    });
   });
 
   it("rejects empty base and ignore patterns", () => {

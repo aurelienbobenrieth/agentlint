@@ -78,6 +78,7 @@ defineRule({
 `FindingSource` = standard id and revision + detector id and version + binding id and digest + `reviewEpoch` when set. [ADR-005](./adr-005-fingerprints-and-lineage.md) adds the fingerprint. Acceptances key on all of it, never the standard alone.
 
 - Findings with the same standard are not merged. Their evidence can differ in meaning or lifetime. Presentation may group them without changing the gate.
+- **One standard id has one definition.** Config loading rejects rules whose standards share an id but differ in revision, title, summary, source, or guidance.
 - Any source change invalidates acceptances. The prior reason can show as lineage.
 
 ## Consequences
@@ -98,6 +99,7 @@ defineRule({
 | Standard owns lifecycle            | A standard can need both. Lifecycle is evidence lifetime, not intent.                                            |
 | Automatic detector selection       | Suggestions are fine. Auto-activation can apply wrong assumptions or scope.                                      |
 | Technology-specific standards only | Duplicates guidance and policy history across stacks.                                                            |
+| Match shared standards by revision | Editorial guidance edits keep the revision, so two definitions could still show reviewers different text.        |
 
 ## Reconsider when
 
@@ -110,5 +112,6 @@ defineRule({
 - 2026-08-10: Accepted the standard, detector, and binding model. Added semantic standard revisions and material binding digests. Selected one discriminated `defineRule`.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-23: Reformatted for scanning. Corrected the binding digest inputs, which also cover `dependencies`, the `scan` mode, and `reviewEpoch`. Recorded the `dependencies` and `reviewEpoch` binding fields. Decision unchanged.
+- 2026-09-24: One standard id has one definition; config loading rejects rules that disagree on it.
 
 </details>
