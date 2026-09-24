@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- [#40](https://github.com/aurelienbobenrieth/agentlint/pull/40) [`49c41f2`](https://github.com/aurelienbobenrieth/agentlint/commit/49c41f2e4ab641755f6f0583166e516548aac8fe) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Reject configs where two rules share a standard id but differ in its revision, title, summary, source, or guidance. Loading fails with `ConfigError` reason `conflicting_standard`, naming the standard and both binding ids. Share one `standard` object between the rules. An optional field set to `undefined` counts as absent.
+
 ## 0.2.2
 
 ### Patch Changes
