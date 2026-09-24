@@ -1,6 +1,6 @@
 {
   "name": "@aurelienbbn/agentlint",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Deterministic findings and explicit judgment gates for coding agents",
   "keywords": [
     "agent",
