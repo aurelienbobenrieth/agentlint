@@ -1,4 +1,4 @@
-import { normalizeChangeFixture } from "./shared/pipeline/change-fixture.js";
+import { ChangeFixtureError, normalizeChangeFixture } from "./shared/pipeline/change-fixture.js";
 import type { FixtureReport } from "./domain/fixture-report.js";
 /**
  * Promise-based testing helpers for rule and plugin authors.
@@ -19,17 +19,23 @@ import type { FixtureReport } from "./domain/fixture-report.js";
  */
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, Layer } from "effect";
+import { Layer, ManagedRuntime } from "effect";
 import { Env } from "./config/env.js";
 import type { FindingRecord } from "./domain/finding.js";
-import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule.js";
+import type { AgentlintRule, ChangeFixture, ChangeRule, StateRule } from "./domain/rule/model.js";
 import { Parser } from "./shared/infrastructure/parser.js";
-import { runRuleFixtures, runRuleOnChange, runRuleOnSource, runRuleOnSources } from "./shared/pipeline/rule-tester.js";
+import {
+  runRuleFixtures,
+  runRuleOnChangeFixture,
+  runRuleOnSource,
+  runRuleOnSources,
+} from "./shared/pipeline/rule-tester.js";
 
-export { normalizeChangeFixture };
+export { ChangeFixtureError, normalizeChangeFixture };
 export type { FixtureFailure, FixtureReport } from "./domain/fixture-report.js";
 
-const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
+const TestingLayer = Parser.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, Env.layer)));
+const TestingRuntime = ManagedRuntime.make(TestingLayer);
 
 /**
  * Run a detector's activation and silence fixtures with real parsing.
@@ -38,7 +44,7 @@ const TestingLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), L
  * @category Constructors
  */
 export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
-  return Effect.runPromise(runRuleFixtures(rule).pipe(Effect.provide(TestingLayer)));
+  return TestingRuntime.runPromise(runRuleFixtures(rule));
 }
 
 /**
@@ -48,12 +54,16 @@ export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
  * @since 0.2.0
  * @category Constructors
  */
-export function testRuleOnSource(
-  rule: StateRule,
-  source: string,
+export function testRuleOnSource({
+  rule,
+  source,
   file = "fixture.tsx",
-): Promise<ReadonlyArray<FindingRecord>> {
-  return Effect.runPromise(runRuleOnSource(rule, source, file).pipe(Effect.provide(TestingLayer)));
+}: {
+  readonly rule: StateRule;
+  readonly source: string;
+  readonly file?: string;
+}): Promise<ReadonlyArray<FindingRecord>> {
+  return TestingRuntime.runPromise(runRuleOnSource(rule, source, file));
 }
 
 /**
@@ -63,16 +73,25 @@ export function testRuleOnSource(
  * @since 0.2.0
  * @category Constructors
  */
-export function testRuleOnChange(rule: ChangeRule, fixture: ChangeFixture): Promise<ReadonlyArray<FindingRecord>> {
-  return Promise.resolve(runRuleOnChange(rule, normalizeChangeFixture(fixture)));
+export function testRuleOnChange({
+  rule,
+  fixture,
+}: {
+  readonly rule: ChangeRule;
+  readonly fixture: ChangeFixture;
+}): Promise<ReadonlyArray<FindingRecord>> {
+  return TestingRuntime.runPromise(runRuleOnChangeFixture({ rule, fixture }));
 }
 
 /**
  * Run repository-wide detector fixtures without exposing engine infrastructure.
  */
-export function testRuleOnSources(
-  rule: StateRule,
-  sources: ReadonlyArray<readonly [string, string]>,
-): Promise<ReadonlyArray<FindingRecord>> {
-  return Effect.runPromise(runRuleOnSources(rule, sources).pipe(Effect.provide(TestingLayer)));
+export function testRuleOnSources({
+  rule,
+  sources,
+}: {
+  readonly rule: StateRule;
+  readonly sources: ReadonlyArray<readonly [string, string]>;
+}): Promise<ReadonlyArray<FindingRecord>> {
+  return TestingRuntime.runPromise(runRuleOnSources(rule, sources));
 }

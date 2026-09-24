@@ -16,7 +16,7 @@ import {
   sameFingerprint,
   sameFindingSource,
 } from "./fingerprint.js";
-import { RuleAuthority } from "./rule.js";
+import { RuleAuthority } from "./rule/primitives.js";
 
 /**
  * The authority path that made or is required to make a decision. Same literals as `RuleAuthority`.
@@ -88,12 +88,22 @@ export type AcceptanceDecision = Schema.Schema.Type<typeof AcceptanceDecision>;
 /**
  * Explain compatibility changes without claiming to reconstruct historical source.
  */
-export function invalidationReasons(prior: AcceptanceRecord, current: FindingRecord): string[] {
+export function invalidationReasons({
+  prior,
+  current,
+}: {
+  readonly prior: AcceptanceRecord;
+  readonly current: FindingRecord;
+}): string[] {
   const reasons: string[] = [];
   if (prior.source.standardRevision !== current.source.standardRevision) reasons.push("The standard revision changed.");
   if (prior.source.detectorVersion !== current.source.detectorVersion) reasons.push("The detector version changed.");
   if (prior.source.bindingDigest !== current.source.bindingDigest)
-    reasons.push("The binding scope, options, or declared dependencies changed.");
+    reasons.push(
+      prior.source.reviewEpoch !== current.source.reviewEpoch
+        ? "The repository advanced the review epoch."
+        : "The binding scope, options, or declared dependencies changed.",
+    );
   if (
     prior.fingerprint.version !== current.fingerprint.version ||
     prior.fingerprint.scheme !== current.fingerprint.scheme
@@ -105,7 +115,7 @@ export function invalidationReasons(prior: AcceptanceRecord, current: FindingRec
         ? "The containing file structure, occurrence, or declared dependency evidence changed."
         : "The detector-selected change evidence changed.",
     );
-  if (!authoritySatisfies(prior.authority, current.authority))
+  if (!authoritySatisfies({ actual: prior.authority, required: current.authority }))
     reasons.push("The binding now requires human authority.");
   return reasons;
 }
@@ -114,29 +124,38 @@ export function invalidationReasons(prior: AcceptanceRecord, current: FindingRec
  * Exact persisted identity key.
  */
 export function acceptanceKey(record: Pick<AcceptanceRecord, "source" | "fingerprint">): string {
-  return findingIdentityKey(record.source, record.fingerprint);
+  return findingIdentityKey({ source: record.source, fingerprint: record.fingerprint });
 }
 
 /**
  * Human authority satisfies both policies. Agent authority satisfies only agent policy.
  */
-export function authoritySatisfies(actual: Authority, required: Authority): boolean {
+export function authoritySatisfies({
+  actual,
+  required,
+}: {
+  readonly actual: Authority;
+  readonly required: Authority;
+}): boolean {
   return actual === "human" || required === "agent";
 }
 
 /**
  * Check exact source, fingerprint, and authority compatibility.
  */
-export function acceptanceSatisfies(
-  acceptance: AcceptanceRecord,
-  finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
-): boolean {
+export function acceptanceSatisfies({
+  acceptance,
+  finding,
+}: {
+  readonly acceptance: AcceptanceRecord;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">;
+}): boolean {
   return (
     isSupportedFingerprint(finding.fingerprint) &&
     isSupportedFingerprint(acceptance.fingerprint) &&
-    sameFindingSource(acceptance.source, finding.source) &&
-    sameFingerprint(acceptance.fingerprint, finding.fingerprint) &&
-    authoritySatisfies(acceptance.authority, finding.authority)
+    sameFindingSource({ left: acceptance.source, right: finding.source }) &&
+    sameFingerprint({ left: acceptance.fingerprint, right: finding.fingerprint }) &&
+    authoritySatisfies({ actual: acceptance.authority, required: finding.authority })
   );
 }
 
@@ -156,15 +175,24 @@ export function acceptanceSnapshot(records: ReadonlyArray<AcceptanceRecord>): Ac
  * Find the acceptance that opens the gate for `finding`, using the exact identity index. Equivalent to scanning
  * `records` with `acceptanceSatisfies`.
  */
-export function lookupAcceptance(
-  acceptances: AcceptanceSnapshot,
-  finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">,
-): AcceptanceRecord | undefined {
+export function lookupAcceptance({
+  acceptances,
+  finding,
+}: {
+  readonly acceptances: AcceptanceSnapshot;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">;
+}): AcceptanceRecord | undefined {
   const record = acceptances.byKey.get(acceptanceKey(finding));
-  return record !== undefined && acceptanceSatisfies(record, finding) ? record : undefined;
+  return record !== undefined && acceptanceSatisfies({ acceptance: record, finding }) ? record : undefined;
 }
 
-function isRelated(record: AcceptanceRecord, finding: FindingRecord): boolean {
+function isRelated({
+  record,
+  finding,
+}: {
+  readonly record: AcceptanceRecord;
+  readonly finding: FindingRecord;
+}): boolean {
   return (
     finding.lineageKey !== undefined &&
     record.lineageKey === finding.lineageKey &&
@@ -177,11 +205,14 @@ function isRelated(record: AcceptanceRecord, finding: FindingRecord): boolean {
 /**
  * Find the latest related reason. This result never opens the gate.
  */
-export function findLineage(
-  records: ReadonlyArray<AcceptanceRecord>,
-  finding: FindingRecord,
-): AcceptanceRecord | undefined {
+export function findLineage({
+  records,
+  finding,
+}: {
+  readonly records: ReadonlyArray<AcceptanceRecord>;
+  readonly finding: FindingRecord;
+}): AcceptanceRecord | undefined {
   return records
-    .filter((record) => isRelated(record, finding) && !acceptanceSatisfies(record, finding))
-    .toSorted((left, right) => compareStrings(right.acceptedAt, left.acceptedAt))[0];
+    .filter((record) => isRelated({ record, finding }) && !acceptanceSatisfies({ acceptance: record, finding }))
+    .toSorted((left, right) => compareStrings({ left: right.acceptedAt, right: left.acceptedAt }))[0];
 }

@@ -1,76 +1,35 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, FileSystem, Layer, Path } from "effect";
+import { Array as EffectArray, Effect, FileSystem, Layer, Order, Path } from "effect";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { Env } from "../../config/env.js";
-import { normalizeConfig } from "../../domain/config.js";
+import { featureTestLayer, featureTestRule } from "../../__fixtures__/feature-test-services.js";
 import { findProposal } from "../../domain/proposal.js";
-import { defineRule } from "../../domain/rule.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
-import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { Git } from "../../shared/infrastructure/git.js";
-import { Parser } from "../../shared/infrastructure/parser.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
-import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { checkHandler } from "../check/handler.js";
 import { CheckCommand } from "../check/request.js";
 import { proposeHandler } from "./handler.js";
 import { ProposeCommand } from "./request.js";
 
 const cwd = join(tmpdir(), `agentlint-v02-propose-${randomUUID()}`);
-const rule = defineRule({
-  lifecycle: "state",
-  standard: { id: "security/danger", revision: 1, title: "Danger is reviewed", guidance: "Review danger calls." },
-  detector: {
-    id: "typescript/danger-call",
-    version: 1,
-    match: { pattern: "danger($$$ARGS)", message: "danger needs judgment" },
-  },
-  binding: { id: "security/danger", authority: "human", include: ["src/**/*.ts"] },
-});
-const TestLayer = Layer.mergeAll(
-  Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [rule] })) })),
-  Layer.succeed(
-    Git,
-    Git.of({
-      detectDefaultBranch: () => Effect.succeed("main"),
-      changedFiles: () => Effect.succeed([]),
-      changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
-    }),
-  ),
-  Parser.layer,
-  AcceptanceStore.layer,
-  ProposalStore.layer,
-  SelectorCache.layer,
-).pipe(
-  Layer.provideMerge(NodeServices.layer),
-  Layer.provideMerge(
-    Layer.succeed(
-      Env,
-      Env.of({
-        cwd,
-        argv: [],
-        actor: "agent:test",
-        platform: "test",
-        noColor: true,
-        isTTY: false,
-        setExitCode: () => {},
-      }),
-    ),
-  ),
-);
+const rule = featureTestRule({ authority: "human" });
+const TestLayer = featureTestLayer({ cwd, rules: [rule] });
 const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof TestLayer>>) =>
   Effect.runPromise(effect.pipe(Effect.provide(TestLayer)));
 
-const writeSource = (source: string, file = "demo.ts") =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    yield* fs.makeDirectory(path.resolve(cwd, "src"), { recursive: true });
-    yield* fs.writeFileString(path.resolve(cwd, "src", file), source);
-  });
+const writeSource = Effect.fn("writeSource")(function* ({
+  source,
+  file = "demo.ts",
+}: {
+  readonly source: string;
+  readonly file?: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.makeDirectory(path.resolve(cwd, "src"), { recursive: true });
+  yield* fs.writeFileString(path.resolve(cwd, "src", file), source);
+});
 const check = checkHandler(new CheckCommand({ all: true, rules: [], base: undefined, files: [] }));
 const propose = (input: { selector?: string; summary?: string; diff?: string }) =>
   proposeHandler(
@@ -88,21 +47,20 @@ afterEach(() =>
 
 describe("propose", () => {
   it("records the agent's work for the exact finding and leaves the gate closed", async () => {
-    await run(writeSource('danger("x")'));
-    const [finding] = (await run(check)).findings;
-    if (!finding) throw new Error("Expected a finding");
+    await run(writeSource({ source: 'danger("x")' }));
+    const finding = EffectArray.getUnsafe((await run(check)).findings, 0);
 
     const result = await run(propose({ selector: "1", summary: "  Wrapped the call in the sandbox.  ", diff: "+x" }));
     expect(result).toMatchObject({ exitCode: 0, message: expect.stringContaining("src/demo.ts:1") });
 
-    const stored = findProposal(await run(proposals), finding);
+    const stored = findProposal({ records: await run(proposals), finding });
     expect(stored).toMatchObject({ summary: "Wrapped the call in the sandbox.", diff: "+x", actor: "agent:test" });
     expect((await run(check)).exitCode).toBe(1);
     expect((await run(Effect.flatMap(AcceptanceStore, (store) => store.read()))).records).toEqual([]);
   });
 
   it("keeps one proposal per finding, replaces it, and omits an empty diff", async () => {
-    await run(writeSource('danger("x");\ndanger("y");'));
+    await run(writeSource({ source: 'danger("x");\ndanger("y");' }));
     await run(check);
 
     await run(propose({ selector: "1", summary: "First attempt.", diff: "+first" }));
@@ -110,29 +68,34 @@ describe("propose", () => {
     await run(propose({ selector: "1", summary: "Second attempt.", diff: "   " }));
 
     const stored = await run(proposals);
-    expect(stored.map(({ summary }) => summary).toSorted()).toEqual(["Other finding.", "Second attempt."]);
+    expect(
+      EffectArray.sortWith(
+        stored.map(({ summary }) => summary),
+        (value) => value,
+        Order.String,
+      ),
+    ).toEqual(["Other finding.", "Second attempt."]);
     expect(stored.find(({ summary }) => summary === "Second attempt.")).not.toHaveProperty("diff");
   });
 
   it("stops matching once the evidence changes", async () => {
-    await run(writeSource('danger("x")'));
+    await run(writeSource({ source: 'danger("x")' }));
     await run(check);
     await run(propose({ selector: "1", summary: "Reviewed the literal argument." }));
 
-    await run(writeSource('danger(userInput ?? "x")'));
-    const [edited] = (await run(check)).findings;
-    if (!edited) throw new Error("Expected a finding");
-    expect(findProposal(await run(proposals), edited)).toBeUndefined();
+    await run(writeSource({ source: 'danger(userInput ?? "x")' }));
+    const edited = EffectArray.getUnsafe((await run(check)).findings, 0);
+    expect(findProposal({ records: await run(proposals), finding: edited })).toBeUndefined();
   });
 
   it("drops a proposal when a complete check no longer finds its evidence, and never on a partial one", async () => {
-    await run(writeSource('danger("x");', "a.ts"));
-    await run(writeSource('danger("y");', "demo.ts"));
+    await run(writeSource({ source: 'danger("x");', file: "a.ts" }));
+    await run(writeSource({ source: 'danger("y");', file: "demo.ts" }));
     await run(check);
     await run(propose({ selector: "1", summary: "About x." }));
     await run(propose({ selector: "2", summary: "About y." }));
 
-    await run(writeSource("safe();", "a.ts"));
+    await run(writeSource({ source: "safe();", file: "a.ts" }));
     const partial = new CheckCommand({
       all: false,
       rules: [],
@@ -147,7 +110,7 @@ describe("propose", () => {
   });
 
   it("rejects incomplete or unknown input without writing", async () => {
-    await run(writeSource('danger("x")'));
+    await run(writeSource({ source: 'danger("x")' }));
     await run(check);
 
     expect(await run(propose({ summary: "No selector." }))).toMatchObject({ exitCode: 2 });
@@ -164,7 +127,7 @@ describe("proposal store", () => {
   const file = join(cwd, ".agentlint", "proposals.jsonl");
 
   it("drops proposals whose finding is gone from a complete view", async () => {
-    await run(writeSource('danger("x");\ndanger("y");'));
+    await run(writeSource({ source: 'danger("x");\ndanger("y");' }));
     const { findings } = await run(check);
     await run(propose({ selector: "1", summary: "Kept." }));
     await run(propose({ selector: "2", summary: "Dropped." }));
@@ -189,7 +152,7 @@ describe("proposal store", () => {
   });
 
   it("lets the last record win when a merge left two for one finding", async () => {
-    await run(writeSource('danger("x")'));
+    await run(writeSource({ source: 'danger("x")' }));
     await run(check);
     await run(propose({ selector: "1", summary: "Ours." }));
     await run(

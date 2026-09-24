@@ -1,7 +1,7 @@
 import { Schema as S } from "effect";
 
 import { EditorApplicationId } from "@aurelienbbn/agentlint/contract";
-import { CodeView } from "../../model";
+import { CodeView } from "../../shared/model";
 
 export const fields = {
   SelectedCodeView: { codeView: CodeView },

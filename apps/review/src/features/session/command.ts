@@ -1,16 +1,17 @@
 import {
   fetchReview,
   responseJson,
+  responseMessage,
   BrowserRequestError,
   browserOperation,
   errorMessage,
 } from "../../shared/browser-request";
-import { Effect, Schema as S } from "effect";
+import { Effect, Option, Schema as S } from "effect";
 import { Command } from "foldkit";
 
 import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { PersistedReview } from "../../model";
+import { PersistedReview } from "../../shared/model";
 import { markDirty } from "../../shared/dirty-flag";
 
 const decodeState = S.decodeUnknownEffect(ReviewStatePayload);
@@ -29,11 +30,10 @@ export const fetchState = Effect.gen(function* () {
     return yield* decodeState(embedded);
   }
 
-  const response = yield* fetchReview("/api/state");
+  const response = yield* fetchReview({ url: "/api/state" });
   if (!response.ok) {
-    return yield* Effect.fail(
-      new BrowserRequestError({ operation: "Load rejected", detail: `HTTP ${response.status}` }),
-    );
+    const detail = yield* responseMessage({ response, fallback: `HTTP ${response.status}` });
+    return yield* Effect.fail(new BrowserRequestError({ operation: "Load rejected", detail }));
   }
   const body = yield* responseJson(response);
   return yield* decodeState(body);
@@ -50,36 +50,48 @@ export interface SavedReview {
   readonly unreadable: boolean;
 }
 
-export const decodeSavedReview = (value: string | null): SavedReview => {
-  if (value === null) return { saved: null, unreadable: false };
-  try {
-    return { saved: S.decodeUnknownSync(S.fromJsonString(PersistedReview))(value), unreadable: false };
-  } catch {
-    return { saved: null, unreadable: true };
-  }
-};
+const decodePersistedReview = S.decodeUnknownOption(S.fromJsonString(PersistedReview));
 
 /**
- * An unreadable blob moves to `<key>:bak` so the next save cannot overwrite decisions nobody exported.
+ * Corrupt browser state is reported through the unreadable flag and never restored.
  */
-const readSavedReview = (state: ReviewStatePayload) =>
-  browserOperation("Load saved review", () => {
-    const key = reviewStorageKey(state);
-    const value = localStorage.getItem(key);
-    const result = decodeSavedReview(value);
-    if (value !== null && result.unreadable) {
-      localStorage.setItem(`${key}:bak`, value);
-      localStorage.removeItem(key);
-    }
-    return result;
-  });
+export const decodeSavedReview = (value: string | null): SavedReview =>
+  value === null
+    ? { saved: null, unreadable: false }
+    : Option.match(decodePersistedReview(value), {
+        onNone: () => ({ saved: null, unreadable: true }),
+        onSome: (saved) => ({ saved, unreadable: false }),
+      });
+
+/**
+ * An unreadable blob moves to `<key>:bak` so the next save cannot overwrite decisions nobody exported. A store that
+ * throws (storage disabled, quota exceeded on the backup) must not block the review, so it opens without saved state.
+ */
+export const readSavedReview = (
+  state: ReviewStatePayload,
+): Effect.Effect<SavedReview & { readonly error: string | null }> =>
+  browserOperation({
+    operation: "Load saved review",
+    execute: () => {
+      const key = reviewStorageKey(state);
+      const value = localStorage.getItem(key);
+      const result = decodeSavedReview(value);
+      if (value !== null && result.unreadable) {
+        localStorage.setItem(`${key}:bak`, value);
+        localStorage.removeItem(key);
+      }
+      return { ...result, error: null };
+    },
+  }).pipe(Effect.catch((error) => Effect.succeed({ saved: null, unreadable: false, error: error.detail })));
 
 export const LoadReview = Command.define("LoadReview", {
   messages: [Message.LoadedState, Message.FailedLoadState],
   execute: fetchState.pipe(
     Effect.flatMap((state) =>
       readSavedReview(state).pipe(
-        Effect.map(({ saved, unreadable }) => Message.LoadedState({ state, saved, savedUnreadable: unreadable })),
+        Effect.map(({ saved, unreadable, error }) =>
+          Message.LoadedState({ state, saved, savedUnreadable: unreadable, savedError: error }),
+        ),
       ),
     ),
     Effect.catch((error) => Effect.succeed(Message.FailedLoadState({ message: errorMessage(error) }))),
@@ -93,10 +105,13 @@ export const PersistReview = Command.define("PersistReview", {
   args: { key: S.String, content: S.String, dirty: S.Boolean },
   messages: [Message.CompletedPersistence, Message.FailedPersistence],
   execute: ({ key, content, dirty }) =>
-    browserOperation("Save review locally", () => {
-      markDirty(dirty);
-      localStorage.setItem(key, content);
-      return Message.CompletedPersistence();
+    browserOperation({
+      operation: "Save review locally",
+      execute: () => {
+        markDirty(dirty);
+        localStorage.setItem(key, content);
+        return Message.CompletedPersistence();
+      },
     }).pipe(Effect.catch((error) => Effect.succeed(Message.FailedPersistence({ message: errorMessage(error) })))),
 });
 

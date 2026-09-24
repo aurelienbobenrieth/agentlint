@@ -19,12 +19,12 @@ import { PatternError } from "../../domain/pattern-error.js";
  * @since 0.2.0
  */
 
-import { Effect } from "effect";
+import { Array as A, Effect, Option } from "effect";
 import { Query, type Node as TSNode, type Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../infrastructure/parsed-node.js";
-import type { RuleMatch } from "../../domain/rule.js";
-import type { RuleContextImpl } from "../../domain/rule-context.js";
+import type { RuleMatch } from "../../domain/rule/model.js";
+import type { RuleContextImpl } from "../../domain/rule/context/live.js";
 import { Parser } from "../infrastructure/parser.js";
 import { walkTree } from "./tree-cursor.js";
 
@@ -86,9 +86,11 @@ function toPatternNode(node: AgentlintNode): PatternNode {
 /**
  * Two nodes are the same code when their syntax trees agree. Formatting between tokens is not code.
  */
-function sameCode(left: AgentlintNode, right: AgentlintNode): boolean {
+function sameCode({ left, right }: { readonly left: AgentlintNode; readonly right: AgentlintNode }): boolean {
   const pending: Array<readonly [AgentlintNode, AgentlintNode]> = [[left, right]];
-  for (let pair = pending.pop(); pair !== undefined; pair = pending.pop()) {
+  while (pending.length > 0) {
+    const pair = pending.pop();
+    if (pair === undefined) continue;
     const [a, b] = pair;
     if (a.type !== b.type || a.childCount !== b.childCount) return false;
     if (a.childCount === 0) {
@@ -111,13 +113,21 @@ function sameCode(left: AgentlintNode, right: AgentlintNode): boolean {
  * @since 0.2.0
  * @category Internals
  */
-function matchNode(pattern: PatternNode, target: AgentlintNode, captures: Captures): boolean {
+function matchNode({
+  pattern,
+  target,
+  captures,
+}: {
+  readonly pattern: PatternNode;
+  readonly target: AgentlintNode;
+  readonly captures: Captures;
+}): boolean {
   if (pattern.placeholder === "single") {
     if (pattern.text === "$_") return true;
     // A placeholder that appears twice names the same code twice: `$A === $A` does not match `x === y`.
     const name = pattern.text.slice(1);
     const bound = captures.get(name);
-    if (bound !== undefined) return sameCode(bound, target);
+    if (bound !== undefined) return sameCode({ left: bound, right: target });
     captures.set(name, target);
     return true;
   }
@@ -130,7 +140,7 @@ function matchNode(pattern: PatternNode, target: AgentlintNode, captures: Captur
       value !== undefined &&
       key.text === normalizeText(target.text) &&
       value.placeholder === "single" &&
-      matchNode(value, target, captures)
+      matchNode({ pattern: value, target, captures })
     );
   }
 
@@ -146,21 +156,25 @@ function matchNode(pattern: PatternNode, target: AgentlintNode, captures: Captur
     return pattern.text === normalizeText(target.text);
   }
 
-  return matchChildren(pattern, namedChildren(target), captures);
+  return matchChildren({ pattern, targetChildren: namedChildren(target), captures });
 }
 
-function matchChildren(
-  pattern: PatternNode,
-  targetChildren: ReadonlyArray<AgentlintNode>,
-  captures: Captures,
-): boolean {
+function matchChildren({
+  pattern,
+  targetChildren,
+  captures,
+}: {
+  readonly pattern: PatternNode;
+  readonly targetChildren: ReadonlyArray<AgentlintNode>;
+  readonly captures: Captures;
+}): boolean {
   const { children: patternChildren, multiIndex } = pattern;
 
   if (multiIndex === -1) {
     if (patternChildren.length !== targetChildren.length) return false;
     return patternChildren.every((child, index) => {
       const target = targetChildren[index];
-      return target !== undefined && matchNode(child, target, captures);
+      return target !== undefined && matchNode({ pattern: child, target, captures });
     });
   }
 
@@ -168,15 +182,13 @@ function matchChildren(
   const suffixLength = patternChildren.length - multiIndex - 1;
   if (targetChildren.length < multiIndex + suffixLength) return false;
 
-  for (let index = 0; index < multiIndex; index++) {
-    const child = patternChildren[index];
+  for (const [index, child] of patternChildren.slice(0, multiIndex).entries()) {
     const target = targetChildren[index];
-    if (child === undefined || target === undefined || !matchNode(child, target, captures)) return false;
+    if (target === undefined || !matchNode({ pattern: child, target, captures })) return false;
   }
-  for (let index = 0; index < suffixLength; index++) {
-    const child = patternChildren[multiIndex + 1 + index];
+  for (const [index, child] of patternChildren.slice(multiIndex + 1).entries()) {
     const target = targetChildren[targetChildren.length - suffixLength + index];
-    if (child === undefined || target === undefined || !matchNode(child, target, captures)) return false;
+    if (target === undefined || !matchNode({ pattern: child, target, captures })) return false;
   }
   return true;
 }
@@ -195,7 +207,9 @@ const PATTERN_CONTEXTS: ReadonlyArray<(pattern: string) => string> = [
 
 function hasErrorNode(root: AgentlintNode): boolean {
   const pending = [root];
-  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined) continue;
     if (node.type === "ERROR" || node.type === "MISSING") return true;
     pending.push(...node.children);
   }
@@ -207,12 +221,12 @@ function hasErrorNode(root: AgentlintNode): boolean {
  * wrappers) down to the node the author actually wrote.
  */
 function effectivePatternNode(root: AgentlintNode): AgentlintNode {
-  let node = root;
+  const traversal = { node: root };
   for (;;) {
-    const children = namedChildren(node);
+    const children = namedChildren(traversal.node);
     const [first] = children;
-    if (children.length !== 1 || first === undefined) return node;
-    node = first;
+    if (children.length !== 1 || first === undefined) return traversal.node;
+    traversal.node = first;
   }
 }
 
@@ -259,21 +273,27 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
   grammar: string,
 ) {
   const parser = yield* Parser;
-  let fallback: PatternNode | undefined;
+  const fallback: PatternNode[] = [];
 
   for (const context of PATTERN_CONTEXTS) {
-    const result = yield* parser.parse(context(pattern), grammar).pipe(Effect.result);
-    if (result._tag === "Failure") continue;
+    const result = yield* parser.parse({ source: context(pattern), grammar }).pipe(Effect.result);
+    if (result._tag === "Failure") {
+      // Only this context failing to parse the snippet is a reason to try the next one. A grammar that cannot load is
+      // an engine failure, not a pattern written in another language.
+      if (result.failure.reason === "parse_failed") continue;
+      return yield* result.failure;
+    }
     const tree = result.success;
     const root = wrapNode(tree.rootNode);
     const node = hasErrorNode(root) ? undefined : toPatternNode(effectivePatternNode(root));
     tree.delete();
     if (node === undefined) continue;
     if (!DEPRIORITIZED_TYPES.has(node.type)) return node;
-    fallback ??= node;
+    if (fallback.length === 0) fallback.push(node);
   }
 
-  if (fallback) return fallback;
+  const candidate = A.head(fallback);
+  if (Option.isSome(candidate)) return candidate.value;
 
   return yield* new PatternError({ ruleId, reason: "pattern_parse", grammar, detail: pattern });
 });
@@ -282,6 +302,7 @@ const compilePatternNode = Effect.fn("compilePatternNode")(function* (
  * Compile one `match` entry, with its `where` constraints, for one grammar.
  */
 const compileMatch = Effect.fn("compileMatch")(function* (ruleId: string, match: RuleMatch, grammar: string) {
+  const parser = yield* Parser;
   if (match.pattern !== undefined) {
     const patternNode = yield* compilePatternNode(ruleId, match.pattern, grammar);
     const has =
@@ -298,9 +319,7 @@ const compileMatch = Effect.fn("compileMatch")(function* (ruleId: string, match:
   }
   if (match.query === undefined) return undefined;
 
-  const parser = yield* Parser;
   const language = yield* parser.language(grammar);
-  if (!language) return yield* new PatternError({ ruleId, reason: "unsupported_frontend", grammar });
   const source = match.query;
   const query = yield* Effect.try({
     try: () => new Query(language, source),
@@ -370,15 +389,15 @@ export const compileMatches = Effect.fn("compileMatches")(function* (input: Comp
         continue;
       }
       if (!isLanguageMismatch(result.failure)) return yield* Effect.fail(result.failure);
-      let compilesElsewhere = false;
+      const compatibility = { compilesElsewhere: false };
       for (const grammar of input.grammars) {
-        if (grammar === input.grammar || compilesElsewhere) continue;
+        if (grammar === input.grammar || compatibility.compilesElsewhere) continue;
         const other = yield* compileMatch(input.ruleId, match, grammar).pipe(Effect.result);
         if (other._tag !== "Success") continue;
         if (other.success) disposeCompiled([other.success]);
-        compilesElsewhere = true;
+        compatibility.compilesElsewhere = true;
       }
-      if (!compilesElsewhere) return yield* Effect.fail(result.failure);
+      if (!compatibility.compilesElsewhere) return yield* Effect.fail(result.failure);
     }
 
     const byType = new Map<string, CompiledPattern[]>();
@@ -400,7 +419,7 @@ export const compileMatches = Effect.fn("compileMatches")(function* (input: Comp
  * A property constraint such as `take: $_` describes the properties of the matched code's own objects. It does not look
  * inside the value of another property: `{ where: { take: 1 } }` has no `take` option.
  */
-function contains(root: TSNode, pattern: PatternNode): boolean {
+function contains({ root, pattern }: { readonly root: TSNode; readonly pattern: PatternNode }): boolean {
   const cursor = root.walk();
   try {
     for (;;) {
@@ -411,7 +430,7 @@ function contains(root: TSNode, pattern: PatternNode): boolean {
         pattern.type === type ||
         (pattern.type === "identifier" && type.endsWith("identifier")) ||
         (pattern.type === "pair" && type === "shorthand_property_identifier");
-      if (comparable && matchNode(pattern, wrapNode(cursor.currentNode), new Map())) return true;
+      if (comparable && matchNode({ pattern, target: wrapNode(cursor.currentNode), captures: new Map() })) return true;
       const opaque = pattern.type === "pair" && type === "pair";
       if (!opaque && cursor.gotoFirstChild()) continue;
       while (!cursor.gotoNextSibling()) {
@@ -423,13 +442,13 @@ function contains(root: TSNode, pattern: PatternNode): boolean {
   }
 }
 
-function whereHolds(node: TSNode, where: ResolvedWhere): boolean {
-  if (where.has && !contains(node, where.has)) return false;
-  if (where.notHas && contains(node, where.notHas)) return false;
+function whereHolds({ node, where }: { readonly node: TSNode; readonly where: ResolvedWhere }): boolean {
+  if (where.has && !contains({ root: node, pattern: where.has })) return false;
+  if (where.notHas && contains({ root: node, pattern: where.notHas })) return false;
   return true;
 }
 
-function interpolatePattern(message: string, captures: Captures): string {
+function interpolatePattern({ message, captures }: { readonly message: string; readonly captures: Captures }): string {
   return message.replace(/\$([A-Z_][A-Z0-9_]*)/g, (token, name: string) => {
     const captured = captures.get(name);
     if (!captured) return token;
@@ -438,7 +457,13 @@ function interpolatePattern(message: string, captures: Captures): string {
   });
 }
 
-function interpolateQuery(message: string, captures: ReadonlyArray<{ name: string; node: TSNode }>): string {
+function interpolateQuery({
+  message,
+  captures,
+}: {
+  readonly message: string;
+  readonly captures: ReadonlyArray<{ name: string; node: TSNode }>;
+}): string {
   return message.replace(/@([a-zA-Z_][a-zA-Z0-9_.-]*)/g, (token, name: string) => {
     const captured = captures.find((capture) => capture.name === name);
     if (!captured) return token;
@@ -474,25 +499,42 @@ const nodeKey = (node: AgentlintNode): string =>
  * @since 0.2.0
  * @category Execution
  */
-export function runMatches(tree: Tree, runnable: RunnableMatches, context: RuleContextImpl): void {
+export function runMatches({
+  tree,
+  runnable,
+  context,
+}: {
+  readonly tree: Tree;
+  readonly runnable: RunnableMatches;
+  readonly context: RuleContextImpl;
+}): void {
   const { byType, queries } = runnable;
   const reported = new Set<string>();
 
   if (byType.size > 0) {
-    walkTree(tree, (inner, position) => {
-      const candidates = byType.get(inner.type);
-      if (candidates) {
-        const node = wrapNode(inner);
-        for (const candidate of candidates) {
-          const captures: Captures = new Map();
-          if (matchNode(candidate.patternNode, node, captures) && whereHolds(inner, candidate.where)) {
-            // One node is one finding for a rule. The first declared match that applies names it.
-            reported.add(nodeKey(node));
-            context.reportAt({ node, message: interpolatePattern(candidate.message, captures) }, position);
-            break;
+    walkTree({
+      tree,
+      visit: ({ node: inner, position }: { readonly node: TSNode; readonly position: readonly number[] }) => {
+        const candidates = byType.get(inner.type);
+        if (candidates) {
+          const node = wrapNode(inner);
+          for (const candidate of candidates) {
+            const captures: Captures = new Map();
+            if (
+              matchNode({ pattern: candidate.patternNode, target: node, captures }) &&
+              whereHolds({ node: inner, where: candidate.where })
+            ) {
+              // One node is one finding for a rule. The first declared match that applies names it.
+              reported.add(nodeKey(node));
+              context.reportAt({
+                options: { node, message: interpolatePattern({ message: candidate.message, captures }) },
+                position,
+              });
+              break;
+            }
           }
         }
-      }
+      },
     });
   }
 
@@ -505,7 +547,7 @@ export function runMatches(tree: Tree, runnable: RunnableMatches, context: RuleC
       reported.add(nodeKey(node));
       context.report({
         node,
-        message: interpolateQuery(compiledQuery.message, match.captures),
+        message: interpolateQuery({ message: compiledQuery.message, captures: match.captures }),
       });
     }
   }

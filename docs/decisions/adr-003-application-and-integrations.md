@@ -7,133 +7,97 @@
 
 ## Decision
 
-The 0.2 release has two application surfaces: the CLI and the local review SPA.
+**Two application surfaces, the CLI and the local review SPA, call the same handlers, which own all product behavior. No MCP server, no coding-harness adapter.**
 
-Shared application handlers contain all product behavior. The CLI and the review HTTP server call the same handlers.
+```mermaid
+flowchart LR
+  GHA["GitHub action"] -. runs .-> CLI
+  Hook["setup skill hook"] -. runs .-> CLI
+  CLI --> H["shared handlers"]
+  SPA["review SPA"] --> HTTP["loopback server"] --> H
+```
 
-The release does not contain an MCP server or a coding-harness adapter.
+Later adapters, the [GitHub action](./adr-008-github-action.md) and the setup skill's hook script, stay thin wrappers over the CLI.
 
 ## Context
 
-An earlier development version contained CLI commands, MCP tools, a Claude Code hook, and review HTTP routes. These surfaces duplicated selection, formatting, result state, and exit behavior.
+- An earlier version had CLI commands, MCP tools, a Claude Code hook, and review routes that duplicated selection, formatting, result state, and exit behavior.
+- It is unknown whether a harness integration needs product code. A documented CLI command is enough for many agents.
+- The workflow must be proven before a public integration protocol is designed.
 
-The team does not know whether a future harness integration needs product code. A documented CLI command is sufficient for many coding agents.
+## The CLI is the whole local and CI contract
 
-The product must prove its workflow before it designs a public integration protocol.
+| Command                                        | Job                                                                                      |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `check`                                        | Gate selected files, changed files, or the whole repository (`--all`)                    |
+| `next`                                         | One unresolved obligation with evidence, authority, and command arguments                |
+| `accept`, `approve`, `propose`                 | Agent acceptance, human acceptance, agent proposal                                       |
+| `explain`                                      | A rule or finding with guidance and lineage                                              |
+| `rules list` / `test` / `scan` / `calibration` | List bindings, run fixtures, calibrate without enforcement, merge calibration reports    |
+| `acceptances list` / `clean` / `import`        | Maintain acceptance state                                                                |
+| `outcomes record` / `list`                     | Post-review observations, outside the gate                                               |
+| `review`, `pr <number>`                        | Local human review, of the repository, a `--from` artifact, or a pull request's artifact |
+| `init`                                         | Create `.agentlint/config.ts`, optionally `--preset package#export`                      |
 
-## CLI role
+Exit codes: `0` gate open, `1` unresolved findings, `2` usage, configuration, detection, or internal error. `check --format jsonl` is the machine output. The review payload and artifact are versioned.
 
-The CLI is the stable automation and local development interface.
+## Handlers decide, surfaces present
 
-The CLI owns these workflows:
+- Handlers collect findings, join acceptances, validate authority, write acceptance state, produce calibration and review state, and explain findings. The CLI and server must not reimplement this.
+- The SPA is optional, for complex work: calibration, human acceptance, change requests with notes, detached CI artifacts, handoff to the agent. It owns no finding, authority, or acceptance semantics. [ADR-007](./adr-007-foldkit-review-spa.md) covers it.
+- The server listens on IPv4 loopback with a session token and decodes every request.
+- Complete means `--all` with no file or rule selection. Only a complete check removes stale acceptances ([ADR-002](./adr-002-acceptance-model.md)).
+- Local and CI share gate meaning. Only selection and presentation differ.
+- Change input and base resolution: [ADR-001](./adr-001-rule-lifecycles.md). No session-start snapshots.
 
-- `check`: examine selected files, changed files, or the complete repository.
-- `accept` and `approve`: accept one finding with agent or human authority.
-- `propose`: record agent work on one finding for a human decision.
-- `explain`: show one rule or one finding with its guidance and lineage.
-- `rules list`, `rules test`, and `rules scan`: list bindings, run detector fixtures, and calibrate a rule without enforcement.
-- `acceptances list`, `acceptances clean`, and `acceptances import`: maintain current acceptance state.
-- `review`: start a local human review session, attached or from a detached artifact.
-- `init`: create a starter configuration.
+## CI
 
-Every command exits with `0` (gate open), `1` (unresolved findings), or `2` (usage, configuration, or evidence error).
+Normal `check` with a known base, optionally `--review-output` for a portable artifact. No hosted service. Fails on an engine error, a configuration error, or an unresolved finding.
 
-The `check` command has a `jsonl` output format. The review payload and the review artifact carry a version field.
+## Package surface
 
-## Review SPA role
+| Entry point                          | Exports                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `@aurelienbbn/agentlint`             | `defineRule`, `defineConfig`, evidence and record schemas, tagged errors |
+| `@aurelienbbn/agentlint/testing`     | fixture helpers, off the root so a config does not load the parser       |
+| `@aurelienbbn/agentlint/contract`    | review wire contract                                                     |
+| `@aurelienbbn/agentlint/calibration` | calibration report schemas                                               |
 
-The SPA is an optional review surface for complex work. It supports detector calibration, local human acceptance, change requests with reviewer notes, detached review of CI artifacts, and a handoff for the coding agent.
+Not exported: handlers, product rules, presets.
 
-The SPA does not own finding, authority, or acceptance semantics.
+The MCP server, Claude Code hook, harness installer, and harness event contract are removed. Any future integration is a thin adapter over the CLI or handlers, and no public protocol ships before an external consumer needs one.
 
-The local HTTP server listens on loopback with a session token. It decodes each request and calls the shared review handlers.
+## Consequences
 
-[ADR-007](./adr-007-foldkit-review-spa.md) defines the SPA architecture.
-
-## Shared handlers and check views
-
-Application handlers own the product use cases: collect findings, join findings with current acceptances, validate acceptance authority, write acceptance state, produce calibration results, produce review state, and explain one finding.
-
-The CLI and the review server must not reimplement these decisions.
-
-A check is complete when it runs with `--all` and without file or rule selection. All other checks are partial.
-
-A partial check never removes stale acceptances. A complete check removes them under [ADR-005](./adr-005-fingerprints-and-lineage.md).
-
-Local and CI checks use equal finding and acceptance semantics. Presentation and file selection can differ. Gate meaning cannot differ.
-
-## Change input
-
-Change rules compare the merge base of `HEAD` and a base ref with the current working tree. The current side includes committed, staged, unstaged, and untracked content.
-
-The CLI accepts an explicit `--base` ref. The configuration can set a default base.
-
-Without a base, the engine reads `origin/HEAD`, then tries `origin/main`, `main`, `origin/master`, and `master`.
-
-The engine returns a clear error when it finds no base or no merge base.
-
-The release does not keep session-start snapshots.
-
-## CI use
-
-CI runs the normal `check` command with a known base ref. CI can write a portable review artifact with `--review-output`.
-
-CI does not require a hosted agentlint service.
-
-CI fails after an engine error, a configuration error, or an unresolved finding.
-
-## Deferred integrations and authoring API
-
-The release removed the MCP server, the Claude Code hook, the harness installer, and the harness-specific event contract.
-
-A future integration must remain a thin adapter over the CLI or the shared handlers. The project must not add a public integration protocol before an external consumer needs it.
-
-The package root exports `defineRule`, `defineConfig`, the evidence schemas, and tagged errors. Fixture test helpers live on the `@aurelienbbn/agentlint/testing` subpath so a config file does not load the parser. The review wire contract lives on the `@aurelienbbn/agentlint/contract` subpath. The package does not export application handlers, product rules, or presets.
+| Gain                                                   | Cost                                                     |
+| ------------------------------------------------------ | -------------------------------------------------------- |
+| Unproven surfaces removed.                             | Harnesses integrate through CLI commands and exit codes. |
+| One contract for local and CI.                         | Every use case lands in a shared handler first.          |
+| The SPA is useful without coupling engine to an agent. | No direct continuation channel into an agent session.    |
 
 ## Rejected alternatives
 
-### MCP in 0.2
+| Option                         | Why not                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| MCP in 0.2                     | Public surface before the CLI workflow is stable. No confirmed need.                             |
+| Claude Code integration in 0.2 | One harness can bias the core. Docs and CLI give the first integration.                          |
+| General harness event          | No evidence for a stable cross-harness contract.                                                 |
+| UI as primary interface        | Small agent findings work better in text. The UI is for human judgment, calibration, big queues. |
+| Different local and CI gates   | Local success becomes unreliable.                                                                |
 
-MCP adds a public surface before the CLI workflow is stable. No confirmed workflow needs it.
+## Reconsider MCP or a harness adapter when
 
-### Claude Code integration in 0.2
-
-One harness adapter can bias the core architecture before the workflow stabilizes. Documentation and CLI commands give the first integration.
-
-### General harness event
-
-The project has no evidence for a stable cross-harness event contract.
-
-### UI as the primary interface
-
-Small agent-authority findings work better in text. The UI exists for human judgment, calibration, and larger review queues.
-
-### Different local and CI gate rules
-
-This model makes local success unreliable. Only selection and presentation can differ.
-
-## Reconsideration conditions
-
-Reconsider MCP or a harness adapter when one condition occurs:
-
-- A supported harness cannot run the CLI at the necessary checkpoint.
+- A supported harness cannot run the CLI at the needed checkpoint.
 - A direct continuation channel materially improves the proven workflow.
 - An external integration needs a stable programmatic contract.
 - Documentation alone causes repeated integration failures.
 
-## Consequences
+<details>
+<summary>Revision history</summary>
 
-The codebase removed several unproved product surfaces.
-
-The CLI is the complete local and CI contract.
-
-The SPA stays useful without coupling the engine to a coding agent.
-
-Future harness work starts from demonstrated needs.
-
-## Revision history
-
-- 2026-08-10: The team proposed one application path and thin adapters.
-- 2026-08-10: The team selected the CLI and the local SPA as the only 0.2 application surfaces.
+- 2026-08-10: Proposed one application path with thin adapters. Selected the CLI and the local SPA as the only 0.2 surfaces.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation. Recorded the `testing` and `contract` subpaths.
-- 2026-09-19: Added a `setup` skill with a copyable Claude Code and Codex hook script. It is documentation over the CLI exit code: the engine gains no command, protocol, or harness-specific contract, so the decision stands.
+- 2026-09-19: Added a `setup` skill with a copyable Claude Code and Codex hook script. It is documentation over the CLI exit code. The engine gains no command, protocol, or harness-specific contract, so the decision stands.
+- 2026-09-23: Reformatted for scanning. Completed the command list (`next`, `pr`, `rules calibration`, `outcomes`), added the `calibration` subpath, and linked the GitHub action as a CLI adapter. Decision unchanged.
+
+</details>

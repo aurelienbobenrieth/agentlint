@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { iconButton } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 
@@ -9,7 +9,7 @@ import { icon } from "../../shared/ui/icons";
  * Each toast is its own live region: `alert` interrupts for failures, `status` waits its turn. The container carries no
  * `aria-live` so a toast is not announced twice.
  */
-export const toasts = (model: Model, h: HtmlBuilder<Message>): Html =>
+export const toasts = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Html =>
   h.div(
     [
       h.Class("toasts"),
@@ -26,15 +26,18 @@ export const toasts = (model: Model, h: HtmlBuilder<Message>): Html =>
           h.Role(toast.tone === "danger" ? "alert" : "status"),
         ],
         [
-          h.span([h.Class("toast__icon")], [icon(toast.tone === "danger" ? "x" : "check", h)]),
+          h.span([h.Class("toast__icon")], [icon({ name: toast.tone === "danger" ? "x" : "check", h })]),
           h.p([], [toast.message]),
-          iconButton(
-            "Dismiss",
-            [h.OnClick(Message.ClickedDismissToast({ id: toast.id })), h.Class("icon-btn icon-btn--inline")],
-            "x",
+          iconButton({
+            label: "Dismiss",
+            attributes: [
+              h.OnClick(Message.ClickedDismissToast({ id: toast.id })),
+              h.Class("icon-btn icon-btn--inline"),
+            ],
+            name: "x",
             h,
-            ["X"],
-          ),
+            keys: ["X"],
+          }),
         ],
       ),
     ),

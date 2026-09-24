@@ -2,6 +2,7 @@ import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
 import typescript from "highlight.js/lib/languages/typescript";
+import { Array as A } from "effect";
 
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("json", json);
@@ -12,11 +13,11 @@ type Language = "javascript" | "json" | "typescript";
 const languageForFile = (file: string): Language => {
   const extension = file.split(".").at(-1)?.toLocaleLowerCase();
   if (extension === "json") return "json";
-  if (["js", "jsx", "mjs", "cjs"].includes(extension ?? "")) return "javascript";
+  if (A.contains(["js", "jsx", "mjs", "cjs"], extension ?? "")) return "javascript";
   return "typescript";
 };
 
-const highlight = (source: string, language: Language): string =>
+const highlight = ({ source, language }: { readonly source: string; readonly language: Language }): string =>
   hljs.highlight(source.length === 0 ? " " : source, { language, ignoreIllegals: true }).value;
 
 const LINE_CACHE_LIMIT = 4_000;
@@ -26,13 +27,13 @@ const lineCache = new Map<string, string>();
  * Highlight one source line. highlight.js escapes source text before returning markup. Cached per language and line
  * text: diffs and examples repeat the same lines across renders.
  */
-export const highlightedLine = (source: string, file: string): string => {
+export const highlightedLine = ({ source, file }: { readonly source: string; readonly file: string }): string => {
   const language = languageForFile(file);
   const key = `${language}\u0000${source}`;
   const cached = lineCache.get(key);
   if (cached !== undefined) return cached;
   if (lineCache.size >= LINE_CACHE_LIMIT) lineCache.clear();
-  const value = highlight(source, language);
+  const value = highlight({ source, language });
   lineCache.set(key, value);
   return value;
 };
@@ -63,13 +64,19 @@ const snippetCache = new Map<string, ReadonlyArray<string>>();
  * the cache makes the focused/full toggle and re-renders free. Keyed by language and text so a finding's source and its
  * guidance examples never evict each other.
  */
-export const highlightedLines = (source: string, file: string): ReadonlyArray<string> => {
+export const highlightedLines = ({
+  source,
+  file,
+}: {
+  readonly source: string;
+  readonly file: string;
+}): ReadonlyArray<string> => {
   const language = languageForFile(file);
   const key = `${language} ${source}`;
   const cached = snippetCache.get(key);
   if (cached !== undefined) return cached;
   if (snippetCache.size >= SNIPPET_CACHE_LIMIT) snippetCache.clear();
-  const lines = splitHighlighted(highlight(source, language));
+  const lines = splitHighlighted(highlight({ source, language }));
   snippetCache.set(key, lines);
   return lines;
 };

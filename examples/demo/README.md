@@ -1,8 +1,25 @@
 # agentlint demo
 
-A small commerce application with six repository-owned rules: query bounds, payment retries, focused tests, dynamic execution, destructive migrations, and privilege widening. The fixture mixes state and change findings, agent and human authority, dense rule groups, accepted work, and an invalidated prior judgment.
+A small commerce app that runs the whole loop. The package supplies the engine and review tools; this repository supplies every rule, in [`.agentlint/config.ts`](.agentlint/config.ts).
 
-The package supplies the engine and the review tools. This repository supplies every rule. See [`.agentlint/config.ts`](.agentlint/config.ts).
+| Rule                               | Lifecycle | Who may accept |
+| ---------------------------------- | --------- | -------------- |
+| `data/bounded-queries`             | state     | agent          |
+| `payments/idempotent-capture`      | state     | agent          |
+| `testing/no-focused-tests`         | state     | agent          |
+| `security/dynamic-code-execution`  | state     | human          |
+| `privacy/customer-data-exports`    | state     | human          |
+| `database/destructive-migrations`  | change    | human          |
+| `authorization/privilege-widening` | change    | human          |
+
+The seeded state also has related reading context, dense rule groups, accepted work, an invalidated prior judgment, and delayed outcome evidence.
+
+```mermaid
+flowchart LR
+  P[Prepare] --> T[Prove rules] --> C[Calibrate] --> G[Run the gate] --> D[Decide]
+  D --> X[Detached review]
+  D --> O[Outcomes]
+```
 
 ## Prepare
 
@@ -20,7 +37,7 @@ Every command below runs through `pnpm agentlint`, which points at the workspace
 pnpm agentlint rules test
 ```
 
-Each detector has `mustReport` and `mustStaySilent` fixtures. They define the detection boundary. They do not try to list every bad program.
+Each detector's `mustReport` and `mustStaySilent` fixtures define its detection boundary, not a list of every bad program.
 
 ## Calibrate before enforcing
 
@@ -28,7 +45,7 @@ Each detector has `mustReport` and `mustStaySilent` fixtures. They define the de
 pnpm agentlint rules scan --rule data/bounded-queries --review
 ```
 
-The calibration workspace lets a rule author label each match as applies, does not apply, or unsure. Labels are temporary. They never accept a finding and never change the gate. Use them to refine the detector, binding, guidance, and fixtures, then run `rules test` again.
+Label each match applies, does not apply, or unsure. Refine the detector, binding, guidance, and fixtures from the labels, then run `rules test` again. Labels are temporary: they never accept a finding and never change the gate.
 
 ## Run the gate
 
@@ -36,33 +53,43 @@ The calibration workspace lets a rule author label each match as applies, does n
 pnpm agentlint check --all --base origin/main
 ```
 
-The queue spans API, background job, payment, test, migration, page, and vendored code. Query, payment, and test rules permit agent acceptance. Dynamic execution, migration, and authorization rules require a human. The seeded state shows the three situations the review workspace is built for:
+The queue spans API, background job, payment, test, privacy, and vendored code. Three seeded situations show what the review workspace is for:
 
-- **An agent fixed it and asks for sign-off.** `2026-06-drop-legacy-flag.ts` drops a column. The agent added a backfill and recorded a proposal with the diff (`agentlint propose`). The human reads the diff next to the evidence and accepts or requests changes.
+- **A finding needs repository context.** `customer-export.ts` links directly to the written customer-data export contract so the human reviews code and policy together.
 - **An agent could not fix it.** `legacy-parser.js` calls `eval` in vendored code. The agent recorded a proposal without a diff explaining why it needs a product decision.
 - **An agent already decided.** `reconcile-orders.ts` has a bounded-query finding the agent accepted with a concrete reason. It appears in **Decisions** with actor and time, where a human can request a correction.
 
-`2026-07-drop-legacy-users.ts` is accepted by a human and also appears in **Decisions**.
-
 ## Decide
 
-From the terminal:
+In the terminal, with the selector printed by your latest check:
 
 ```bash
-pnpm agentlint explain 2
-pnpm agentlint accept 2 --reason "The endpoint has a verified finite tenant bound."
-pnpm agentlint approve 7 --reason "Backup, rollback, and deployment order are verified."
+pnpm agentlint explain <selector>
+pnpm agentlint accept <selector> --reason "The endpoint has a verified finite tenant bound."
+pnpm agentlint approve <selector> --reason "The requested fields and authorization path satisfy the linked privacy contract."
 ```
 
-`accept` cannot accept a human-authority finding. `approve` records human authority.
+`accept` cannot accept a human-authority finding; `approve` records human authority.
 
-From the review workspace:
+Or in the review workspace (`?` lists keyboard shortcuts):
 
 ```bash
 pnpm agentlint review --base origin/main
 ```
 
-**Queue** lists what still needs a decision, grouped by file, with the code, the standard, and the agent's proposal. **Decisions** lists what is already accepted, by whom and when. Press `?` for the keyboard shortcuts. The final screen gives a copyable handoff for the coding agent.
+| Screen    | Shows                                                                             |
+| --------- | --------------------------------------------------------------------------------- |
+| Queue     | Undecided findings by file, with the code, the standard, and the agent's proposal |
+| Decisions | Accepted findings, by whom and when                                               |
+| Final     | A copyable handoff for the coding agent                                           |
+
+### QA a multi-file finding
+
+Open **Customer-data exports follow the repository privacy contract**. Under **Related review context**, expand `policy/customer-data-exports.md` (the written policy) and `src/contracts/customer-data-export.ts` (the executable field contract) to read them beside the primary finding.
+
+The rule lists both files in `dependencies` and in `relatedFiles` on purpose: dependencies participate in finding identity; `relatedFiles` selects the sources the reviewer sees.
+
+The binding also sets `reviewEpoch: 1`. Increment it only to make every otherwise-compatible decision for this rule be revisited; the next review then explains that the repository advanced the epoch.
 
 ## Detached review
 
@@ -76,4 +103,27 @@ Detached review never writes to the repository. Import recomputes current findin
 
 ## Acceptance lifetime
 
-A formatting-only edit keeps a state acceptance. A material syntax edit invalidates it. A change acceptance is valid only for the exact versioned Git-change fingerprint. Run `check --all` to remove dead acceptance records. `.agentlint/acceptances.jsonl` holds only current accepted results. Git supplies the history.
+| Acceptance | Kept through                                                       | Invalidated by         |
+| ---------- | ------------------------------------------------------------------ | ---------------------- |
+| State      | A formatting-only edit                                             | A material syntax edit |
+| Change     | Nothing: valid only for its exact versioned Git-change fingerprint | Any other Git change   |
+
+`check --all` removes dead acceptance records. `.agentlint/acceptances.jsonl` holds only current accepted results; Git holds the history.
+
+## Inspect delayed outcomes
+
+`.agentlint/outcomes.jsonl` holds committed observations of what happened after earlier findings:
+
+```bash
+pnpm agentlint outcomes list
+pnpm agentlint outcomes list --format json
+```
+
+Add one for a current finding by its queue selector:
+
+```bash
+pnpm agentlint outcomes record 1 --kind useful_interception --reference "issue:DEMO-101" \
+  --note "The review caught an export field that was outside the privacy contract."
+```
+
+Outcomes are evidence for later rule calibration. They never accept a finding or change the gate.

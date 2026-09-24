@@ -61,7 +61,7 @@ export function planReconciliation(input) {
   for (const finding of input.findings) {
     if (finding.status !== "unresolved") continue;
     if (threadDigests.has(finding.digest)) continue;
-    if (isCommentable(input.commentable, finding)) plan.create.push(finding);
+    if (isCommentable({ commentable: input.commentable, location: finding })) plan.create.push(finding);
     else plan.outside.push(finding);
   }
 

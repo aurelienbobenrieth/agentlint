@@ -1,7 +1,7 @@
 import { Schema as S } from "effect";
 
 import { CalibrationReason, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
-import { Calibration } from "../../model";
+import { Calibration } from "../../shared/model";
 
 export const fields = {
   UpdatedReason: { findingId: S.String, value: S.String },

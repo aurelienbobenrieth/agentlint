@@ -7,65 +7,49 @@
 
 ## Decision
 
-An effective rule is the composition of three objects:
+**A rule = standard (the durable question) + detector (finds evidence) + repository binding (scope, options, authority), kept in separate fields of one discriminated `defineRule`.**
 
-1. A standard defines the durable review question.
-2. A detector finds applicable evidence.
-3. A repository binding selects the scope, the options, and the authority.
-
-The product uses `rule` as the user-facing name for this composition.
-
-The public API has one discriminated `defineRule` function. The rule keeps standard, detector, and binding data in separate fields.
+```mermaid
+flowchart LR
+  S["standard: data/bounded-query"] --> P["prisma detector"] & Dz["drizzle detector"] & Q["SQL detector"]
+  P --> B1["binding: apps/api, agent"]
+  P --> B2["binding: apps/admin, human"]
+```
 
 ## Context
 
-Some engineering standards apply across technologies. A bounded-query standard can apply to Prisma, Drizzle, SQL, and an internal data library. Each technology needs different detection logic.
+- Standards cross technologies. Bounded queries apply to Prisma, Drizzle, SQL, and in-house libraries, each with its own detection.
+- The repository decides paths, exclusions, safe wrappers, and authority. A package author cannot.
+- Reusable packages must not turn their defaults into universal policy.
 
-Repository architecture changes the required paths, exclusions, and safe wrappers. A package author cannot know the correct repository policy or acceptance authority.
+## Who owns what
 
-The model must support reusable packages without making their defaults universal policy.
+| Part     | Fields                                                                                         | Owner            | Bump when                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| Standard | `id`, `revision`, `title`, `summary?`, `guidance`, `source?`                                   | policy author    | `revision`: decision criteria or permitted outcomes change. Not editorial. |
+| Detector | `id`, `version`, `fixtures?`, then `match`/`createOnce`/`scan?` (state) or `detect` (change)   | detector package | `version`: normalized evidence semantics change                            |
+| Binding  | `id`, `authority`, `include?`, `exclude?`, `options?`, `dependencies?` (state), `reviewEpoch?` | repository       | `reviewEpoch`: the repository wants a fresh review                         |
 
-## Standard
+- **Standard.** No technology in the `id` unless the policy is technology-specific. `guidance` states decision checks and permitted paths, never known-bad code as an example. No authority, scope, or enabled flag.
+- **Detector.** Options must not change the standard's question. If they would change evidence semantics substantially, write another detector. Detector ids are not checked for uniqueness: the package owns its namespace.
+- **Binding.** Packages recommend, the repository selects. Binding ids must be unique. One detector can be bound twice with different ids and disjoint scopes. `reviewEpoch` invalidates compatible acceptances without a clock, for a policy or architecture change that source evidence does not show.
 
-A standard has an `id`, a `revision`, a `title`, an optional `summary`, `guidance`, and an optional `source` reference.
+## Binding digest
 
-The standard identifier is the durable policy identity. Do not put a technology name in it unless the policy is specific to that technology.
+```text
+digest(canonical {
+  reviewEpoch?   only when set, so older digests stay stable
+  include        set: deduplicated, sorted
+  exclude        set: deduplicated, sorted
+  dependencies   set: deduplicated, sorted
+  scan           "file" | "repository" | "change"
+  options        keys sorted, array order kept
+})
+```
 
-The revision identifies the semantic decision contract. Increase it when the decision criteria or the permitted outcomes change. Do not increase it for editorial changes.
+Reordered scope lists give the same digest. Equivalent but different globs do not. `authority` is excluded: [ADR-002](./adr-002-acceptance-model.md) checks it separately.
 
-Guidance explains the decision checks and the permitted paths. Guidance must not teach known incorrect code as an example.
-
-A standard does not contain authority, file scope, or an enabled state.
-
-## Detector
-
-A detector has an `id`, a `version`, optional `fixtures`, and detection logic.
-
-The rule `lifecycle` selects the detector contract. A `state` detector declares a `match` list, a `createOnce` visitor factory, or both. A `change` detector declares a `detect` function.
-
-The detector version changes when normalized evidence semantics change.
-
-A detector receives the binding options. The options must not change the standard question. Use a separate detector when configuration would change evidence semantics substantially.
-
-One standard can have many detectors with different technologies and lifecycles. The engine does not check that detector identifiers are unique. A detector package owns its identifier namespace.
-
-## Repository binding
-
-A binding has a required `id`, an `authority`, optional `include` and `exclude` globs, and optional detector `options`.
-
-The repository owns each binding. A package can recommend configuration and authority. The repository selects the effective values.
-
-Binding identifiers must be unique in the normalized configuration. The engine rejects a duplicate identifier. The repository can bind one detector more than once with different identifiers and disjoint scopes.
-
-The engine calculates a binding digest from `include`, `exclude`, and `options`. It sorts the `include` and `exclude` lists and all object keys. It keeps the order of arrays inside `options`.
-
-Equal scope lists in a different order give the same digest. Different glob syntax with equal effect gives a different digest.
-
-Authority does not enter the digest. The authority compatibility rule checks it separately.
-
-## Public authoring API
-
-Rule authors use one `defineRule` function. The `lifecycle` field selects the state or change contract and the option types.
+## Authoring
 
 ```ts
 defineRule({
@@ -81,70 +65,50 @@ defineRule({
     version: 1,
     match: { pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB has no bound." },
   },
-  binding: {
-    id: "data/prisma-bounded-query",
-    include: ["apps/api/src/**"],
-    authority: "agent",
-  },
+  binding: { id: "data/prisma-bounded-query", include: ["apps/api/src/**"], authority: "agent" },
 });
 ```
 
-`defineRule` validates the standard, the binding, and the detector shape. A state detector needs a `match` or a `createOnce`. A change detector needs a `detect` function. The API has no separate standard, detector, or binding constructors.
+- `defineRule` validates all three parts and throws `RuleDefinitionError`. No separate constructors.
+- A package can export a rule factory taking repository options. It must document its detection assumptions and limits.
+- Core ships no product standards, detectors, or presets.
 
-A package can export a rule factory that accepts repository options and returns a complete rule. The core package does not ship product standards, detectors, or presets. A package must document its detection assumptions and limits.
+## Identity is the full source
 
-## Finding identity and duplicates
+`FindingSource` = standard id and revision + detector id and version + binding id and digest + `reviewEpoch` when set. [ADR-005](./adr-005-fingerprints-and-lineage.md) adds the fingerprint. Acceptances key on all of it, never the standard alone.
 
-Each finding carries a `FindingSource` with the standard identifier and revision, the detector identifier and version, and the binding identifier and digest. [ADR-005](./adr-005-fingerprints-and-lineage.md) adds the evidence fingerprint. The acceptance key uses the complete source identity, never the standard identifier alone.
-
-Two detectors can find evidence for the same standard. The engine does not merge findings with equal standard identifiers. Detector evidence can have a different meaning or lifetime.
-
-Presentation can group related findings. Grouping does not change gate state.
-
-A detector version change, a standard revision change, or a binding digest change invalidates existing acceptances. The engine can show a prior acceptance reason as lineage context.
-
-## Rejected alternatives
-
-### One rule object owns all data
-
-This model is simple for local rules. It couples durable intent, technology detection, repository scope, and authority. Reusable packages become rigid or highly configurable.
-
-### Package owns authority
-
-The package author does not own the target repository workflow. A recommended authority helps adoption but cannot become active policy without repository selection.
-
-### Standard owns lifecycle
-
-A standard can need state and change detectors. Lifecycle describes evidence lifetime, not durable intent.
-
-### Automatic detector selection
-
-Package inspection can suggest applicable detectors. Automatic activation can apply the wrong assumptions or scope. The repository must confirm each active binding.
-
-### Technology-specific standards only
-
-This model duplicates guidance and policy history across stacks. Use a technology-specific standard only when the review question is technology-specific.
-
-## Reconsideration conditions
-
-Reconsider this model when one condition occurs:
-
-- Detector option changes routinely need a new detector identifier.
-- Two detectors for one standard need an explicit evidence-equivalence contract.
+- Findings with the same standard are not merged. Their evidence can differ in meaning or lifetime. Presentation may group them without changing the gate.
+- Any source change invalidates acceptances. The prior reason can show as lineage.
 
 ## Consequences
 
-The engine resolves bindings before it evaluates detectors.
+| Gain                                                            | Cost                                                                       |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Reusable detectors without universal policy.                    | Package docs must separate standards, detectors, and recommended bindings. |
+| One standard, many detectors and lifecycles.                    | The engine resolves bindings before it evaluates detectors.                |
+| `rules test` checks detectors. Repository checks test bindings. | Passing fixtures say nothing about a binding's scope.                      |
+| Calibration gives feedback without editing binding or config.   | The repository applies calibration results by hand.                        |
 
-`rules test` runs detector fixtures. Repository checks test effective bindings.
+## Rejected alternatives
 
-Calibration produces temporary review feedback. It does not edit the binding or the configuration.
+| Option                             | Why not                                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| One rule object owns all data      | Couples intent, detection, scope, and authority. Packages become rigid or over-configurable.                     |
+| Package owns authority             | The author does not own the repository workflow. A recommendation helps adoption but needs repository selection. |
+| Standard owns lifecycle            | A standard can need both. Lifecycle is evidence lifetime, not intent.                                            |
+| Automatic detector selection       | Suggestions are fine. Auto-activation can apply wrong assumptions or scope.                                      |
+| Technology-specific standards only | Duplicates guidance and policy history across stacks.                                                            |
 
-Package documentation must distinguish standards, detectors, and recommended bindings.
+## Reconsider when
 
-## Revision history
+- Detector option changes routinely need a new detector id.
+- Two detectors for one standard need an explicit evidence-equivalence contract.
 
-- 2026-08-10: The project accepted the standard, detector, and repository binding model.
-- 2026-08-10: The project added semantic standard revisions and material binding digests.
-- 2026-08-10: The project selected one discriminated `defineRule` authoring function.
+<details>
+<summary>Revision history</summary>
+
+- 2026-08-10: Accepted the standard, detector, and binding model. Added semantic standard revisions and material binding digests. Selected one discriminated `defineRule`.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
+- 2026-09-23: Reformatted for scanning. Corrected the binding digest inputs, which also cover `dependencies`, the `scan` mode, and `reviewEpoch`. Recorded the `dependencies` and `reviewEpoch` binding fields. Decision unchanged.
+
+</details>

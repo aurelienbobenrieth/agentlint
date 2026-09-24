@@ -4,7 +4,7 @@ import { highlightedLine, highlightedLines } from "./syntax";
 
 describe("syntax highlighting", () => {
   it("highlights TypeScript and escapes source HTML", () => {
-    const output = highlightedLine('const node: string = "<unsafe>";', "src/example.ts");
+    const output = highlightedLine({ source: 'const node: string = "<unsafe>";', file: "src/example.ts" });
 
     expect(output).toContain("hljs-keyword");
     expect(output).toContain("hljs-built_in");
@@ -12,12 +12,12 @@ describe("syntax highlighting", () => {
   });
 
   it("uses JSON grammar for JSON files", () => {
-    expect(highlightedLine('{"enabled": true}', "settings.json")).toContain("hljs-attr");
+    expect(highlightedLine({ source: '{"enabled": true}', file: "settings.json" })).toContain("hljs-attr");
   });
 
   it("splits a whole file into balanced per-line fragments", () => {
     const source = "/* multi\nline */\nconst x = `a\nb`;\n";
-    const lines = highlightedLines(source, "src/example.ts");
+    const lines = highlightedLines({ source, file: "src/example.ts" });
 
     expect(lines).toHaveLength(5);
     for (const line of lines) {
@@ -27,13 +27,13 @@ describe("syntax highlighting", () => {
     }
     expect(lines[0]).toContain("hljs-comment");
     expect(lines[1]).toContain("hljs-comment");
-    expect(highlightedLines(source, "src/example.ts")).toBe(lines);
+    expect(highlightedLines({ source, file: "src/example.ts" })).toBe(lines);
   });
 
   it("keeps literal span markup in the source escaped and the fragments balanced", () => {
     const source =
       'const a = "</span>";\nconst b = `<span class="x">\n</span>`;\n// </span><span class="hljs-keyword">';
-    const lines = highlightedLines(source, "src/markup.ts");
+    const lines = highlightedLines({ source, file: "src/markup.ts" });
 
     expect(lines).toHaveLength(4);
     for (const line of lines) {

@@ -1,6 +1,6 @@
 import { Schema as S } from "effect";
 
-import { AuthorityFacet, GroupBy, LifecycleFacet, StatusFacet } from "../../model";
+import { AuthorityFacet, GroupBy, LifecycleFacet, StatusFacet } from "../../shared/model";
 
 export const fields = {
   ToggledStatusFacet: { status: StatusFacet },

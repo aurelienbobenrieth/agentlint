@@ -3,10 +3,13 @@ import { Schema } from "effect";
 import { type CalibrationObservation, CalibrationReport } from "../review/contract.js";
 import { summarizeCalibration } from "./report.js";
 
-const observation = (
-  digest: string,
-  classification: CalibrationObservation["classification"],
-): CalibrationObservation => ({
+const observation = ({
+  digest,
+  classification,
+}: {
+  readonly digest: string;
+  readonly classification: CalibrationObservation["classification"];
+}): CalibrationObservation => ({
   findingId: digest,
   ruleId: "test/rule",
   file: "src/a.ts",
@@ -38,8 +41,14 @@ const report = (observations: ReadonlyArray<CalibrationObservation>): Calibratio
 
 describe("calibration measurements", () => {
   it("deduplicates exact evidence across exports, counts decided labels and distinct invalidations", () => {
-    const first = report([observation("a", "applies"), observation("b", "unsure")]);
-    const second = report([observation("a", "does_not_apply"), observation("c", "applies")]);
+    const first = report([
+      observation({ digest: "a", classification: "applies" }),
+      observation({ digest: "b", classification: "unsure" }),
+    ]);
+    const second = report([
+      observation({ digest: "a", classification: "does_not_apply" }),
+      observation({ digest: "c", classification: "applies" }),
+    ]);
     expect(summarizeCalibration([first, first, second]).rules[0]).toMatchObject({
       reviewed: 3,
       applies: 1,
@@ -52,7 +61,7 @@ describe("calibration measurements", () => {
     });
   });
   it("keeps material policy versions separate and does not invent a rate for unsure labels", () => {
-    const first = observation("a", "unsure");
+    const first = observation({ digest: "a", classification: "unsure" });
     const changed = {
       ...first,
       identity: { ...first.identity, source: { ...first.identity.source, standardRevision: 2 } },

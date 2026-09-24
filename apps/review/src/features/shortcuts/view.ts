@@ -1,17 +1,23 @@
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { iconButton, kbd } from "../../shared/ui/controls";
 
-export const helpDialog = (model: Model, h: HtmlBuilder<Message>): Html => {
-  const group = (title: string, rows: ReadonlyArray<readonly [string, ReadonlyArray<string>]>): Html =>
+export const helpDialog = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Html => {
+  const group = ({
+    title,
+    rows,
+  }: {
+    readonly title: string;
+    readonly rows: ReadonlyArray<readonly [string, ReadonlyArray<string>]>;
+  }): Html =>
     h.div(
       [h.Class("help__group")],
       [
         h.h3([], [title]),
         ...rows.map(([label, keys]) =>
-          h.div([h.Class("help__row")], [h.span([], [label]), h.span([h.Class("help__keys")], kbd(keys, h))]),
+          h.div([h.Class("help__row")], [h.span([], [label]), h.span([h.Class("help__keys")], kbd({ keys, h }))]),
         ),
       ],
     );
@@ -24,31 +30,46 @@ export const helpDialog = (model: Model, h: HtmlBuilder<Message>): Html => {
         [
           h.div(
             [h.Class("help__head")],
-            [h.h2([], ["Keyboard shortcuts"]), iconButton("Close", [h.OnClick(Message.ClosedHelp())], "x", h, ["Esc"])],
+            [
+              h.h2([], ["Keyboard shortcuts"]),
+              iconButton({
+                label: "Close",
+                attributes: [h.OnClick(Message.ClosedHelp())],
+                name: "x",
+                h,
+                keys: ["Esc"],
+              }),
+            ],
           ),
           h.div(
             [h.Class("help__columns")],
             [
-              group("Navigate", [
-                ["Next finding", ["J"]],
-                ["Previous finding", ["K"]],
-                ["Queue", ["1"]],
-                ["Decisions", ["2"]],
-                ["Search", ["/"]],
-                ["Filters", ["F"]],
-                ["Toggle list", ["["]],
-              ]),
-              group("Decide", [
-                ["Accept", ["A"]],
-                ["Accept from field", [model.modKey, "Enter"]],
-                ["Request changes", ["R"]],
-                ["Request changes from field", ["Shift", model.modKey, "Enter"]],
-                ["Open in editor", ["E"]],
-                ["Copy context", ["C"]],
-                ["Rule guidance", ["G"]],
-                ["Dismiss toast", ["X"]],
-                ["Close / unfocus", ["Esc"]],
-              ]),
+              group({
+                title: "Navigate",
+                rows: [
+                  ["Next finding", ["J"]],
+                  ["Previous finding", ["K"]],
+                  ["Queue", ["1"]],
+                  ["Decisions", ["2"]],
+                  ["Search", ["/"]],
+                  ["Filters", ["F"]],
+                  ["Toggle list", ["["]],
+                ],
+              }),
+              group({
+                title: "Decide",
+                rows: [
+                  ["Accept", ["A"]],
+                  ["Accept from field", [model.modKey, "Enter"]],
+                  ["Request changes", ["R"]],
+                  ["Request changes from field", ["Shift", model.modKey, "Enter"]],
+                  ["Open in editor", ["E"]],
+                  ["Copy context", ["C"]],
+                  ["Rule guidance", ["G"]],
+                  ["Dismiss toast", ["X"]],
+                  ["Close / unfocus", ["Esc"]],
+                ],
+              }),
             ],
           ),
         ],

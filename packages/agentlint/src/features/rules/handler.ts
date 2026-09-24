@@ -4,7 +4,7 @@
 
 import { Effect } from "effect";
 import { compareStrings } from "../../domain/compare.js";
-import type { AgentlintRule } from "../../domain/rule.js";
+import type { AgentlintRule } from "../../domain/rule/model.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { collectFindings, ruleEnabledForFile } from "../../shared/pipeline/collect-findings.js";
 import { runRuleFixtures } from "../../shared/pipeline/rule-tester.js";
@@ -17,10 +17,13 @@ import {
   RulesTestResult,
 } from "./request.js";
 
-function selectRules(
-  rules: ReadonlyArray<AgentlintRule>,
-  requested: ReadonlyArray<string>,
-): ReadonlyArray<AgentlintRule> {
+function selectRules({
+  rules,
+  requested,
+}: {
+  readonly rules: ReadonlyArray<AgentlintRule>;
+  readonly requested: ReadonlyArray<string>;
+}): ReadonlyArray<AgentlintRule> {
   return requested.length ? rules.filter((rule) => requested.includes(rule.binding.id)) : rules;
 }
 
@@ -36,16 +39,16 @@ export const rulesListHandler = Effect.fn("rulesListHandler")(function* (command
         lifecycle: rule.lifecycle,
         authority: rule.binding.authority,
         detector: `${rule.detector.id}@${rule.detector.version}`,
-        enabled: file ? ruleEnabledForFile(rule, file) : true,
+        enabled: file ? ruleEnabledForFile({ rule, file }) : true,
       }))
-      .toSorted((left, right) => compareStrings(left.id, right.id)),
+      .toSorted((left, right) => compareStrings({ left: left.id, right: right.id })),
   });
 });
 
 export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command: RulesTestCommand) {
   const config = yield* (yield* ConfigLoader).load();
-  const rules = selectRules(config.rules, command.rules).toSorted((left, right) =>
-    compareStrings(left.binding.id, right.binding.id),
+  const rules = selectRules({ rules: config.rules, requested: command.rules }).toSorted((left, right) =>
+    compareStrings({ left: left.binding.id, right: right.binding.id }),
   );
   if (rules.length === 0) {
     return new RulesTestResult({
@@ -58,12 +61,11 @@ export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command
   }
 
   const lines: string[] = [];
-  let failed = 0;
-  let withoutFixtures = 0;
+  const totals = { failed: 0, withoutFixtures: 0 };
   for (const rule of rules) {
     const report = yield* runRuleFixtures(rule);
     if (report.total === 0) {
-      withoutFixtures++;
+      totals.withoutFixtures += 1;
       lines.push(`skip ${report.ruleId} (no fixtures)`);
       continue;
     }
@@ -71,23 +73,25 @@ export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command
       lines.push(`pass ${report.ruleId} (${report.total} fixture${report.total === 1 ? "" : "s"})`);
       continue;
     }
-    failed++;
-    lines.push(`FAIL ${report.ruleId} (${report.failures.length}/${report.total} fixtures failed)`);
+    totals.failed += 1;
+    lines.push(`FAIL ${report.ruleId} (${report.failures.length} failure${report.failures.length === 1 ? "" : "s"})`);
     for (const failure of report.failures) {
       const expectation =
         failure.expectation === "mustReport"
           ? "expected at least one finding, got none"
-          : `expected no findings, got ${failure.findingCount}`;
+          : failure.expectation === "mustStaySilent"
+            ? `expected no findings, got ${failure.findingCount}`
+            : "fixture replay produced different findings";
       lines.push(
         `  ${failure.expectation}[${failure.index}]${failure.label ? ` ${failure.label}` : ""}: ${expectation}`,
       );
     }
   }
-  const parts = [`${rules.length - failed - withoutFixtures} passed`];
-  if (failed) parts.push(`${failed} failed`);
-  if (withoutFixtures) parts.push(`${withoutFixtures} without fixtures`);
+  const parts = [`${rules.length - totals.failed - totals.withoutFixtures} passed`];
+  if (totals.failed) parts.push(`${totals.failed} failed`);
+  if (totals.withoutFixtures) parts.push(`${totals.withoutFixtures} without fixtures`);
   lines.push("", parts.join(", "));
-  return new RulesTestResult({ message: lines.join("\n"), exitCode: failed ? 1 : 0 });
+  return new RulesTestResult({ message: lines.join("\n"), exitCode: totals.failed ? 1 : 0 });
 });
 
 export const rulesScanHandler = Effect.fn("rulesScanHandler")(function* (command: RulesScanCommand) {

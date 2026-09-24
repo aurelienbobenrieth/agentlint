@@ -1,6 +1,6 @@
 import type { Schema as S } from "effect";
 
-import { Shortcut } from "../../model";
+import { Shortcut } from "../../shared/model";
 
 export const fields = {
   PressedShortcut: { action: Shortcut },

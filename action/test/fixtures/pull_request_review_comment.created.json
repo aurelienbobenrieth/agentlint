@@ -12,20 +12,20 @@
     "number": 42,
     "state": "open",
     "head": {
-      "ref": "feature/gate",
       "sha": "abcdef1234567890abcdef1234567890abcdef12",
-      "repo": { "full_name": "aurelienbobenrieth/agentlint", "fork": false }
+      "ref": "feature/gate",
+      "repo": { "fork": false, "full_name": "aurelienbobenrieth/agentlint" }
     },
     "base": {
-      "ref": "main",
       "sha": "0123456789abcdef0123456789abcdef01234567",
+      "ref": "main",
       "repo": { "full_name": "aurelienbobenrieth/agentlint" }
     }
   },
   "repository": {
-    "full_name": "aurelienbobenrieth/agentlint",
+    "owner": { "login": "aurelienbobenrieth" },
     "name": "agentlint",
-    "owner": { "login": "aurelienbobenrieth" }
+    "full_name": "aurelienbobenrieth/agentlint"
   },
   "sender": { "login": "aurelienbobenrieth", "id": 1001, "type": "User" }
 }

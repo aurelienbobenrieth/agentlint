@@ -12,6 +12,16 @@ describe("commentableLines", () => {
     expect(commentableLines("").size).toBe(0);
   });
 
+  it("handles patches far larger than the call stack", () => {
+    const added = Array.from({ length: 20_000 }, (_, index) => `+line ${index}`);
+    const patch = ["@@ -0,0 +1,20000 @@", ...added].join("\n");
+    const lines = commentableLines(patch);
+    expect(lines.size).toBe(20_000);
+    expect(lines.has(1)).toBe(true);
+    expect(lines.has(20_000)).toBe(true);
+    expect(lines.has(20_001)).toBe(false);
+  });
+
   it("counts added and context lines on the right side, skipping deletions", () => {
     const patch = ["@@ -1,4 +1,5 @@", " a", "-b", "+b2", "+b3", " c", " d"].join("\n");
     expect([...commentableLines(patch)]).toEqual([1, 2, 3, 4, 5]);
@@ -48,8 +58,10 @@ describe("commentableByFile", () => {
     expect([...(map.get("src/vendor/legacy-parser.js") ?? [])]).toEqual([1, 2, 3, 4]);
     expect([...(map.get("src/payments/capture-order.ts") ?? [])]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(map.get("assets/logo.png")?.size).toBe(0);
-    expect(isCommentable(map, { file: "src/vendor/legacy-parser.js", line: 3 })).toBe(true);
-    expect(isCommentable(map, { file: "src/vendor/legacy-parser.js", line: 9 })).toBe(false);
-    expect(isCommentable(map, { file: "src/migrations/2026-07-drop-legacy-users.ts", line: 4 })).toBe(false);
+    expect(isCommentable({ commentable: map, location: { file: "src/vendor/legacy-parser.js", line: 3 } })).toBe(true);
+    expect(isCommentable({ commentable: map, location: { file: "src/vendor/legacy-parser.js", line: 9 } })).toBe(false);
+    expect(
+      isCommentable({ commentable: map, location: { file: "src/migrations/2026-07-drop-legacy-users.ts", line: 4 } }),
+    ).toBe(false);
   });
 });

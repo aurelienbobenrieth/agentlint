@@ -3,10 +3,10 @@
  * reviews are never dirty because the server persists each decision. Only commands write this; `entry.ts` reads it for
  * the leave prompt.
  */
-let dirty = false;
+const dirty = { value: false };
 
 export const markDirty = (value: boolean): void => {
-  dirty = value;
+  dirty.value = value;
 };
 
-export const isDirty = (): boolean => dirty;
+export const isDirty = (): boolean => dirty.value;

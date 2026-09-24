@@ -19,6 +19,7 @@ export function commentableLines(patch) {
    */
   const lines = new Set();
   if (!patch) return lines;
+  // A plain loop: patches can run to tens of thousands of lines, far beyond the call stack.
   let right = 0;
   let inHunk = false;
   for (const line of patch.split("\n")) {
@@ -28,9 +29,7 @@ export function commentableLines(patch) {
       inHunk = true;
       continue;
     }
-    if (!inHunk) continue;
-    if (line.startsWith("\\")) continue;
-    if (line.startsWith("-")) continue;
+    if (!inHunk || line.startsWith("\\") || line.startsWith("-")) continue;
     if (line.startsWith("+") || line.startsWith(" ") || line === "") {
       lines.add(right);
       right += 1;
@@ -67,9 +66,10 @@ export function commentableByFile(files) {
 }
 
 /**
- * @param {Map<string, Set<number>>} commentable
- * @param {{ file: string; line: number }} location
+ * @param {object} input
+ * @param {Map<string, Set<number>>} input.commentable
+ * @param {{ file: string; line: number }} input.location
  */
-export function isCommentable(commentable, location) {
+export function isCommentable({ commentable, location }) {
   return commentable.get(location.file)?.has(location.line) ?? false;
 }

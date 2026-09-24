@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      effect-runtime:
+        patterns:
+          - effect
+          - "@effect/*"
+      validation-tooling:
+        dependency-type: development
+        patterns:
+          - typescript
+          - vitest
+          - "@vitest/*"
+          - "@playwright/*"
+          - oxlint
+          - oxfmt
+          - knip
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Europe/Paris
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

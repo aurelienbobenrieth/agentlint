@@ -22,6 +22,7 @@
       "plugins": ["vitest"],
       "rules": {
         "vitest/no-importing-vitest-globals": "off",
+        "vitest/no-standalone-expect": "off",
         "vitest/prefer-called-with": "error",
         "vitest/prefer-to-be-falsy": "off",
         "vitest/prefer-to-be-truthy": "off",

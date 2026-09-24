@@ -8,6 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { Schema } from "effect";
+
+const encodePrettyJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Json, { space: 2 }));
 
 const bin = fileURLToPath(new URL("../packages/agentlint/dist/bin.mjs", import.meta.url));
 const cwd = mkdtempSync(join(tmpdir(), "agentlint-benchmark-"));
@@ -30,35 +33,38 @@ export default defineConfig({ rules: [defineRule({
 })] });
 `,
   );
-  for (let file = 0; file < fileCount; file++) {
+  for (const file of Array.from({ length: fileCount }, (_, index) => index)) {
     writeFileSync(
       join(cwd, "src", `${file}.ts`),
       Array.from({ length: callsPerFile }, (_, call) => `danger(${call});`).join("\n"),
     );
   }
   const results = [];
-  for (const [name, args] of [
+  /**
+   * @type {ReadonlyArray<readonly [string, ReadonlyArray<string>]>}
+   */
+  const scenarios = [
     ["complete", ["check", "--all"]],
     ["single-file", ["check", "src/0.ts"]],
     ["complete-with-artifact", ["check", "--all", "--review-output", "review.json"]],
-  ]) {
-    const durations = [];
-    let stdoutBytes = 0;
-    for (let sample = 0; sample < samples; sample++) {
+  ];
+  for (const [name, args] of scenarios) {
+    const measurements = Array.from({ length: samples }, () => {
       const started = performance.now();
       const result = spawnSync(process.execPath, [bin, ...args], {
         cwd,
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
       });
-      if (result.status !== 1) throw new Error(`${name} failed: ${result.error ?? result.stderr?.toString()}`);
-      durations.push(Math.round(performance.now() - started));
-      stdoutBytes = result.stdout.byteLength;
-    }
+      if (result.status !== 1) throw new Error(`${name} failed: ${result.error ?? result.stderr.toString()}`);
+      return { duration: Math.round(performance.now() - started), stdoutBytes: result.stdout.byteLength };
+    });
+    const durations = measurements.map(({ duration }) => duration);
+    const stdoutBytes = measurements.at(-1)?.stdoutBytes ?? 0;
     results.push({ name, milliseconds: durations, medianMs: durations.toSorted((a, b) => a - b)[2], stdoutBytes });
   }
   process.stdout.write(
-    `${JSON.stringify({ node: process.version, platform: process.platform, fileCount, callsPerFile, samples, results }, null, 2)}\n`,
+    `${encodePrettyJson({ node: process.version, platform: process.platform, fileCount, callsPerFile, samples, results })}\n`,
   );
 } finally {
   rmSync(cwd, { recursive: true, force: true });

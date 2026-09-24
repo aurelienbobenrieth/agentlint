@@ -4,7 +4,7 @@ import { LoadReview } from "./features/session/command";
 import { sidebarResize } from "./features/shell/subscription";
 import { keyboard } from "./features/shortcuts/subscription";
 import { Message } from "./message";
-import { Model, Screen, SIDEBAR_DEFAULT } from "./model";
+import { Model, Screen, SIDEBAR_DEFAULT } from "./shared/model";
 import { update } from "./update";
 import { view } from "./view";
 

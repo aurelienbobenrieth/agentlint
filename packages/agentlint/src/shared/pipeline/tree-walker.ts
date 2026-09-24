@@ -7,14 +7,29 @@
  * @module
  */
 
-import { DetectionError } from "./detection-error.js";
+import { DetectionError, synchronousHook } from "./detection-error.js";
 import type { Tree } from "web-tree-sitter";
 import type { AgentlintNode } from "../../domain/node.js";
 import { wrapNode } from "../infrastructure/parsed-node.js";
 import type { FindingRecord } from "../../domain/finding.js";
-import type { VisitorHandler, Visitors } from "../../domain/rule.js";
-import type { RuleContextImpl } from "../../domain/rule-context.js";
+import type { VisitorHandler, Visitors } from "../../domain/rule/model.js";
+import type { RuleContextImpl } from "../../domain/rule/context/live.js";
 import { walkTree } from "./tree-cursor.js";
+import { Predicate } from "effect";
+
+const visitorHandler = ({
+  visitors,
+  key,
+}: {
+  readonly visitors: Visitors;
+  readonly key: string;
+}): VisitorHandler | undefined => {
+  const value = Reflect.get(visitors, key);
+  return Predicate.isFunction(value)
+    ? // The return value is kept so the walker can refuse a promise-returning visitor.
+      (node) => Reflect.apply(value, undefined, [node])
+    : undefined;
+};
 
 /**
  * Internal binding of a rule to its context and visitors for a walk pass.
@@ -40,20 +55,26 @@ interface RuleEntry {
  * @internal
  */
 export function visitorKeys(visitors: Visitors): ReadonlyArray<string> {
-  const handlers = visitors as Readonly<Record<string, unknown>>;
-  return Object.keys(handlers).filter(
-    (key) => key !== "before" && key !== "after" && typeof handlers[key] === "function",
+  return Object.keys(visitors).filter(
+    (key) => key !== "before" && key !== "after" && visitorHandler({ visitors, key }) !== undefined,
   );
 }
 
-export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyArray<FindingRecord> {
+export function walkFile({
+  tree,
+  rules,
+}: {
+  readonly tree: Tree;
+  readonly rules: ReadonlyArray<RuleEntry>;
+}): ReadonlyArray<FindingRecord> {
   const dispatchTable = new Map<string, VisitorHandler[]>();
   for (const entry of rules) {
     for (const key of visitorKeys(entry.visitors)) {
-      const visit = (entry.visitors as Readonly<Record<string, unknown>>)[key] as VisitorHandler;
+      const visit = visitorHandler({ visitors: entry.visitors, key });
+      if (!visit) continue;
       const handler: VisitorHandler = (node) => {
         try {
-          visit(node);
+          synchronousHook({ ruleId: entry.ruleId, hook: key, value: visit(node) });
         } catch (cause) {
           throw new DetectionError({ ruleId: entry.ruleId, cause });
         }
@@ -67,15 +88,24 @@ export function walkFile(tree: Tree, rules: ReadonlyArray<RuleEntry>): ReadonlyA
     }
   }
 
-  walkTree(tree, (node, position) => {
-    const handlers = dispatchTable.get(node.type);
-    if (handlers) {
-      const wrapped: AgentlintNode = wrapNode(node);
-      for (const entry of rules) entry.context.visit(wrapped, position);
-      for (const handler of handlers) {
-        handler(wrapped);
+  walkTree({
+    tree,
+    visit: ({
+      node,
+      position,
+    }: {
+      readonly node: import("web-tree-sitter").Node;
+      readonly position: readonly number[];
+    }) => {
+      const handlers = dispatchTable.get(node.type);
+      if (handlers) {
+        const wrapped: AgentlintNode = wrapNode(node);
+        for (const entry of rules) entry.context.visit({ node: wrapped, position });
+        for (const handler of handlers) {
+          handler(wrapped);
+        }
       }
-    }
+    },
   });
 
   const allFindings: FindingRecord[] = [];

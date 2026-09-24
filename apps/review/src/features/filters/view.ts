@@ -2,13 +2,25 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Facets, GroupBy, Model, StatusFacet, View } from "../../model";
+import type { Facets, GroupBy, Model, StatusFacet, View } from "../../shared/model";
 import { facetCount, type ReviewDerivation } from "../../shared/selectors";
 import { iconButton, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 import { authorityLabel, lifecycleLabel, statusLabel } from "../../shared/ui/labels";
 
-const facetOption = (label: string, active: boolean, message: Message, h: HtmlBuilder<Message>, count?: number): Html =>
+const facetOption = ({
+  label,
+  active,
+  message,
+  h,
+  count,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  readonly message: Message;
+  readonly h: HtmlBuilder<Message>;
+  readonly count?: number;
+}): Html =>
   h.button(
     [
       h.Type("button"),
@@ -17,20 +29,27 @@ const facetOption = (label: string, active: boolean, message: Message, h: HtmlBu
       h.AriaPressed(active ? "true" : "false"),
     ],
     [
-      h.span([h.Class("facet__box")], [icon("check", h)]),
+      h.span([h.Class("facet__box")], [icon({ name: "check", h })]),
       h.span([h.Class("facet__label")], [label]),
       ...(count === undefined ? [] : [h.span([h.Class("facet__count")], [String(count)])]),
     ],
   );
 
-const renderFilterPopover = (
-  state: ReviewStatePayload,
-  facets: Facets,
-  view: View,
-  groupBy: GroupBy,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html => {
+const renderFilterPopover = ({
+  state,
+  facets,
+  view,
+  groupBy,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly facets: Facets;
+  readonly view: View;
+  readonly groupBy: GroupBy;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   const { counts } = derived;
   const statuses: ReadonlyArray<StatusFacet> = view === "decisions" ? [] : ["open", "changes_requested"];
   return h.div(
@@ -44,13 +63,13 @@ const renderFilterPopover = (
               [
                 h.span([h.Class("popover__label")], ["Status"]),
                 ...statuses.map((status) =>
-                  facetOption(
-                    statusLabel(status, state.mode),
-                    facets.statuses.includes(status),
-                    Message.ToggledStatusFacet({ status }),
+                  facetOption({
+                    label: statusLabel({ status, mode: state.mode }),
+                    active: facets.statuses.includes(status),
+                    message: Message.ToggledStatusFacet({ status }),
                     h,
-                    counts.statuses.get(status) ?? 0,
-                  ),
+                    count: counts.statuses.get(status) ?? 0,
+                  }),
                 ),
               ],
             ),
@@ -60,13 +79,13 @@ const renderFilterPopover = (
         [
           h.span([h.Class("popover__label")], ["Authority"]),
           ...(["human", "agent"] as const).map((authority) =>
-            facetOption(
-              authorityLabel(authority),
-              facets.authorities.includes(authority),
-              Message.ToggledAuthorityFacet({ authority }),
+            facetOption({
+              label: authorityLabel(authority),
+              active: facets.authorities.includes(authority),
+              message: Message.ToggledAuthorityFacet({ authority }),
               h,
-              counts.authorities.get(authority) ?? 0,
-            ),
+              count: counts.authorities.get(authority) ?? 0,
+            }),
           ),
         ],
       ),
@@ -75,13 +94,13 @@ const renderFilterPopover = (
         [
           h.span([h.Class("popover__label")], ["Origin"]),
           ...(["change", "state"] as const).map((lifecycle) =>
-            facetOption(
-              lifecycleLabel(lifecycle),
-              facets.lifecycles.includes(lifecycle),
-              Message.ToggledLifecycleFacet({ lifecycle }),
+            facetOption({
+              label: lifecycleLabel(lifecycle),
+              active: facets.lifecycles.includes(lifecycle),
+              message: Message.ToggledLifecycleFacet({ lifecycle }),
               h,
-              counts.lifecycles.get(lifecycle) ?? 0,
-            ),
+              count: counts.lifecycles.get(lifecycle) ?? 0,
+            }),
           ),
         ],
       ),
@@ -90,13 +109,13 @@ const renderFilterPopover = (
         [
           h.span([h.Class("popover__label")], ["Rule"]),
           ...derived.rules.map(([ruleId, title]) =>
-            facetOption(
-              title,
-              facets.ruleIds.includes(ruleId),
-              Message.ToggledRuleFacet({ ruleId }),
+            facetOption({
+              label: title,
+              active: facets.ruleIds.includes(ruleId),
+              message: Message.ToggledRuleFacet({ ruleId }),
               h,
-              counts.rules.get(ruleId) ?? 0,
-            ),
+              count: counts.rules.get(ruleId) ?? 0,
+            }),
           ),
         ],
       ),
@@ -133,16 +152,21 @@ const renderFilterPopover = (
  */
 const filterPopover = createLazy();
 
-export const searchBar = (
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html =>
+export const searchBar = ({
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.div(
     [h.Class("search")],
     [
-      icon("search", h),
+      icon({ name: "search", h }),
       h.input([
         h.Type("search"),
         h.Class("search__input"),
@@ -154,17 +178,17 @@ export const searchBar = (
       ...(model.query.length === 0
         ? []
         : [
-            iconButton(
-              "Clear search",
-              [h.OnClick(Message.UpdatedQuery({ value: "" })), h.Class("icon-btn icon-btn--inline")],
-              "x",
+            iconButton({
+              label: "Clear search",
+              attributes: [h.OnClick(Message.UpdatedQuery({ value: "" })), h.Class("icon-btn icon-btn--inline")],
+              name: "x",
               h,
-            ),
+            }),
           ]),
-      tip(
-        "Filters",
-        ["F"],
-        h.button(
+      tip({
+        label: "Filters",
+        keys: ["F"],
+        trigger: h.button(
           [
             h.Type("button"),
             h.Class(`icon-btn icon-btn--inline${facetCount(model.facets) > 0 ? " icon-btn--marked" : ""}`),
@@ -173,42 +197,81 @@ export const searchBar = (
             h.AriaControls("filter-menu"),
             h.Popovertarget("filter-menu"),
           ],
-          [icon("filter", h)],
+          [icon({ name: "filter", h })],
         ),
         h,
+      }),
+      filterPopover(
+        (
+          popoverState: ReviewStatePayload,
+          facets: Facets,
+          view: View,
+          groupBy: GroupBy,
+          popoverDerived: ReviewDerivation,
+          builder: HtmlBuilder<Message>,
+        ) =>
+          renderFilterPopover({
+            state: popoverState,
+            facets,
+            view,
+            groupBy,
+            derived: popoverDerived,
+            h: builder,
+          }),
+        [state, model.facets, model.view, model.groupBy, derived, h],
       ),
-      filterPopover(renderFilterPopover, [state, model.facets, model.view, model.groupBy, derived, h]),
     ],
   );
 
-const chip = (label: string, message: Message, h: HtmlBuilder<Message>): Html =>
+const chip = ({
+  label,
+  message,
+  h,
+}: {
+  readonly label: string;
+  readonly message: Message;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.button(
     [h.Type("button"), h.OnClick(message), h.Class("chip"), h.AriaLabel(`Remove filter ${label}`)],
-    [h.span([], [label]), icon("x", h)],
+    [h.span([], [label]), icon({ name: "x", h })],
   );
 
-export const activeChips = (
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html | null => {
+export const activeChips = ({
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html | null => {
   if (facetCount(model.facets) === 0) return null;
   const titles = new Map(derived.rules);
   return h.div(
     [h.Class("chips")],
     [
       ...model.facets.statuses.map((status) =>
-        chip(statusLabel(status, state.mode), Message.ToggledStatusFacet({ status }), h),
+        chip({ label: statusLabel({ status, mode: state.mode }), message: Message.ToggledStatusFacet({ status }), h }),
       ),
       ...model.facets.authorities.map((authority) =>
-        chip(authority === "human" ? "Human" : "Agent", Message.ToggledAuthorityFacet({ authority }), h),
+        chip({
+          label: authority === "human" ? "Human" : "Agent",
+          message: Message.ToggledAuthorityFacet({ authority }),
+          h,
+        }),
       ),
       ...model.facets.lifecycles.map((lifecycle) =>
-        chip(lifecycle === "change" ? "This change" : "Current code", Message.ToggledLifecycleFacet({ lifecycle }), h),
+        chip({
+          label: lifecycle === "change" ? "This change" : "Current code",
+          message: Message.ToggledLifecycleFacet({ lifecycle }),
+          h,
+        }),
       ),
       ...model.facets.ruleIds.map((ruleId) =>
-        chip(titles.get(ruleId) ?? ruleId, Message.ToggledRuleFacet({ ruleId }), h),
+        chip({ label: titles.get(ruleId) ?? ruleId, message: Message.ToggledRuleFacet({ ruleId }), h }),
       ),
       h.button([h.Type("button"), h.OnClick(Message.ClearedFacets()), h.Class("chips__clear")], ["Clear"]),
     ],

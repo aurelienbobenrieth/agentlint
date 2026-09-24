@@ -1,6 +1,13 @@
 # Minimal consumer example
 
-This is the smallest useful agentlint project: one dependency, one tested rule, one source file.
+The smallest useful agentlint project:
+
+```text
+examples/minimal/
+├── package.json            one devDependency: @aurelienbbn/agentlint
+├── .agentlint/config.ts    one tested rule
+└── src/index.ts            one source file
+```
 
 ```bash
 pnpm install          # from the repository root: the example uses the workspace protocol
@@ -8,4 +15,4 @@ pnpm --filter ./examples/minimal run rules:test
 pnpm --filter ./examples/minimal run check
 ```
 
-The workspace protocol tests this example against the current package. In a consumer project, install the equivalent public range with `npm install --save-dev @aurelienbbn/agentlint@^0.2.0`.
+The workspace protocol tests this example against the current package. In your own project, install the equivalent public range: `npm install --save-dev @aurelienbbn/agentlint@^0.2.0`.

@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor, type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
@@ -12,16 +12,22 @@ import { statusLabel } from "../../shared/ui/labels";
 /**
  * Only the selected finding renders a decision form, so keyboard focus can target `.decision textarea`.
  */
-export const decisionForm = (
-  state: ReviewStatePayload,
-  finding: ReviewFindingPayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const draft = draftFor(model, finding.id);
+export const decisionForm = ({
+  state,
+  finding,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly finding: ReviewFindingPayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const draft = draftFor({ model, findingId: finding.id });
   const busy = model.busyFindingId !== null;
-  const status = statusFor(derived, finding);
+  const status = statusFor({ derived, finding });
   const reasonId = `reason-${finding.id}`;
   const empty = draft.reason.trim().length === 0 && finding.proposal === null;
   const reasonInput = ({ placeholder, label }: { placeholder: string; label: string }): Html =>
@@ -35,7 +41,7 @@ export const decisionForm = (
       h.Rows(2),
     ]);
 
-  if (state.mode === "review" && independentHidden(model, finding.id)) {
+  if (state.mode === "review" && independentHidden({ model, findingId: finding.id })) {
     return h.section(
       [h.Class("decision")],
       [
@@ -53,8 +59,14 @@ export const decisionForm = (
           h.Value(model.independentNotes[finding.id] ?? ""),
           h.OnInput((value) => Message.UpdatedIndependentNote({ findingId: finding.id, value })),
         ]),
-        button("Reveal prior decisions", Message.RevealedPriorDecision({ findingId: finding.id }), "secondary", h, {
-          disabled: !model.independentNotes[finding.id]?.trim(),
+        button({
+          label: "Reveal prior decisions",
+          message: Message.RevealedPriorDecision({ findingId: finding.id }),
+          variant: "secondary",
+          h,
+          options: {
+            disabled: !model.independentNotes[finding.id]?.trim(),
+          },
         }),
       ],
     );
@@ -120,18 +132,18 @@ export const decisionForm = (
         h.div(
           [h.Class("decision__actions")],
           [
-            button(
-              busy ? "Saving…" : "Save label",
-              Message.ClickedSaveCalibration({ findingId: finding.id }),
-              "primary",
+            button({
+              label: busy ? "Saving…" : "Save label",
+              message: Message.ClickedSaveCalibration({ findingId: finding.id }),
+              variant: "primary",
               h,
-              {
+              options: {
                 disabled:
                   busy ||
                   draft.calibration === "unreviewed" ||
                   (draft.calibration === "does_not_apply" && draft.calibrationReason === null),
               },
-            ),
+            }),
           ],
         ),
       ],
@@ -147,8 +159,14 @@ export const decisionForm = (
         h.div(
           [h.Class("decision__actions")],
           [
-            button("Request correction", Message.ClickedRequestChanges({ findingId: finding.id }), "danger", h, {
-              disabled: busy,
+            button({
+              label: "Request correction",
+              message: Message.ClickedRequestChanges({ findingId: finding.id }),
+              variant: "danger",
+              h,
+              options: {
+                disabled: busy,
+              },
             }),
           ],
         ),
@@ -178,29 +196,41 @@ export const decisionForm = (
       h.div(
         [h.Class("decision__actions")],
         [
-          tip(
-            "Accept",
-            ["A"],
-            button(acceptLabel, Message.ClickedAccept({ findingId: finding.id }), "primary", h, {
-              disabled: busy || empty,
+          tip({
+            label: "Accept",
+            keys: ["A"],
+            trigger: button({
+              label: acceptLabel,
+              message: Message.ClickedAccept({ findingId: finding.id }),
+              variant: "primary",
+              h,
+              options: {
+                disabled: busy || empty,
+              },
             }),
             h,
-          ),
-          tip(
-            "Request changes",
-            ["R"],
-            button(changesLabel, Message.ClickedRequestChanges({ findingId: finding.id }), "danger", h, {
-              disabled: busy,
+          }),
+          tip({
+            label: "Request changes",
+            keys: ["R"],
+            trigger: button({
+              label: changesLabel,
+              message: Message.ClickedRequestChanges({ findingId: finding.id }),
+              variant: "danger",
+              h,
+              options: {
+                disabled: busy,
+              },
             }),
             h,
-          ),
+          }),
           ...((status === "accepted" || status === "changes_requested") && (!detached || draft.disposition !== "none")
             ? [
                 h.span(
                   [h.Class(`decision__status decision__status--${status}`)],
                   [
-                    icon(status === "accepted" ? "check" : "x", h),
-                    statusLabel(status, state.mode),
+                    icon({ name: status === "accepted" ? "check" : "x", h }),
+                    statusLabel({ status, mode: state.mode }),
                     h.button(
                       [
                         h.Type("button"),

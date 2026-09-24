@@ -12,7 +12,7 @@ function isJsonParse(node) {
   );
 }
 
-function isEffectSchemaDecoderCall(node, jsonParseNode) {
+function isEffectSchemaDecoderCall({ node, jsonParseNode }) {
   if (node?.type !== "CallExpression") return false;
   if (!node.arguments?.includes(jsonParseNode)) return false;
 
@@ -104,7 +104,7 @@ export default {
         return {
           CallExpression(node) {
             if (!isJsonParse(node)) return;
-            if (isEffectSchemaDecoderCall(node.parent, node)) return;
+            if (isEffectSchemaDecoderCall({ node: node.parent, jsonParseNode: node })) return;
 
             context.report({
               node,

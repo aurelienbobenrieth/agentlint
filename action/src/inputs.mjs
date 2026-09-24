@@ -8,6 +8,38 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 /**
+ * Decode only the package-manifest fields needed to locate the local CLI.
+ *
+ * @param {string} text
+ * @returns {{ bin?: string | Record<string, string>; version?: string }}
+ */
+function decodePackageManifest(text) {
+  const value = JSON.parse(text);
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError("invalid package manifest");
+  const raw = /**
+   * @type {Record<string, unknown>}
+   */ (value);
+  const version = raw["version"];
+  const bin = raw["bin"];
+  if (version !== undefined && typeof version !== "string") throw new TypeError("invalid package version");
+  if (bin !== undefined && typeof bin !== "string") {
+    if (typeof bin !== "object" || bin === null || Array.isArray(bin)) throw new TypeError("invalid package bin");
+    for (const entry of Object.values(bin)) if (typeof entry !== "string") throw new TypeError("invalid package bin");
+  }
+  return {
+    ...(typeof version === "string" ? { version } : {}),
+    ...(typeof bin === "string" || (typeof bin === "object" && bin !== null)
+      ? {
+          bin: /**
+           * @type {string | Record<string, string>}
+           */ (bin),
+        }
+      : {}),
+  };
+}
+
+/**
  * @typedef {object} Inputs
  * @property {string} version
  * @property {string} base
@@ -19,11 +51,12 @@ import { dirname, join, resolve } from "node:path";
  */
 
 /**
- * @param {NodeJS.ProcessEnv} env
- * @param {string} name
- * @param {string} fallback
+ * @param {object} input
+ * @param {NodeJS.ProcessEnv} input.env
+ * @param {string} input.name
+ * @param {string} input.fallback
  */
-function input(env, name, fallback) {
+function input({ env, name, fallback }) {
   const dashed = env[`INPUT_${name.toUpperCase()}`];
   const underscored = env[`INPUT_${name.toUpperCase().replace(/-/g, "_")}`];
   const value = (dashed ?? underscored ?? "").trim();
@@ -43,13 +76,13 @@ function flag(value) {
  */
 export function readInputs(env) {
   return {
-    version: input(env, "version", "0.1.5"),
-    base: input(env, "base", ""),
-    workingDirectory: input(env, "working-directory", "."),
-    install: flag(input(env, "install", "false")),
-    githubToken: input(env, "github-token", ""),
-    comment: flag(input(env, "comment", "true")),
-    dryRun: flag(input(env, "dry-run", "false")),
+    version: input({ env, name: "version", fallback: "0.1.5" }),
+    base: input({ env, name: "base", fallback: "" }),
+    workingDirectory: input({ env, name: "working-directory", fallback: "." }),
+    install: flag(input({ env, name: "install", fallback: "false" })),
+    githubToken: input({ env, name: "github-token", fallback: "" }),
+    comment: flag(input({ env, name: "comment", fallback: "true" })),
+    dryRun: flag(input({ env, name: "dry-run", fallback: "false" })),
   };
 }
 
@@ -69,11 +102,12 @@ export class InputError extends Error {
  * The argv prefix that runs the agentlint CLI. Semver runs the published package through `npx`; `file:<path>` runs a
  * built checkout relative to the workspace root.
  *
- * @param {string} version
- * @param {string} workspace Absolute path of the checkout root
+ * @param {object} input
+ * @param {string} input.version
+ * @param {string} input.workspace Absolute path of the checkout root
  * @returns {string[]}
  */
-export function resolveCli(version, workspace) {
+export function resolveCli({ version, workspace }) {
   if (version.startsWith("file:")) {
     const path = version.slice("file:".length).trim();
     if (path === "") throw new InputError("version: file: needs a path");
@@ -96,38 +130,31 @@ export function isPublishedVersion(version) {
  * The copy of `@aurelienbbn/agentlint` that the repository installed, looked up from the working directory up to the
  * workspace root the way Node resolves packages. `null` when there is none.
  *
- * @param {string} workingDirectory Absolute
- * @param {string} workspace Absolute
+ * @param {object} input
+ * @param {string} input.workingDirectory Absolute
+ * @param {string} input.workspace Absolute
  * @returns {Promise<{ argv: string[]; version: string } | null>}
  */
-export async function localCli(workingDirectory, workspace) {
-  for (let dir = workingDirectory; ; dir = dirname(dir)) {
+export async function localCli({ workingDirectory, workspace }) {
+  /**
+   * @param {string} dir
+   */
+  const findFrom = async (dir) => {
     const root = join(dir, "node_modules", "@aurelienbbn", "agentlint");
-    const manifest = await readFile(join(root, "package.json"), "utf8").then(
-      (text) =>
-        /**
-         * @type {unknown}
-         */ (JSON.parse(text)),
-      () => null,
-    );
-    if (typeof manifest === "object" && manifest !== null) {
-      const { bin, version } = /**
-       * @type {{ bin?: unknown; version?: unknown }}
-       */ (manifest);
-      const entry =
-        typeof bin === "string"
-          ? bin
-          : typeof bin === "object" && bin !== null
-            ? /**
-               * @type {Record<string, unknown>}
-               */ (bin)["agentlint"]
-            : undefined;
-      if (typeof entry === "string") {
-        return { argv: ["node", resolve(root, entry)], version: typeof version === "string" ? version : "" };
-      }
+    const manifest = await readFile(join(root, "package.json"), "utf8")
+      .then((text) => decodePackageManifest(text))
+      .catch(() => {
+        // REASON: a missing or invalid local manifest falls through to the parent-directory and npx strategies.
+        return null;
+      });
+    if (manifest) {
+      const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.["agentlint"];
+      if (entry !== undefined) return { argv: ["node", resolve(root, entry)], version: manifest.version ?? "" };
     }
     if (dir === workspace || dirname(dir) === dir || !dir.startsWith(workspace)) return null;
-  }
+    return findFrom(dirname(dir));
+  };
+  return findFrom(workingDirectory);
 }
 
 /**

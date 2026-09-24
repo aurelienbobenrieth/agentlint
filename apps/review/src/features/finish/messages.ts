@@ -1,6 +1,6 @@
 import { Schema as S } from "effect";
 
-import { ExportKind } from "../../model";
+import { ExportKind } from "../../shared/model";
 
 export const fields = {
   ClickedFinish: {},

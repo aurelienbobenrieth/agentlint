@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { Array as A } from "effect";
 import { defineConfig, normalizeConfig } from "./config.js";
-import { defineRule } from "./rule.js";
+import { defineRule } from "./rule/model.js";
 import { AcceptanceRecord, acceptanceSatisfies } from "./acceptance.js";
-import { bindingDigest, canonicalStringify, Fingerprint } from "./fingerprint.js";
+import { bindingDigest, canonicalStringify, Fingerprint, FindingSource } from "./fingerprint.js";
 import { findingId, FindingRecord } from "./finding.js";
 import { reconcileAcceptanceRecords } from "../shared/infrastructure/acceptance-store.js";
 import { resolveFindingSelector } from "../shared/pipeline/selectors.js";
@@ -44,75 +45,101 @@ describe("review identity and authoring regressions", () => {
         },
       },
     });
-    await expect(testRuleOnSource(broken, "danger(1)")).rejects.toMatchObject({
+    await expect(testRuleOnSource({ rule: broken, source: "danger(1)" })).rejects.toMatchObject({
       _tag: "agentlint/DetectionError",
       ruleId: "review",
     });
   });
 
   it("retains independent and duplicate occurrences after sequential acceptance", async () => {
-    const findings = await testRuleOnSource(rule, 'danger("x"); danger("y"); danger("x");');
+    const findings = await testRuleOnSource({ rule, source: 'danger("x"); danger("y"); danger("x");' });
     expect(new Set(findings.map((finding) => finding.lineageKey)).size).toBe(3);
-    let records: readonly AcceptanceRecord[] = [];
-    for (const finding of findings)
-      records = reconcileAcceptanceRecords(records, {
-        scope: "partial",
-        current: [finding],
-        accepted: [accept(finding)],
-      }).records;
+    const records = findings.reduce<readonly AcceptanceRecord[]>(
+      (existing, finding) =>
+        reconcileAcceptanceRecords({
+          existing,
+          input: {
+            scope: "partial",
+            current: [finding],
+            accepted: [accept(finding)],
+          },
+        }).records,
+      [],
+    );
     expect(records).toHaveLength(3);
-    for (const finding of findings) expect(records.some((record) => acceptanceSatisfies(record, finding))).toBe(true);
+    for (const finding of findings)
+      expect(records.some((record) => acceptanceSatisfies({ acceptance: record, finding }))).toBe(true);
   });
 
   it("invalidates guard removal while retaining whitespace-only edits", async () => {
-    const [guarded] = await testRuleOnSource(rule, 'function run() { if (authorized) danger("x"); }');
-    const [formatted] = await testRuleOnSource(rule, '\n function run() {\n if (authorized) danger( "x" );\n }');
-    const [unguarded] = await testRuleOnSource(rule, 'function run() { danger("x"); }');
-    if (!guarded || !formatted || !unguarded) throw new Error("Expected one finding per source");
+    const guarded = A.getUnsafe(
+      await testRuleOnSource({ rule, source: 'function run() { if (authorized) danger("x"); }' }),
+      0,
+    );
+    const formatted = A.getUnsafe(
+      await testRuleOnSource({ rule, source: '\n function run() {\n if (authorized) danger( "x" );\n }' }),
+      0,
+    );
+    const unguarded = A.getUnsafe(await testRuleOnSource({ rule, source: 'function run() { danger("x"); }' }), 0);
     expect(guarded.fingerprint).toEqual(formatted.fingerprint);
     expect(guarded.fingerprint).not.toEqual(unguarded.fingerprint);
   });
 
   it("does not transfer an acceptance when an identical sibling disappears", async () => {
-    const [first] = await testRuleOnSource(rule, 'danger("x"); danger("x");');
-    const [remaining] = await testRuleOnSource(rule, 'danger("x");');
-    if (!first || !remaining) throw new Error("Expected a finding in both sources");
+    const first = A.getUnsafe(await testRuleOnSource({ rule, source: 'danger("x"); danger("x");' }), 0);
+    const remaining = A.getUnsafe(await testRuleOnSource({ rule, source: 'danger("x");' }), 0);
     expect(first.fingerprint).not.toEqual(remaining.fingerprint);
   });
 
   it("includes explicit supporting files and requires them in fixtures", async () => {
     const dependent = defineRule({ ...rule, binding: { ...rule.binding, dependencies: ["policy.txt"] } });
-    const [before] = await testRuleOnSources(dependent, [
-      ["fixture.ts", 'danger("x")'],
-      ["policy.txt", "authorized"],
-    ]);
-    const [after] = await testRuleOnSources(dependent, [
-      ["fixture.ts", 'danger("x")'],
-      ["policy.txt", "public"],
-    ]);
-    if (!before || !after) throw new Error("Expected a finding for both policy contents");
+    const before = A.getUnsafe(
+      await testRuleOnSources({
+        rule: dependent,
+        sources: [
+          ["fixture.ts", 'danger("x")'],
+          ["policy.txt", "authorized"],
+        ],
+      }),
+      0,
+    );
+    const after = A.getUnsafe(
+      await testRuleOnSources({
+        rule: dependent,
+        sources: [
+          ["fixture.ts", 'danger("x")'],
+          ["policy.txt", "public"],
+        ],
+      }),
+      0,
+    );
     expect(before.fingerprint).not.toEqual(after.fingerprint);
-    await expect(testRuleOnSource(dependent, 'danger("x")')).rejects.toThrow("Missing fixture dependency");
+    await expect(testRuleOnSource({ rule: dependent, source: 'danger("x")' })).rejects.toThrow(
+      "Missing fixture dependency",
+    );
   });
 
   it("keeps Unicode literals and option array ordering semantically distinct", async () => {
-    const [a] = await testRuleOnSource(rule, 'danger("é")');
-    const [b] = await testRuleOnSource(rule, 'danger("e\u0301")');
-    if (!a || !b) throw new Error("Expected a finding for both literals");
+    const a = A.getUnsafe(await testRuleOnSource({ rule, source: 'danger("é")' }), 0);
+    const b = A.getUnsafe(await testRuleOnSource({ rule, source: 'danger("e\u0301")' }), 0);
     expect(a.fingerprint).not.toEqual(b.fingerprint);
     expect(bindingDigest({ options: { include: ["a", "b"] } })).not.toBe(
       bindingDigest({ options: { include: ["b", "a"] } }),
     );
     const sparse: unknown[] = [];
     sparse.length = 2;
-    expect(() => canonicalStringify(sparse as never)).toThrow("not canonical JSON data");
+    expect(() => Reflect.apply(canonicalStringify, undefined, [sparse])).toThrow("not canonical JSON data");
   });
 
   it("rejects invalid runtime rules and options even before a detector reports", () => {
-    expect(() => normalizeConfig({ rules: [{ ...rule, lifecycle: "typo" } as never] })).toThrow("invalid rule shape");
-    expect(() => normalizeConfig({ rules: [{ ...rule, binding: { ...rule.binding, options: new Date() } }] })).toThrow(
-      "plain objects",
+    expect(() => Reflect.apply(normalizeConfig, undefined, [{ rules: [{ ...rule, lifecycle: "typo" }] }])).toThrow(
+      "invalid rule shape",
     );
+    expect(() =>
+      Reflect.apply(normalizeConfig, undefined, [
+        { rules: [{ ...rule, binding: { ...rule.binding, options: new URL("https://invalid.test") } }] },
+      ]),
+    ).toThrow("plain objects");
     expect(() => defineRule({ ...rule, binding: { ...rule.binding, dependencies: ["../policy"] } })).toThrow("escapes");
   });
 
@@ -124,7 +151,13 @@ describe("review identity and authoring regressions", () => {
       detector: {
         id: "typed",
         version: 1,
-        detect(_context, options: { limit: number }) {
+        detect({
+          context: _context,
+          options,
+        }: {
+          readonly context: import("../index.js").ChangeRuleContext;
+          readonly options: { limit: number };
+        }) {
           received.push(options.limit);
         },
       },
@@ -134,22 +167,67 @@ describe("review identity and authoring regressions", () => {
       "review",
       "typed",
     ]);
-    await testRuleOnChange(typed, { before: {}, after: { "a.ts": "export {}" } });
+    await testRuleOnChange({ rule: typed, fixture: { before: {}, after: { "a.ts": "export {}" } } });
     expect(received).toEqual([5]);
   });
 
   it("rejects shared digest selectors and resolves complete identity hashes", async () => {
-    const [first] = await testRuleOnSource(rule, 'danger("x")');
-    if (!first) throw new Error("Expected finding");
-    const second = new FindingRecord({ ...first, source: { ...first.source, bindingId: "another" } });
+    const first = A.getUnsafe(await testRuleOnSource({ rule, source: 'danger("x")' }), 0);
+    const second = new FindingRecord({
+      selector: first.selector,
+      ruleId: first.ruleId,
+      lifecycle: first.lifecycle,
+      authority: first.authority,
+      source: new FindingSource({
+        standardId: first.source.standardId,
+        standardRevision: first.source.standardRevision,
+        detectorId: first.source.detectorId,
+        detectorVersion: first.source.detectorVersion,
+        bindingId: "another",
+        bindingDigest: first.source.bindingDigest,
+      }),
+      fingerprint: first.fingerprint,
+      lineageKey: first.lineageKey,
+      file: first.file,
+      line: first.line,
+      column: first.column,
+      endLine: first.endLine,
+      endColumn: first.endColumn,
+      message: first.message,
+      sourceSnippet: first.sourceSnippet,
+    });
     const cache = { version: 1 as const, findings: [] };
-    expect(resolveFindingSelector(first.fingerprint.digest, [first, second], cache).ok).toBe(false);
-    expect(resolveFindingSelector(findingId(second), [first, second], cache)).toEqual({ ok: true, finding: second });
+    expect(resolveFindingSelector({ selector: first.fingerprint.digest, findings: [first, second], cache }).ok).toBe(
+      false,
+    );
+    expect(resolveFindingSelector({ selector: findingId(second), findings: [first, second], cache })).toEqual({
+      ok: true,
+      finding: second,
+    });
     expect(
-      acceptanceSatisfies(
-        accept(first),
-        new FindingRecord({ ...first, fingerprint: new Fingerprint({ ...first.fingerprint, version: 1 }) }),
-      ),
+      acceptanceSatisfies({
+        acceptance: accept(first),
+        finding: new FindingRecord({
+          selector: first.selector,
+          ruleId: first.ruleId,
+          lifecycle: first.lifecycle,
+          authority: first.authority,
+          source: first.source,
+          fingerprint: new Fingerprint({
+            scheme: first.fingerprint.scheme,
+            version: 1,
+            digest: first.fingerprint.digest,
+          }),
+          lineageKey: first.lineageKey,
+          file: first.file,
+          line: first.line,
+          column: first.column,
+          endLine: first.endLine,
+          endColumn: first.endColumn,
+          message: first.message,
+          sourceSnippet: first.sourceSnippet,
+        }),
+      }),
     ).toBe(false);
   });
 });

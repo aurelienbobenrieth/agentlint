@@ -7,151 +7,127 @@
 
 ## Decision
 
-agentlint has two review workflows.
+**Calibration tests a detector before enforcement. Acceptance review resolves findings after it. Both run in the CLI or one optional local SPA, attached to the repository or detached from a CI artifact. An agent can propose; only a human opens a human-authority finding.**
 
-1. Calibration tests a detector before the repository enforces it.
-2. Acceptance review resolves findings after enforcement.
+```mermaid
+flowchart LR
+  D["detector"] --> C["calibration"]
+  C -- labels, notes --> D
+  C -- enable binding --> F["finding"]
+  F --> R["acceptance review"]
+  R -- accept / approve --> G["gate opens"]
+  R -- request changes --> AG["agent fixes code"]
+  AG --> F
+```
 
-Both workflows use the CLI or the optional local UI.
-
-Local acceptance is a first-class 0.2 workflow. Provider-verified acceptance is a later adapter.
-
-One local SPA serves attached review and detached CI artifacts.
-
-An agent can propose a resolution. Only a human decision opens the gate for a human-authority finding.
+Local acceptance is first-class in 0.2. Provider-verified acceptance is a later adapter.
 
 ## Context
 
-An enabled finding needs a decision before the gate opens.
+- A small queue works in the terminal. A large one needs code context, guidance, filters, and grouping.
+- CI cannot wait for a browser on another computer.
+- Agents fix faster than humans read. The human needs the agent's reasoning next to the code.
 
-A small queue works well in the terminal. A large queue needs code context, guidance, filters, and grouping.
+## Early reporting is not a weaker gate
 
-CI cannot wait for a browser on another computer.
+- Every unresolved enabled finding closes the final gate, and the final check reports all of them.
+- An integration can report a finding early and let the agent continue safe work. That is deferred review, not a "non-blocking rule".
+- Only `check --all` without file or rule filters is complete. A partial check never removes acceptances.
 
-Agents produce fixes faster than humans can read them. The human needs the agent's reasoning next to the code.
+## Calibration never writes gate state
 
-## Gate timing
+`rules scan --review` runs the fixtures, scans, and opens the SPA; `review --mode calibration` scans and opens it without running fixtures.
 
-Gate state and interruption timing are separate concerns.
+- Label each match `applies`, `does_not_apply` (reason required: `scope`, `detector`, `guidance`, `valid_exception`, `other`), or `unsure`, with a note.
+- The server refuses accept, request changes, and withdraw in this mode.
+- Labels are authoring feedback, not gate states. They live in the session: server memory when attached, the browser when detached. At finish the reviewer copies them as agent instructions or exports a versioned report.
+- No candidate-rule database. The final detector, binding, fixtures, and Git history keep the result.
 
-Every unresolved enabled finding closes the final gate.
+## Acceptance review: four outcomes
 
-An integration can report a finding early and let the agent continue safe work. The final check must report every unresolved finding.
+| Outcome         | How                                                     | Effect                                                                           |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Fix the code    | agent edits                                             | The finding disappears.                                                          |
+| Accept          | `accept` (agent), `approve` (human), SPA accept (human) | One handler writes `.agentlint/acceptances.jsonl`. Reason required.              |
+| Request changes | SPA                                                     | Sends the agent back. Text optional: message and standard carry the instruction. |
+| Withdraw        | SPA **Decisions** view                                  | Revokes the decision the session showed. The finding is unresolved again.        |
 
-Do not call an early finding a non-blocking rule. The rule is enforced. The integration defers the review to a checkpoint.
+- **Queue** holds what needs a decision. **Decisions** shows actor, reason, and time, so a human can audit and withdraw an agent acceptance.
+- Accepting with a proposal and no typed reason records the proposal summary as the reason.
+- The server refuses an action on a finding that changed or disappeared ([ADR-005](./adr-005-fingerprints-and-lineage.md)), and a withdrawal when the stored decision changed after page load.
 
-Only `check --all` without file or rule filters is a complete view. A partial check cannot remove acceptances from unexamined files.
+`propose <selector> --summary "..." [--diff-file <path>]` stores agent work in `.agentlint/proposals.jsonl`, keyed like acceptances. The SPA shows it next to the code. It never opens the gate.
 
-## Calibration
+## Attached vs detached
 
-`agentlint rules scan --review` opens the UI in calibration mode.
+|                 | Attached (`review`)                             | Detached (`review --from`, `pr <number>`)                         |
+| --------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
+| Starts from     | the repository, loopback server + session token | `check --all --review-output <path>` in CI                        |
+| Decisions go to | repository files, per action; UI refetches      | the browser, then downloaded typed JSONL with the reviewed source |
+| Change requests | server memory                                   | the browser                                                       |
+| Validation      | server rescans each action                      | `acceptances import` rescans, all-or-nothing                      |
 
-Calibration runs the detector fixtures and scans the repository. It does not enable the detector and does not create acceptances. The server rejects an accept action in calibration mode.
+- Import rejects a decision whose source or finding changed, disappeared, or needs other authority. Only then does it become an `AcceptanceRecord`.
+- Detached review never claims it changed the repository. The user imports, commits, and reruns CI.
+- Both end with a summary, agent instructions to copy, and acceptance output when any. The CLI prints summary and feedback when the browser finishes.
 
-The reviewer labels each match as `applies`, `does_not_apply`, or `unsure` and adds a note.
+## Authority is who; verification is how
 
-These labels are authoring feedback. They are not gate states. They stay in the browser session. The reviewer copies them as agent instructions when the review finishes.
+| Authority | Verification | For                                                 |
+| --------- | ------------ | --------------------------------------------------- |
+| Agent     | Local        | fast agent judgment with a committed reason         |
+| Human     | Local        | individuals and trusted local workflows             |
+| Human     | Provider     | team security via provider identity and permissions |
 
-The product does not create a candidate rule database from these labels. The final detector, binding, fixtures, and Git history preserve the result.
+> [!WARNING]
+> Local human acceptance is a workflow boundary. It does not prove human identity against a hostile local agent.
 
-## Acceptance review
-
-Acceptance review starts after an enabled detector reports a finding.
-
-The reviewer can take one of these actions.
-
-- Change the code until the finding disappears.
-- Accept the exact finding with a reason.
-- Request changes and send the agent back to work.
-- Withdraw an earlier decision.
-
-`agentlint accept` records an agent-authority acceptance. `agentlint approve` records a human-authority acceptance. Both write to `.agentlint/acceptances.jsonl` through the same handler.
-
-`agentlint review` opens the UI. The **Queue** lists every finding that still needs a decision. The **Decisions** view lists accepted findings with the actor, the reason, and the time. A human can audit an agent acceptance there and withdraw it.
-
-An acceptance needs a reason. When an agent proposal exists, the UI records the proposal summary as the reason if the reviewer gives none.
-
-A request for changes needs no text. The finding message and the standard carry the instruction.
-
-A changed finding needs a new review under [ADR-005](./adr-005-fingerprints-and-lineage.md). The server refuses an action when the finding changed or disappeared.
-
-## Agent proposals
-
-`agentlint propose <selector> --summary "..."` records what an agent did for one exact finding. An optional diff travels with the summary.
-
-Proposals live in `.agentlint/proposals.jsonl`. They use the same source and fingerprint identity as acceptances.
-
-The UI shows the proposal next to the code. A proposal is context for the decision. It never opens the gate.
-
-## Attached and detached transport
-
-The attached transport runs a loopback server with a session token. The server writes acceptances to the repository and records change requests in memory. The UI refetches server state after each action.
-
-The detached transport starts from an artifact. `agentlint check --all --review-output <path>` writes the artifact in CI. `agentlint review --from <path>` opens it locally.
-
-Detached decisions stay in the browser. The UI downloads typed import decisions as JSONL, including the exact source snapshot shown to the reviewer. `agentlint acceptances import` rescans the repository and rejects a decision whose source or finding changed, disappeared, or has different authority. Only a validated import is converted to the current persisted `AcceptanceRecord` shape.
-
-Detached review cannot claim that it changed repository state. The user imports, commits, and runs CI again.
-
-Both transports end with a summary, agent instructions to copy, and acceptance output when it exists. The CLI prints the summary and the feedback after the browser finishes.
-
-## Authority and verification
-
-Authority answers who can accept a finding. Verification answers how the workflow supports that claim.
-
-| Authority | Verification | Intended use                                            |
-| --------- | ------------ | ------------------------------------------------------- |
-| Agent     | Local        | Fast agent judgment with a committed reason             |
-| Human     | Local        | Individual use and trusted local workflows              |
-| Human     | Provider     | Team security through provider identity and permissions |
-
-The 0.2 rule policy contains only `agent | human` authority. Local human acceptance is a workflow boundary. It does not prove human identity against a hostile local agent.
-
-A future provider adapter can add proof metadata to the acceptance record. Provider metadata must not change finding or fingerprint semantics. Do not add a required verification policy before a provider adapter exists.
-
-## Rejected alternatives
-
-**Provider-only human acceptance.** This model gives stronger identity. It slows local work and excludes individual developers.
-
-**Local acceptance as identity proof.** An unrestricted local agent can change repository files. The product must not claim a security guarantee that it cannot enforce.
-
-**UI-only review.** This model makes browser interaction necessary for routine use. Small queues work better in the terminal.
-
-**Permanent non-blocking rules.** This model lets enabled findings pass without a decision. Deferred interaction gives speed without a weaker final gate.
-
-**Durable calibration database.** This model creates candidate lifecycle state and cleanup work. Git history already preserves the useful result.
-
-**Automatic UI launch on a finding-count threshold.** The CLI must not open a browser without a user action. A person or an agent opens the UI when the terminal is not sufficient.
-
-## Reconsideration conditions
-
-Reconsider this record when a provider adapter ships, when an agent harness supports session continuation from the review server, or when detached review needs a second artifact version.
-
-## Consequences
-
-The UI has a defined optional role in calibration and acceptance.
-
-Local acceptance stays fast for individual developers. Agent proposals give the human the reasoning without a chat transcript.
-
-Provider verification can strengthen team workflows without a change to the core engine.
-
-Version 0.2 does not resume an agent harness after review. The human pastes the copied instructions into the agent.
+0.2 policy is only `agent | human`. A provider adapter may add proof metadata but must not change finding or fingerprint semantics. No required verification policy before one exists.
 
 ## Review ergonomics (2026-09-07)
 
-The repository can start from explicitly chosen plugin exports with `init --preset`. The engine has no preset catalog or package installer. Harness owns optional small starting configurations.
+| Feature                       | Does                                                                                                 | Does not                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `init --preset <pkg#export>`  | starts from explicitly chosen plugin exports                                                         | ship a preset catalog or installer; Harness owns starters      |
+| `next`                        | returns one unresolved obligation; JSON has scope, authority, command argv                           | replace the complete checkpoint when a filtered queue is empty |
+| Related groups                | group by detector- or binding-declared file relationships                                            | share acceptances                                              |
+| Independent review            | hides prior reasons and proposals until the reviewer writes an assessment                            | act as an authorization boundary                               |
+| `rules calibration <reports>` | combines reports, dedupes exact evidence, keeps policy versions apart, counts repeated invalidations | rebuild missing history, store anything, or touch the gate     |
 
-`next` runs the current gate scan and returns one unresolved obligation. Its JSON contract includes scope, authority and command arguments. A filtered empty queue does not replace the complete checkpoint.
+Review artifacts are version 3; regenerate older ones. Acceptance and fingerprint formats are unchanged.
 
-The SPA can group findings by explicit file relationships. These groups do not share acceptances. Independent review hides previous reasons and proposals until the reviewer records an assessment. This is a presentation option, not an authorization boundary.
+## Consequences
 
-Calibration exports versioned observation reports. Combining reports deduplicates exact evidence and keeps material policy versions separate. Reports can measure observed repeated invalidations; they cannot reconstruct missing history. They do not create a durable engine database or change the gate.
+| Gain                                                  | Cost                                                           |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| The SPA has a defined, optional role.                 | Detached review adds import, commit, and a CI rerun.           |
+| Local acceptance stays fast for individuals.          | Local human authority is accountability, not identity.         |
+| Proposals carry agent reasoning without a transcript. | No agent-harness resume in 0.2: the human pastes instructions. |
+| Provider verification can come without a core change. |                                                                |
 
-Review artifacts use version 3. Previous artifacts must be regenerated. The acceptance and fingerprint formats are unchanged.
+## Rejected options
 
-## Revision history
+| Option                                 | Why not                                                                                            |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Provider-only human acceptance         | Stronger identity, but slows local work and excludes individuals.                                  |
+| Local acceptance as identity proof     | A local agent can edit repository files. Claim nothing unenforceable.                              |
+| UI-only review                         | Forces a browser for routine work. Small queues fit the terminal.                                  |
+| Permanent non-blocking rules           | Findings pass without a decision. Deferred review gives speed without that.                        |
+| Durable calibration database           | Adds candidate lifecycle state and cleanup. Git already keeps the result.                          |
+| Auto-open the UI above a finding count | The CLI never opens a browser unasked. A person or agent opens it when the terminal is not enough. |
 
-- 2026-08-10: The team proposed calibration, checkpoint review, and local acceptance as 0.2 workflows.
-- 2026-08-10: The team accepted attached and detached review through one local SPA.
-- 2026-08-28: Condensed and aligned with the 0.2 implementation.
-- 2026-09-07: Added explicit onboarding, next-obligation handoffs, related groups, independent review and portable calibration measurements. These additions reduce review effort without changing acceptance compatibility.
+## Reconsider when
+
+- A provider adapter ships.
+- An agent harness can continue a session from the review server.
+- Detached review needs a new artifact version.
+
+<details>
+<summary>Revision history</summary>
+
+- 2026-08-10: Proposed calibration, checkpoint review, and local acceptance for 0.2. Accepted attached and detached review through one SPA.
+- 2026-08-28: Condensed and aligned with 0.2.
+- 2026-09-07: Added onboarding presets, `next`, related groups, independent review, and calibration reports, to cut review effort without changing acceptance compatibility.
+- 2026-09-23: Reformatted. Corrected where calibration labels live (server memory when attached). Recorded the required `does_not_apply` reason, `review --mode calibration`, `--diff-file`, `pr`, stale-withdrawal refusal, and all-or-nothing import. Decision unchanged.
+
+</details>

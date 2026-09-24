@@ -10,14 +10,14 @@ import { collectFindingForSelector } from "../accept/handler.js";
 import { ProposeCommand, ProposeResult } from "./request.js";
 
 export const proposeHandler = Effect.fn("proposeHandler")(function* (command: ProposeCommand) {
+  const env = yield* Env;
+  const store = yield* ProposalStore;
   if (!command.selector) return new ProposeResult({ message: "Missing finding selector.", exitCode: 2 });
   if (!command.summary?.trim()) {
     return new ProposeResult({ message: 'Missing summary. Pass --summary "...".', exitCode: 2 });
   }
   const selected = yield* collectFindingForSelector(command.selector, command.base);
   if ("error" in selected) return new ProposeResult({ message: selected.error, exitCode: 2 });
-  const env = yield* Env;
-  const store = yield* ProposalStore;
   const finding = selected.finding;
   yield* store.upsert(
     new ProposalRecord({

@@ -2,7 +2,7 @@ import { independentHidden } from "../detail/selectors";
 import { evo } from "foldkit/struct";
 
 import type { ReviewActionRequest, ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
-import { type Draft, type Model, Screen } from "../../model";
+import { type Draft, type Model, Screen } from "../../shared/model";
 import { draftFor, duplicateFindingId, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
@@ -14,24 +14,44 @@ import { effectiveReason } from "./selectors";
 
 export type DecisionKind = ReviewActionRequest["type"];
 
-const updateDraft = (model: Model, findingId: string, change: (draft: Draft) => Draft): Model =>
+const updateDraft = ({
+  model,
+  findingId,
+  change,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+  readonly change: (draft: Draft) => Draft;
+}): Model =>
   evo(model, {
-    drafts: (drafts) => ({ ...drafts, [findingId]: change(draftFor(model, findingId)) }),
+    drafts: (drafts) => ({ ...drafts, [findingId]: change(draftFor({ model, findingId })) }),
   });
 
 /**
  * Text edits change the model now and persist after a pause.
  */
-const editDraft = (model: Model, findingId: string, change: (draft: Draft) => Draft): UpdateReturn =>
-  persistLater(updateDraft(model, findingId, change));
+const editDraft = ({
+  model,
+  findingId,
+  change,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+  readonly change: (draft: Draft) => Draft;
+}): UpdateReturn => persistLater(updateDraft({ model, findingId, change }));
 
-const requestFor = (
-  model: Model,
-  kind: DecisionKind,
-  findingId: string,
-  finding: ReviewFindingPayload | undefined,
-): ReviewActionRequest => {
-  const draft = draftFor(model, findingId);
+const requestFor = ({
+  model,
+  kind,
+  findingId,
+  finding,
+}: {
+  readonly model: Model;
+  readonly kind: DecisionKind;
+  readonly findingId: string;
+  readonly finding: ReviewFindingPayload | undefined;
+}): ReviewActionRequest => {
+  const draft = draftFor({ model, findingId });
   switch (kind) {
     case "withdraw":
       return { type: "withdraw", findingId };
@@ -47,99 +67,158 @@ const requestFor = (
       return {
         type: "accept",
         findingId,
-        reason: finding === undefined ? draft.reason : effectiveReason(model, finding),
+        reason: finding === undefined ? draft.reason : effectiveReason({ model, finding }),
       };
     case "request_changes":
       return { type: "request_changes", findingId, reason: draft.reason };
   }
+  return kind satisfies never;
 };
 
-const dispositionFor = (kind: DecisionKind, current: Draft["disposition"]): Draft["disposition"] =>
-  kind === "accept" || kind === "calibrate"
-    ? "accept"
-    : kind === "request_changes"
-      ? "request_changes"
-      : kind === "withdraw"
-        ? "none"
-        : current;
+const dispositions: Record<DecisionKind, Draft["disposition"]> = {
+  accept: "accept",
+  calibrate: "accept",
+  request_changes: "request_changes",
+  withdraw: "none",
+};
+
+const dispositionFor = (kind: DecisionKind): Draft["disposition"] => dispositions[kind];
 
 /**
  * Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation.
  */
-export const submit = (model: Model, kind: DecisionKind, findingId: string): UpdateReturn => {
+export const submit = ({
+  model,
+  kind,
+  findingId,
+}: {
+  readonly model: Model;
+  readonly kind: DecisionKind;
+  readonly findingId: string;
+}): UpdateReturn => {
   if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null) return { model };
-  const finding = findingById(model.screen.state, findingId);
-  if (!finding || (model.screen.state.mode === "review" && independentHidden(model, findingId))) return { model };
-  const request = requestFor(model, kind, findingId, finding);
+  const finding = findingById({ state: model.screen.state, findingId });
+  if (!finding || (model.screen.state.mode === "review" && independentHidden({ model, findingId }))) return { model };
+  const request = requestFor({ model, kind, findingId, finding });
   if (
     request.type === "calibrate" &&
-    (draftFor(model, findingId).calibration === "unreviewed" ||
+    (draftFor({ model, findingId }).calibration === "unreviewed" ||
       (request.calibration === "does_not_apply" && request.reason === null))
   )
     return { model };
-  const decided = updateDraft(model, findingId, (draft) => ({
-    ...draft,
-    disposition: dispositionFor(kind, draft.disposition),
-    savedCalibration:
-      request.type === "calibrate"
-        ? {
-            findingId: finding.id,
-            identity: finding.identity,
-            ruleId: finding.ruleId,
-            file: finding.file,
-            classification: request.calibration,
-            reason: request.reason,
-            note: request.note,
-            invalidationReasons: finding.invalidationReasons,
-          }
-        : draft.savedCalibration,
-  }));
+  const decided = updateDraft({
+    model,
+    findingId,
+    change: (draft) => ({
+      ...draft,
+      disposition: dispositionFor(kind),
+      savedCalibration:
+        request.type === "calibrate"
+          ? {
+              findingId: finding.id,
+              identity: finding.identity,
+              ruleId: finding.ruleId,
+              file: finding.file,
+              classification: request.calibration,
+              reason: request.reason,
+              note: request.note,
+              invalidationReasons: finding.invalidationReasons,
+            }
+          : draft.savedCalibration,
+    }),
+  });
   if (model.screen.state.transport === "detached") {
-    const moved = reconcileSelection(model, decided);
-    const notified = enqueueToast(
-      moved.model,
-      kind === "withdraw" ? "Decision withdrawn." : "Decision saved in this browser.",
-      "success",
-    );
-    return appendCommands(persist(notified.model), [...(moved.commands ?? []), ...(notified.commands ?? [])]);
+    const moved = reconcileSelection({ before: model, after: decided });
+    const notified = enqueueToast({
+      model: moved.model,
+      message: kind === "withdraw" ? "Decision withdrawn." : "Decision saved in this browser.",
+      tone: "success",
+    });
+    return appendCommands({
+      result: persist(notified.model),
+      commands: [...(moved.commands ?? []), ...(notified.commands ?? [])],
+    });
   }
-  return appendCommands(persist(evo(model, { busyFindingId: () => findingId })), [SubmitAction({ request })]);
+  return appendCommands({
+    result: persist(evo(model, { busyFindingId: () => findingId })),
+    commands: [SubmitAction({ request })],
+  });
+};
+
+/**
+ * A detached acceptance exports the reason as it stands at finish, so clearing it withdraws the acceptance instead of
+ * leaving one the import would reject.
+ */
+const editReason = ({
+  model,
+  findingId,
+  value,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+  readonly value: string;
+}): UpdateReturn => {
+  const edited = updateDraft({ model, findingId, change: (draft) => ({ ...draft, reason: value }) });
+  if (
+    model.screen._tag !== "Reviewing" ||
+    model.screen.state.transport !== "detached" ||
+    model.screen.state.mode !== "review" ||
+    draftFor({ model, findingId }).disposition !== "accept"
+  )
+    return persistLater(edited);
+  const finding = findingById({ state: model.screen.state, findingId });
+  if (finding === undefined || effectiveReason({ model: edited, finding }).length > 0) return persistLater(edited);
+  const notified = enqueueToast({
+    model: updateDraft({ model: edited, findingId, change: (draft) => ({ ...draft, disposition: "none" }) }),
+    message: "Acceptance withdrawn: accepting needs a reason.",
+    tone: "neutral",
+  });
+  return appendCommands({ result: persist(notified.model), commands: notified.commands ?? [] });
 };
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
-  UpdatedReason: ({ findingId, value }) => editDraft(model, findingId, (draft) => ({ ...draft, reason: value })),
+  UpdatedReason: ({ findingId, value }) => editReason({ model, findingId, value }),
   SelectedCalibrationReason: ({ findingId, reason }) =>
-    persist(updateDraft(model, findingId, (draft) => ({ ...draft, calibrationReason: reason }))),
-  UpdatedNote: ({ findingId, value }) => editDraft(model, findingId, (draft) => ({ ...draft, note: value })),
+    persist(updateDraft({ model, findingId, change: (draft) => ({ ...draft, calibrationReason: reason }) })),
+  UpdatedNote: ({ findingId, value }) =>
+    editDraft({ model, findingId, change: (draft) => ({ ...draft, note: value }) }),
   SelectedCalibration: ({ findingId, calibration }) =>
-    persist(updateDraft(model, findingId, (draft) => ({ ...draft, calibration }))),
-  ClickedAccept: ({ findingId }) => submit(model, "accept", findingId),
-  ClickedRequestChanges: ({ findingId }) => submit(model, "request_changes", findingId),
-  ClickedWithdraw: ({ findingId }) => submit(model, "withdraw", findingId),
-  ClickedSaveCalibration: ({ findingId }) => submit(model, "calibrate", findingId),
+    persist(updateDraft({ model, findingId, change: (draft) => ({ ...draft, calibration }) })),
+  ClickedAccept: ({ findingId }) => submit({ model, kind: "accept", findingId }),
+  ClickedRequestChanges: ({ findingId }) => submit({ model, kind: "request_changes", findingId }),
+  ClickedWithdraw: ({ findingId }) => submit({ model, kind: "withdraw", findingId }),
+  ClickedSaveCalibration: ({ findingId }) => submit({ model, kind: "calibrate", findingId }),
   CompletedAction: ({ findingId, state, message }) => {
     const duplicate = duplicateFindingId(state);
-    if (duplicate !== null) return rejectDuplicateIds(model, duplicate);
+    if (duplicate !== null) return rejectDuplicateIds({ model, id: duplicate });
     const confirmed = evo(
-      updateDraft(model, findingId, (draft) => {
-        const status = findingById(state, findingId)?.status;
-        return {
-          ...draft,
-          disposition: status === "accepted" ? "accept" : status === "changes_requested" ? "request_changes" : "none",
-        };
+      updateDraft({
+        model,
+        findingId,
+        change: (draft) => {
+          const status = findingById({ state, findingId })?.status;
+          return {
+            ...draft,
+            disposition: status === "accepted" ? "accept" : status === "changes_requested" ? "request_changes" : "none",
+          };
+        },
       }),
       { screen: () => Screen.Reviewing({ state }), busyFindingId: () => null, refreshFailed: () => false },
     );
-    const moved = reconcileSelection(model, confirmed);
-    return appendCommands(enqueueToast(moved.model, message, "success"), moved.commands ?? []);
+    const moved = reconcileSelection({ before: model, after: confirmed });
+    return appendCommands({
+      result: enqueueToast({ model: moved.model, message, tone: "success" }),
+      commands: moved.commands ?? [],
+    });
   },
   // The decision is on disk. Only the screen is behind, so this is not an error toast; the top bar
   // offers the reload.
   RecordedActionRefreshFailed: () =>
-    enqueueToast(
-      evo(model, { busyFindingId: () => null, refreshFailed: () => true }),
-      "Decision saved; reload to refresh.",
-      "neutral",
-    ),
-  FailedAction: ({ message }) => enqueueToast(evo(model, { busyFindingId: () => null }), message, "danger"),
+    enqueueToast({
+      model: evo(model, { busyFindingId: () => null, refreshFailed: () => true }),
+      message: "Decision saved; reload to refresh.",
+      tone: "neutral",
+    }),
+  FailedAction: ({ message }) =>
+    enqueueToast({ model: evo(model, { busyFindingId: () => null }), message, tone: "danger" }),
 });

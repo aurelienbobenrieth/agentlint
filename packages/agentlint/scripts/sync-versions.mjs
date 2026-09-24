@@ -5,7 +5,7 @@
  *
  * - `library_version` in every packaged SKILL.md
  * - The `version` input default in <repo>/action/action.yml and its fallback in action/src/inputs.mjs
- * - The `agentlint/action@v<version>` references and `version` values in the action and package READMEs
+ * - The `agentlint/action@v<version>` references and `version` values in the action and package READMEs and the CI guide
  *
  * Run automatically after `changeset version` via scripts/version.sh.
  */
@@ -68,19 +68,18 @@ const targets = [
   },
   { file: join(repoRoot, "action", "README.md"), sync: syncDocumentedVersion },
   { file: join(root, "README.md"), sync: syncDocumentedVersion },
+  { file: join(repoRoot, "docs", "guide", "ci.md"), sync: syncDocumentedVersion },
 ];
 
-let updated = 0;
-for (const { file, sync } of targets) {
-  if (!existsSync(file)) continue;
+const updated = targets.filter(({ file, sync }) => {
+  if (!existsSync(file)) return false;
   const content = readFileSync(file, "utf8");
   const replaced = sync(content);
-  if (replaced !== content) {
-    writeFileSync(file, replaced);
-    updated++;
-    console.log(`✓ ${relative(repoRoot, file)}`);
-  }
-}
+  if (replaced === content) return false;
+  writeFileSync(file, replaced);
+  console.log(`✓ ${relative(repoRoot, file)}`);
+  return true;
+}).length;
 
 if (updated > 0) {
   console.log(`\nSynced version ${version} in ${updated} file(s)`);

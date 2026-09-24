@@ -7,6 +7,11 @@
 import { isRecord, shortDigest, unresolved } from "./artifact.mjs";
 
 /**
+ * @param {unknown} value @returns {value is string}
+ */
+const isString = (value) => typeof value === "string";
+
+/**
  * @typedef {import("./artifact.mjs").Finding} Finding
  */
 /**
@@ -50,13 +55,14 @@ export function headFromSummary(body) {
  * action's own token acts as is an agentlint comment. `identity` is that login as GitHub reports it for the token; REST
  * spells an application's account `<slug>[bot]`, so that spelling matches too, for a `Bot` account only.
  *
- * @param {unknown} comment A GitHub issue or review comment
- * @param {string} identity
+ * @param {object} input
+ * @param {unknown} input.comment A GitHub issue or review comment
+ * @param {string} input.identity
  */
-export function isActionComment(comment, identity) {
+export function isActionComment({ comment, identity }) {
   if (!isRecord(comment) || identity === "") return false;
   const user = comment["user"];
-  if (!isRecord(user) || typeof user["login"] !== "string") return false;
+  if (!isRecord(user) || !isString(user["login"])) return false;
   return user["login"] === identity || (user["type"] === "Bot" && user["login"] === `${identity}[bot]`);
 }
 
@@ -67,10 +73,11 @@ export const BODY_BUDGET = 60_000;
 const MORE = "open the review artifact";
 
 /**
- * @param {string} value
- * @param {number} limit
+ * @param {object} input
+ * @param {string} input.value
+ * @param {number} input.limit
  */
-function clip(value, limit) {
+function clip({ value, limit }) {
   return value.length <= limit ? value : `${value.slice(0, limit).trimEnd()} … (truncated)`;
 }
 
@@ -107,10 +114,11 @@ export function codeSpan(value) {
  * A fenced block whose fence is longer than any backtick run in the content (CommonMark), so the content cannot close
  * it and continue as markdown.
  *
- * @param {string} content
- * @param {string} [language]
+ * @param {object} input
+ * @param {string} input.content
+ * @param {string} [input.language]
  */
-export function fenced(content, language = "") {
+export function fenced({ content, language = "" }) {
   const longest = Math.max(0, ...(content.match(/`+/g) ?? []).map((run) => run.length));
   const fence = "`".repeat(Math.max(3, longest + 1));
   return `${fence}${language}\n${content}\n${fence}`;
@@ -133,16 +141,25 @@ function clipDiff(diff) {
 /**
  * A reply that quotes CLI or git output.
  *
- * @param {string} heading
- * @param {string} output
+ * @param {object} input
+ * @param {string} input.heading
+ * @param {string} input.output
  */
-export function renderFailureReply(heading, output) {
-  return `${heading}\n\n${fenced(clip(output.trim(), 5_000))}`;
+export function renderFailureReply({ heading, output }) {
+  return `${heading}\n\n${fenced({ content: clip({ value: output.trim(), limit: 5_000 }) })}`;
 }
 
 /**
+ * @typedef {object} FindingCounts
+ * @property {number} unresolved
+ * @property {number} human
+ * @property {number} agent
+ * @property {number} accepted
+ */
+
+/**
  * @param {ReadonlyArray<Finding>} findings
- * @returns {{ unresolved: number; human: number; agent: number; accepted: number }}
+ * @returns {FindingCounts}
  */
 export function countFindings(findings) {
   const open = unresolved(findings);
@@ -171,11 +188,12 @@ function authorityBadge(finding) {
 }
 
 /**
- * @param {string} text
- * @param {number} limit
+ * @param {object} input
+ * @param {string} input.text
+ * @param {number} input.limit
  */
-function cell(text, limit) {
-  return clip(plain(text.replace(/\s*\r?\n\s*/g, " ")), limit);
+function cell({ text, limit }) {
+  return clip({ value: plain(text.replace(/\s*\r?\n\s*/g, " ")), limit });
 }
 
 /**
@@ -212,46 +230,57 @@ export function renderSummary(input) {
     "",
   );
   // Rows are added while the body stays inside the budget. The rest is counted, never silently dropped.
-  let room = BODY_BUDGET - lines.join("\n").length - 1_000;
+  const budget = { remaining: BODY_BUDGET - lines.join("\n").length - 1_000 };
   /**
    * @template T
-   * @param {ReadonlyArray<T>} items
-   * @param {(item: T) => string} render
-   * @param {string} noun
+   * @param {object} input
+   * @param {ReadonlyArray<T>} input.items
+   * @param {(item: T) => string} input.render
+   * @param {string} input.noun
    */
-  const pushWithinBudget = (items, render, noun) => {
-    let shown = 0;
-    for (const item of items) {
-      const line = render(item);
-      if (line.length + 1 > room) break;
-      room -= line.length + 1;
-      lines.push(line);
-      shown++;
+  const pushWithinBudget = ({ items, render, noun }) => {
+    const fitting = {
+      lines: /**
+       * @type {string[]}
+       */ ([]),
+      used: 0,
+      full: false,
+    };
+    for (const line of items.map(render)) {
+      const size = line.length + 1;
+      if (fitting.full || fitting.used + size > budget.remaining) fitting.full = true;
+      else {
+        fitting.lines.push(line);
+        fitting.used += size;
+      }
     }
-    if (shown < items.length) lines.push("", `… and ${items.length - shown} more ${noun} — ${MORE}.`);
+    budget.remaining -= fitting.used;
+    lines.push(...fitting.lines);
+    if (fitting.lines.length < items.length)
+      lines.push("", `… and ${items.length - fitting.lines.length} more ${noun} — ${MORE}.`);
     lines.push("");
   };
   if (open.length > 0) {
     lines.push("| Rule | Location | Authority | Message | Record the decision |", "| --- | --- | --- | --- | --- |");
-    pushWithinBudget(
-      open,
-      (finding) => {
+    pushWithinBudget({
+      items: open,
+      render: (finding) => {
         const url = `${server}/${input.repository}/blob/${input.headSha}/${urlPath(finding.file)}#L${finding.line}`;
-        const location = `[${cell(finding.file, 300)}:${finding.line}](${url})`;
-        return `| ${cell(finding.ruleTitle, 200)} | ${location} | ${finding.authority} | ${cell(finding.message, 300)} | \`${acceptCommand(finding)}\` |`;
+        const location = `[${cell({ text: finding.file, limit: 300 })}:${finding.line}](${url})`;
+        return `| ${cell({ text: finding.ruleTitle, limit: 200 })} | ${location} | ${finding.authority} | ${cell({ text: finding.message, limit: 300 })} | \`${acceptCommand(finding)}\` |`;
       },
-      "findings",
-    );
+      noun: "findings",
+    });
   }
   const outside = open.filter((finding) => !input.inlineDigests.has(finding.digest));
   if (outside.length > 0) {
     lines.push("Not inside this pull request's diff, so only listed here:", "");
-    pushWithinBudget(
-      outside,
-      (finding) =>
-        `- ${codeSpan(`${clip(finding.file, 300)}:${finding.line}`)} ${cell(finding.ruleTitle, 200)} (${finding.authority})`,
-      "findings outside the diff",
-    );
+    pushWithinBudget({
+      items: outside,
+      render: (finding) =>
+        `- ${codeSpan(`${clip({ value: finding.file, limit: 300 })}:${finding.line}`)} ${cell({ text: finding.ruleTitle, limit: 200 })} (${finding.authority})`,
+      noun: "findings outside the diff",
+    });
   }
   lines.push(
     'Human findings: comment `/agentlint approve <digest> --reason "..."` here, or reply `/agentlint approve <reason>` on the inline comment. ' +
@@ -265,7 +294,7 @@ export function renderSummary(input) {
  * @param {Gate} gate
  */
 function gateLabel(gate) {
-  return gate === "open" ? "open" : gate === "closed" ? "closed" : "error";
+  return gate === "open" || gate === "closed" ? gate : "error";
 }
 
 const INLINE_CHECKS = 20;
@@ -277,29 +306,29 @@ const INLINE_CHECKS = 20;
 export function renderInlineBody(finding) {
   const lines = [
     inlineMarker(finding.digest),
-    `### ${cell(finding.ruleTitle, 200)}`,
+    `### ${cell({ text: finding.ruleTitle, limit: 200 })}`,
     "",
     authorityBadge(finding),
     "",
-    clip(plain(finding.message), 2_000),
+    clip({ value: plain(finding.message), limit: 2_000 }),
     "",
   ];
   // Every part is clipped, so the body stays under BODY_BUDGET without ever cutting through a fence.
-  lines.push("**Standard**", "", clip(plain(finding.guidance.standard), 6_000), "");
+  lines.push("**Standard**", "", clip({ value: plain(finding.guidance.standard), limit: 6_000 }), "");
   if (finding.guidance.checks.length > 0) {
     const checks = finding.guidance.checks.slice(0, INLINE_CHECKS);
-    for (const check of checks) lines.push(`- ${cell(check, 500)}`);
+    for (const check of checks) lines.push(`- ${cell({ text: check, limit: 500 })}`);
     const hidden = finding.guidance.checks.length - checks.length;
     if (hidden > 0) lines.push(`- … and ${hidden} more checks — ${MORE}.`);
     lines.push("");
   }
   if (finding.proposal) {
-    lines.push("**Agent proposal**", "", clip(plain(finding.proposal.summary), 4_000), "");
+    lines.push("**Agent proposal**", "", clip({ value: plain(finding.proposal.summary), limit: 4_000 }), "");
     if (finding.proposal.diff) {
       lines.push(
         "<details><summary>Proposed diff</summary>",
         "",
-        fenced(clipDiff(finding.proposal.diff), "diff"),
+        fenced({ content: clipDiff(finding.proposal.diff), language: "diff" }),
         "",
         "</details>",
         "",
@@ -307,7 +336,7 @@ export function renderInlineBody(finding) {
     }
   }
   if (finding.lineageReason) {
-    lines.push(`**Prior judgment (context only):** ${clip(plain(finding.lineageReason), 2_000)}`, "");
+    lines.push(`**Prior judgment (context only):** ${clip({ value: plain(finding.lineageReason), limit: 2_000 })}`, "");
   }
   if (finding.authority === "human") {
     lines.push('Reply "/agentlint approve <reason>" to accept.');
@@ -327,6 +356,11 @@ export function renderInlineBody(finding) {
  * @property {string} title
  */
 
+// GitHub rejects annotations whose title exceeds 255 characters or whose message exceeds 64 KB. The limits leave room
+// for the truncation marker `clip` appends.
+const ANNOTATION_TITLE_LIMIT = 240;
+const ANNOTATION_MESSAGE_LIMIT = 60_000;
+
 /**
  * @param {ReadonlyArray<Finding>} findings
  * @returns {Annotation[]}
@@ -337,17 +371,27 @@ export function renderAnnotations(findings) {
     start_line: finding.line,
     end_line: finding.line,
     annotation_level: finding.authority === "human" ? "failure" : "warning",
-    message: `${finding.message}\n\n${finding.guidance.standard}\n\nRecord the decision: ${acceptCommand(finding)}`,
-    title: `${finding.ruleTitle} (${finding.ruleId})`,
+    message: clip({
+      value: `${finding.message}\n\n${finding.guidance.standard}\n\nRecord the decision: ${acceptCommand(finding)}`,
+      limit: ANNOTATION_MESSAGE_LIMIT,
+    }),
+    title: clip({ value: `${finding.ruleTitle} (${finding.ruleId})`, limit: ANNOTATION_TITLE_LIMIT }),
   }));
 }
 
 /**
- * @param {Gate} gate
- * @param {ReadonlyArray<Finding>} findings
- * @returns {{ title: string; summary: string }}
+ * @typedef {object} CheckOutput
+ * @property {string} title
+ * @property {string} summary
  */
-export function renderCheckOutput(gate, findings) {
+
+/**
+ * @param {object} input
+ * @param {Gate} input.gate
+ * @param {ReadonlyArray<Finding>} input.findings
+ * @returns {CheckOutput}
+ */
+export function renderCheckOutput({ gate, findings }) {
   const counts = countFindings(findings);
   if (gate === "error") {
     return {

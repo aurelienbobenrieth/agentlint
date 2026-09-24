@@ -19,7 +19,7 @@
   "author": "Aurelien Bobenrieth",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aurelienbobenrieth/agentlint",
+    "url": "git+https://github.com/aurelienbobenrieth/agentlint.git",
     "directory": "packages/agentlint"
   },
   "bin": {
@@ -74,8 +74,9 @@
     }
   },
   "scripts": {
-    "build": "tsdown && pnpm --filter @agentlint/review build",
-    "prepack": "pnpm run build",
+    "build": "tsdown",
+    "build:package": "pnpm run build && pnpm --filter @agentlint/review build",
+    "prepack": "pnpm run build:package",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -91,8 +92,9 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/vitest": "catalog:",
     "@tanstack/intent": "catalog:",
-    "@types/node": "26.6.1",
+    "@types/node": "22.20.4",
     "@types/picomatch": "4.0.3",
     "@vitest/coverage-v8": "5.0.1",
     "tree-sitter-wasms": "0.1.13",

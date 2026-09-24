@@ -3,10 +3,11 @@ import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Env } from "../../config/env.js";
 import { AcceptanceRecord, acceptanceKey } from "../../domain/acceptance.js";
 import { Fingerprint, FindingSource } from "../../domain/fingerprint.js";
+import { encodeJson } from "./json.js";
 import {
   AcceptanceStore,
   parseAcceptances,
@@ -23,7 +24,13 @@ const source = new FindingSource({
   bindingDigest: "binding-a",
 });
 
-function record(digest: string, overrides: Partial<ConstructorParameters<typeof AcceptanceRecord>[0]> = {}) {
+function record({
+  digest,
+  overrides = {},
+}: {
+  readonly digest: string;
+  readonly overrides?: Partial<ConstructorParameters<typeof AcceptanceRecord>[0]>;
+}) {
   return new AcceptanceRecord({
     schemaVersion: 1,
     source,
@@ -54,115 +61,114 @@ function testLayer(cwd: string) {
       setExitCode: () => {},
     }),
   );
-  return AcceptanceStore.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(TestEnv));
+  return AcceptanceStore.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, TestEnv)));
 }
 
-function cleanup(cwd: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    yield* fs.remove(cwd, { recursive: true }).pipe(Effect.orElseSucceed(() => {}));
-  });
-}
+const cleanup = Effect.fn("cleanup")(function* (cwd: string) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.remove(cwd, { recursive: true }).pipe(Effect.orElseSucceed(() => {}));
+});
 
 describe("acceptance current-state reconciliation", () => {
-  it("preserves the previous file and releases the lock when atomic replacement fails", async () => {
-    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
-    const layer = testLayer(cwd);
-    try {
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const store = yield* AcceptanceStore;
-          const fs = yield* FileSystem.FileSystem;
-          yield* store.write([record("original")]);
-          const broken = FileSystem.makeNoop({
-            ...fs,
-            rename: () =>
-              Effect.fail(
-                PlatformError.badArgument({
-                  module: "FileSystem",
-                  method: "rename",
-                  description: "simulated replacement failure",
-                }),
-              ),
-          });
-          const failed = yield* Effect.flatMap(AcceptanceStore, (other) => other.write([record("replacement")])).pipe(
-            Effect.provide(Layer.fresh(AcceptanceStore.layer)),
-            Effect.provideService(FileSystem.FileSystem, broken),
-            Effect.result,
-          );
-          expect(failed._tag).toBe("Failure");
-          expect((yield* store.read()).records).toEqual([record("original")]);
-          expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
-        }).pipe(Effect.provide(layer)),
-      );
-    } finally {
-      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
-    }
-  });
+  it.effect("preserves the previous file and releases the lock when atomic replacement fails", () =>
+    Effect.gen(function* () {
+      const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+      const layer = testLayer(cwd);
+      yield* Effect.gen(function* () {
+        const store = yield* AcceptanceStore;
+        const fs = yield* FileSystem.FileSystem;
+        yield* store.write([record({ digest: "original" })]);
+        const broken = FileSystem.makeNoop({
+          ...fs,
+          rename: () =>
+            Effect.fail(
+              PlatformError.badArgument({
+                module: "FileSystem",
+                method: "rename",
+                description: "simulated replacement failure",
+              }),
+            ),
+        });
+        const failed = yield* Effect.flatMap(AcceptanceStore, (other) =>
+          other.write([record({ digest: "replacement" })]),
+        ).pipe(
+          Effect.provide(Layer.fresh(AcceptanceStore.layer)),
+          Effect.provideService(FileSystem.FileSystem, broken),
+          Effect.result,
+        );
+        expect(failed._tag).toBe("Failure");
+        expect((yield* store.read()).records).toEqual([record({ digest: "original" })]);
+        expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
+      }).pipe(Effect.provide(layer), Effect.ensuring(cleanup(cwd).pipe(Effect.provide(layer))));
+    }),
+  );
 
-  it("removes a lock abandoned by a stopped process and keeps waiting on a recent one", async () => {
-    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
-    const layer = testLayer(cwd);
-    const lock = join(cwd, ".agentlint", "acceptances.lock");
-    const write = Effect.flatMap(AcceptanceStore, (store) => store.write([record("kept")]));
-    try {
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
-
-          yield* fs.writeFileString(lock, `${Date.now() - 60_000}\n`);
-          yield* write;
-          expect(yield* fs.readDirectory(join(cwd, ".agentlint"))).toEqual(["acceptances.jsonl"]);
-
-          yield* fs.writeFileString(lock, `${Date.now()}\n`);
-          const blocked = yield* Effect.flip(write);
-          expect(blocked.message).toContain("locked");
-          expect(yield* fs.exists(lock)).toBe(true);
-        }).pipe(Effect.provide(layer)),
-      );
-    } finally {
-      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
-    }
-  });
+  it.live("never steals a lock whose owner may still write", () =>
+    Effect.gen(function* () {
+      const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+      const layer = testLayer(cwd);
+      const lock = join(cwd, ".agentlint", "acceptances.lock");
+      const write = Effect.flatMap(AcceptanceStore, (store) => store.write([record({ digest: "kept" })]));
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
+        yield* fs.writeFileString(lock, "another-owner\n");
+        const blocked = yield* Effect.flip(write);
+        expect(blocked.message).toContain("locked");
+        expect(yield* fs.exists(lock)).toBe(true);
+      }).pipe(Effect.provide(layer), Effect.ensuring(cleanup(cwd).pipe(Effect.provide(layer))));
+    }),
+  );
 
   it("sorts records and rejects duplicate exact identities", () => {
-    const a = record("a");
-    const b = record("b");
+    const a = record({ digest: "a" });
+    const b = record({ digest: "b" });
     const serialized = serializeAcceptances([b, a]);
     expect(parseAcceptances(serialized).map((entry) => entry.fingerprint.digest)).toEqual(["a", "b"]);
-    expect(() => parseAcceptances(`${JSON.stringify(a)}\n${JSON.stringify(a)}\n`)).toThrow("duplicate");
+    expect(() => parseAcceptances(`${encodeJson(a)}\n${encodeJson(a)}\n`)).toThrow("duplicate");
   });
 
   it("never prunes stale records from a partial view", () => {
-    const visible = record("visible");
-    const outside = record("outside");
-    const result = reconcileAcceptanceRecords([outside, visible], {
-      scope: "partial",
-      current: [current(visible)],
+    const visible = record({ digest: "visible" });
+    const outside = record({ digest: "outside" });
+    const result = reconcileAcceptanceRecords({
+      existing: [outside, visible],
+      input: {
+        scope: "partial",
+        current: [current(visible)],
+      },
     });
     expect(result.records).toHaveLength(2);
     expect(result.removed).toHaveLength(0);
   });
 
   it("prunes stale records from a complete view", () => {
-    const visible = record("visible");
-    const stale = record("stale");
-    const result = reconcileAcceptanceRecords([stale, visible], {
-      scope: "complete",
-      current: [current(visible)],
+    const visible = record({ digest: "visible" });
+    const stale = record({ digest: "stale" });
+    const result = reconcileAcceptanceRecords({
+      existing: [stale, visible],
+      input: {
+        scope: "complete",
+        current: [current(visible)],
+      },
     });
     expect(result.records).toEqual([visible]);
     expect(result.removed).toEqual([stale]);
   });
 
   it("preserves other identities in the same lineage during partial updates", () => {
-    const prior = record("prior", { lineageKey: "query:list-users" });
-    const next = record("next", { lineageKey: "query:list-users", reason: "Reviewed the new limit." });
-    const result = reconcileAcceptanceRecords([prior], {
-      scope: "partial",
-      current: [current(next)],
-      accepted: [next],
+    const prior = record({ digest: "prior", overrides: { lineageKey: "query:list-users" } });
+    const next = record({
+      digest: "next",
+      overrides: { lineageKey: "query:list-users", reason: "Reviewed the new limit." },
+    });
+    const result = reconcileAcceptanceRecords({
+      existing: [prior],
+      input: {
+        scope: "partial",
+        current: [current(next)],
+        accepted: [next],
+      },
     });
     expect(result.records).toEqual([next, prior]);
     expect(result.removed).toEqual([]);
@@ -170,96 +176,97 @@ describe("acceptance current-state reconciliation", () => {
 
   it("rejects an acceptance outside the checked view", () => {
     expect(() =>
-      reconcileAcceptanceRecords([], { scope: "partial", current: [], accepted: [record("unknown")] }),
+      reconcileAcceptanceRecords({
+        existing: [],
+        input: { scope: "partial", current: [], accepted: [record({ digest: "unknown" })] },
+      }),
     ).toThrow("must identify a finding");
   });
 });
 
 describe("AcceptanceStore", () => {
-  it("serializes concurrent read-modify-write transactions across service instances", async () => {
+  it.live("serializes concurrent read-modify-write transactions across service instances", () => {
     const cwd = join(tmpdir(), `agentlint-concurrent-${randomUUID()}`);
-    try {
-      await Promise.all(
-        Array.from({ length: 8 }, (_, index) => {
-          const accepted = record(String(index));
-          return Effect.runPromise(
-            Effect.flatMap(AcceptanceStore, (store) =>
-              store.reconcile({ scope: "partial", current: [current(accepted)], accepted: [accepted] }),
-            ).pipe(Effect.provide(testLayer(cwd))),
-          );
-        }),
+    return Effect.gen(function* () {
+      yield* Effect.forEach(
+        Array.from({ length: 8 }, (_, index) => index),
+        (index) => {
+          const accepted = record({ digest: String(index) });
+          return Effect.flatMap(AcceptanceStore, (store) =>
+            store.reconcile({ scope: "partial", current: [current(accepted)], accepted: [accepted] }),
+          ).pipe(Effect.provide(testLayer(cwd)));
+        },
+        { concurrency: "unbounded" },
       );
-      const result = await Effect.runPromise(
-        Effect.flatMap(AcceptanceStore, (store) => store.read()).pipe(Effect.provide(testLayer(cwd))),
+      const result = yield* Effect.flatMap(AcceptanceStore, (store) => store.read()).pipe(
+        Effect.provide(testLayer(cwd)),
       );
       expect(result.records).toHaveLength(8);
-    } finally {
-      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(NodeServices.layer)));
-    }
+    }).pipe(Effect.ensuring(cleanup(cwd).pipe(Effect.provide(NodeServices.layer))));
   });
 
   it("rejects revocations if the reviewed decision was replaced", () => {
-    const previous = record("a");
-    const replaced = record("a", { reason: "A newer decision." });
+    const previous = record({ digest: "a" });
+    const replaced = record({ digest: "a", overrides: { reason: "A newer decision." } });
     expect(() =>
-      reconcileAcceptanceRecords([replaced], {
-        scope: "partial",
-        current: [current(previous)],
-        revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+      reconcileAcceptanceRecords({
+        existing: [replaced],
+        input: {
+          scope: "partial",
+          current: [current(previous)],
+          revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+        },
       }),
     ).toThrow("changed after review");
     expect(
-      reconcileAcceptanceRecords([previous], {
-        scope: "partial",
-        current: [current(previous)],
-        revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+      reconcileAcceptanceRecords({
+        existing: [previous],
+        input: {
+          scope: "partial",
+          current: [current(previous)],
+          revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
+        },
       }).records,
     ).toEqual([]);
   });
-  it("treats a missing file as empty and rewrites sorted current state", async () => {
-    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
-    const layer = testLayer(cwd);
-    try {
-      const result = await Effect.runPromise(
-        Effect.gen(function* () {
+  it.effect("treats a missing file as empty and rewrites sorted current state", () =>
+    Effect.gen(function* () {
+      const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+      const layer = testLayer(cwd);
+      yield* Effect.gen(function* () {
+        const result = yield* Effect.gen(function* () {
           const store = yield* AcceptanceStore;
           const empty = yield* store.read();
-          const b = record("b");
-          const a = record("a");
+          const b = record({ digest: "b" });
+          const a = record({ digest: "a" });
           yield* store.write([b, a]);
           const saved = yield* store.read();
           return { empty, saved, a, b };
-        }).pipe(Effect.provide(layer)),
-      );
-      expect(result.empty.records).toEqual([]);
-      expect(result.saved.records).toEqual([result.a, result.b]);
-      expect(result.saved.byKey.get(acceptanceKey(result.a))).toEqual(result.a);
-    } finally {
-      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
-    }
-  });
+        }).pipe(Effect.provide(layer));
+        expect(result.empty.records).toEqual([]);
+        expect(result.saved.records).toEqual([result.a, result.b]);
+        expect(result.saved.byKey.get(acceptanceKey(result.a))).toEqual(result.a);
+      }).pipe(Effect.ensuring(cleanup(cwd).pipe(Effect.provide(layer))));
+    }),
+  );
 
-  it("reports malformed record line numbers", async () => {
-    const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
-    const layer = testLayer(cwd);
-    try {
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
-          yield* fs.writeFileString(join(cwd, ".agentlint", "acceptances.jsonl"), '\n{"bad":true}\n');
-        }).pipe(Effect.provide(layer)),
-      );
-      const exit = await Effect.runPromiseExit(
-        Effect.gen(function* () {
-          const store = yield* AcceptanceStore;
-          return yield* store.read();
-        }).pipe(Effect.provide(layer)),
-      );
-      expect(exit._tag).toBe("Failure");
-      expect(exit._tag === "Failure" ? String(exit.cause) : "").toContain("line 2");
-    } finally {
-      await Effect.runPromise(cleanup(cwd).pipe(Effect.provide(layer)));
-    }
-  });
+  it.effect("reports malformed record line numbers", () =>
+    Effect.gen(function* () {
+      const cwd = join(tmpdir(), `agentlint-acceptance-${randomUUID()}`);
+      const layer = testLayer(cwd);
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
+        yield* fs.writeFileString(join(cwd, ".agentlint", "acceptances.jsonl"), '\n{"bad":true}\n');
+        const exit = yield* Effect.exit(
+          Effect.gen(function* () {
+            const store = yield* AcceptanceStore;
+            return yield* store.read();
+          }).pipe(Effect.provide(layer)),
+        );
+        expect(exit._tag).toBe("Failure");
+        expect(exit._tag === "Failure" ? String(exit.cause) : "").toContain("line 2");
+      }).pipe(Effect.provide(layer), Effect.ensuring(cleanup(cwd).pipe(Effect.provide(layer))));
+    }),
+  );
 });

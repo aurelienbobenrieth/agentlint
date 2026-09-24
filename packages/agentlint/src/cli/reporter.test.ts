@@ -1,10 +1,10 @@
 import { Effect, Layer, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import { Env } from "../config/env.js";
 import { normalizeConfig } from "../domain/config.js";
 import { FindingRecord, findingKey } from "../domain/finding.js";
 import { Fingerprint, FindingSource } from "../domain/fingerprint.js";
-import { defineRule } from "../domain/rule.js";
+import { defineRule } from "../domain/rule/model.js";
 import { formatCheckJsonl, formatCheckText } from "./reporter.js";
 
 const dangerRule = defineRule({
@@ -81,55 +81,62 @@ function finding(options: {
   });
 }
 
+const exampleFindings = () => ({
+  first: finding({
+    selector: "f1",
+    file: "src/a.ts",
+    line: 4,
+    message: "Review the first call",
+    digest: "a",
+  }),
+  second: finding({
+    selector: "f2",
+    file: "src/b.ts",
+    line: 9,
+    message: "Review the second call",
+    digest: "b",
+  }),
+});
+
 describe("check reporter", () => {
-  it("groups compact human output by rule without repeating standards or snippets", async () => {
-    const first = finding({ selector: "f1", file: "src/a.ts", line: 4, message: "Review the first call", digest: "a" });
-    const second = finding({
-      selector: "f2",
-      file: "src/b.ts",
-      line: 9,
-      message: "Review the second call",
-      digest: "b",
-    });
-    const human = finding({
-      selector: "f3",
-      ruleId: "data/destructive-change",
-      lifecycle: "change",
-      authority: "human",
-      file: "migrations/drop.sql",
-      line: 1,
-      message: "Review the dropped table",
-      digest: "c",
-    });
+  it.effect("groups compact human output by rule without repeating standards or snippets", () =>
+    Effect.gen(function* () {
+      const { first, second } = exampleFindings();
+      const human = finding({
+        selector: "f3",
+        ruleId: "data/destructive-change",
+        lifecycle: "change",
+        authority: "human",
+        file: "migrations/drop.sql",
+        line: 1,
+        message: "Review the dropped table",
+        digest: "c",
+      });
 
-    const output = await Effect.runPromise(
-      formatCheckText({ findings: [first, human, second], config, version: "0.2.0" }).pipe(Effect.provide(env)),
-    );
+      const output = yield* formatCheckText({ findings: [first, human, second], config, version: "0.2.0" }).pipe(
+        Effect.provide(env),
+      );
 
-    expect(output).toContain("security/danger — Danger calls need judgment (2 findings, state/agent)");
-    expect(output).toContain("[f1] src/a.ts:4:3 — Review the first call");
-    expect(output).toContain("[f2] src/b.ts:9:3 — Review the second call");
-    expect(output).toContain('Actions: agentlint explain security/danger · agentlint accept <finding> --reason "..."');
-    expect(output).toContain(
-      "data/destructive-change — Destructive changes need human review (1 finding, change/human)",
-    );
-    expect(output).toContain("Actions: agentlint explain data/destructive-change · agentlint review");
-    expect(output).not.toContain("Standard:");
-    expect(output).not.toContain("danger(a)");
-    expect(output.match(/security\/danger —/g)).toHaveLength(1);
-  });
+      expect(output).toContain("security/danger — Danger calls need judgment (2 findings, state/agent)");
+      expect(output).toContain("[f1] src/a.ts:4:3 — Review the first call");
+      expect(output).toContain("[f2] src/b.ts:9:3 — Review the second call");
+      expect(output).toContain(
+        'Actions: agentlint explain security/danger · agentlint accept <finding> --reason "..."',
+      );
+      expect(output).toContain(
+        "data/destructive-change — Destructive changes need human review (1 finding, change/human)",
+      );
+      expect(output).toContain("Actions: agentlint explain data/destructive-change · agentlint review");
+      expect(output).not.toContain("Standard:");
+      expect(output).not.toContain("danger(a)");
+      expect(output.match(/security\/danger —/g)).toHaveLength(1);
+    }),
+  );
 
-  it("keeps prior judgment beside only its related finding", async () => {
-    const first = finding({ selector: "f1", file: "src/a.ts", line: 4, message: "Review the first call", digest: "a" });
-    const second = finding({
-      selector: "f2",
-      file: "src/b.ts",
-      line: 9,
-      message: "Review the second call",
-      digest: "b",
-    });
-    const output = await Effect.runPromise(
-      formatCheckText({
+  it.effect("keeps prior judgment beside only its related finding", () =>
+    Effect.gen(function* () {
+      const { first, second } = exampleFindings();
+      const output = yield* formatCheckText({
         findings: [first, second],
         config,
         version: "0.2.0",
@@ -141,25 +148,37 @@ describe("check reporter", () => {
             acceptedAt: "2026-08-11T10:00:00.000Z",
           },
         ],
-      }).pipe(Effect.provide(env)),
-    );
+      }).pipe(Effect.provide(env));
 
-    expect(output.match(/Prior judgment/g)).toHaveLength(1);
-    expect(output).toContain(
-      "Prior judgment (context only): The sandbox owns this path. (agent, 2026-08-11T10:00:00.000Z)",
-    );
-  });
+      expect(output.match(/Prior judgment/g)).toHaveLength(1);
+      expect(output).toContain(
+        "Prior judgment (context only): The sandbox owns this path. (agent, 2026-08-11T10:00:00.000Z)",
+      );
+    }),
+  );
 
   it("retains full-fidelity JSONL fields", () => {
     const item = finding({ selector: "f1", file: "src/a.ts", line: 4, message: "Review the call", digest: "a" });
-    const output = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
-      formatCheckJsonl({ findings: [item], config }),
-    ) as Record<string, unknown>;
+    const output = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          version: Schema.Number,
+          type: Schema.String,
+          selector: Schema.String,
+          location: Schema.Struct({ file: Schema.String, line: Schema.Number, column: Schema.Number }),
+          message: Schema.String,
+          snippet: Schema.String,
+          standard: Schema.String,
+          commands: Schema.Struct({ explain: Schema.String, decide: Schema.String }),
+        }),
+      ),
+    )(formatCheckJsonl({ findings: [item], config }));
 
     expect(output).toMatchObject({
       version: 1,
       type: "finding",
       selector: "f1",
+      location: { file: "src/a.ts", line: 4, column: 3 },
       message: "Review the call",
       snippet: "danger(a)",
       standard: "Every danger call must be reviewed against the repository's security boundary.",

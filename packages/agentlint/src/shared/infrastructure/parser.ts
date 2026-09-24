@@ -25,7 +25,15 @@ const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
   ["json", "tree-sitter-json.wasm"],
 );
 
-export function resolvePackagedWasmPath(path: Pick<Path.Path, "resolve">, dir: string, filename: string): string {
+export function resolvePackagedWasmPath({
+  path,
+  dir,
+  filename,
+}: {
+  readonly path: Pick<Path.Path, "resolve">;
+  readonly dir: string;
+  readonly filename: string;
+}): string {
   return path.resolve(dir, "wasm", filename);
 }
 
@@ -39,15 +47,17 @@ export function resolvePackagedWasmPath(path: Pick<Path.Path, "resolve">, dir: s
  *
  *   const program = Effect.gen(function* () {
  *     const parser = yield* Parser;
- *     const tree = yield* parser.parse("const x = 1", "typescript");
+ *     const tree = yield* parser.parse({ source: "const x = 1", grammar: "typescript" });
  *     yield* Console.log(tree.rootNode.type); // "program"
  *   });
  *   ```;
  */
+const errorDetail = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export class Parser extends Context.Service<
   Parser,
   {
-    parse(source: string, grammar: string): Effect.Effect<Tree, ParserError>;
+    parse(input: { readonly source: string; readonly grammar: string }): Effect.Effect<Tree, ParserError>;
     /**
      * The loaded tree-sitter language used to construct queries.
      */
@@ -64,86 +74,97 @@ export class Parser extends Context.Service<
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
 
-      const resolveWasmPath = (filename: string): Effect.Effect<string, ParserError> =>
-        Effect.gen(function* () {
-          const thisDir = path.resolve(import.meta.dirname ?? ".");
-          const distPath = resolvePackagedWasmPath(path, thisDir, filename);
-          if (yield* fs.exists(distPath).pipe(Effect.orElseSucceed(() => false))) return distPath;
+      const resolveWasmPath = Effect.fn("Parser.resolveWasmPath")(function* (filename: string) {
+        const thisDir = path.resolve(import.meta.dirname);
+        const distPath = resolvePackagedWasmPath({ path, dir: thisDir, filename });
+        if (yield* fs.exists(distPath).pipe(Effect.orElseSucceed(() => false))) return distPath;
 
-          const dependencyRoots = [
-            path.resolve(env.cwd, "node_modules"),
-            path.resolve(thisDir, "..", "..", "..", "node_modules"),
-          ];
-          for (const nmBase of dependencyRoots) {
-            if (filename === "tree-sitter.wasm") {
-              const current = path.resolve(nmBase, "web-tree-sitter", filename);
-              if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
-            } else {
-              const grammar = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
-              if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;
-            }
+        const dependencyRoots = [
+          path.resolve(env.cwd, "node_modules"),
+          path.resolve(thisDir, "..", "..", "..", "node_modules"),
+        ];
+        for (const nmBase of dependencyRoots) {
+          if (filename === "tree-sitter.wasm") {
+            const current = path.resolve(nmBase, "web-tree-sitter", filename);
+            if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
+          } else {
+            const grammar = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
+            if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;
           }
+        }
 
-          return yield* new ParserError({ reason: "wasm_missing", detail: filename });
-        });
+        return yield* new ParserError({ reason: "wasm_missing", detail: filename });
+      });
 
-      let parserInstance: TSParser | undefined;
-      yield* Effect.addFinalizer(() => Effect.sync(() => parserInstance?.delete()));
-      let languageCache: HashMap.HashMap<string, Language> = HashMap.empty();
+      const state: {
+        parser: TSParser | undefined;
+        languages: HashMap.HashMap<string, Language>;
+      } = { parser: undefined, languages: HashMap.empty() };
+      yield* Effect.addFinalizer(() => Effect.sync(() => state.parser?.delete()));
 
       const ensureInit = yield* Effect.cached(
         Effect.gen(function* () {
-          if (parserInstance) return parserInstance;
+          if (state.parser) return state.parser;
           const initPath = yield* resolveWasmPath("tree-sitter.wasm");
-          yield* Effect.tryPromise({
+          const parser = yield* Effect.tryPromise({
             try: async () => {
               await TSParser.init({ locateFile: () => initPath });
-              parserInstance = new TSParser();
+              return new TSParser();
             },
             catch: (error) =>
               new ParserError({
                 reason: "init_failed",
-                detail: error instanceof Error ? error.message : String(error),
+                detail: errorDetail(error),
               }),
           });
-          const parser = parserInstance;
-          if (!parser) return yield* new ParserError({ reason: "init_failed" });
+          state.parser = parser;
           return parser;
         }),
       );
 
-      const loadLanguage = (grammar: string): Effect.Effect<Language, ParserError> =>
-        Effect.gen(function* () {
-          const cached = Option.getOrUndefined(HashMap.get(languageCache, grammar));
-          if (cached) return cached;
+      const loadLanguage = Effect.fn("Parser.loadLanguage")(function* (grammar: string) {
+        const cached = Option.getOrUndefined(HashMap.get(state.languages, grammar));
+        if (cached) return cached;
 
-          const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
-          if (!file) return yield* new ParserError({ reason: "unknown_grammar", grammar });
+        const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
+        if (!file) return yield* new ParserError({ reason: "unknown_grammar", grammar });
 
-          const wasmPath = yield* resolveWasmPath(file);
-          const lang = yield* Effect.tryPromise({
-            try: () => Language.load(wasmPath),
-            catch: (error) =>
-              new ParserError({
-                reason: "load_failed",
-                grammar,
-                detail: error instanceof Error ? error.message : String(error),
-              }),
-          });
-          languageCache = HashMap.set(languageCache, grammar, lang);
-          return lang;
+        const wasmPath = yield* resolveWasmPath(file);
+        const lang = yield* Effect.tryPromise({
+          try: () => Language.load(wasmPath),
+          catch: (error) =>
+            new ParserError({
+              reason: "load_failed",
+              grammar,
+              detail: errorDetail(error),
+            }),
         });
+        state.languages = HashMap.set(state.languages, grammar, lang);
+        return lang;
+      });
 
       return Parser.of({
-        parse: (source, grammar) =>
-          Effect.gen(function* () {
-            const parser = yield* ensureInit;
-            const lang = yield* loadLanguage(grammar);
-            parser.setLanguage(lang);
-            const tree = parser.parse(source);
-            if (!tree) return yield* new ParserError({ reason: "parse_failed", grammar });
-            return tree;
-          }),
+        parse: Effect.fn("Parser.parse")(function* ({
+          source,
+          grammar,
+        }: {
+          readonly source: string;
+          readonly grammar: string;
+        }) {
+          const parser = yield* ensureInit;
+          const lang = yield* loadLanguage(grammar);
+          // Both calls throw: `setLanguage` on a grammar ABI the runtime does not support, `parse` on a WASM trap.
+          yield* Effect.try({
+            try: () => parser.setLanguage(lang),
+            catch: (cause) => new ParserError({ reason: "load_failed", grammar, detail: errorDetail(cause) }),
+          });
+          const tree = yield* Effect.try({
+            try: () => parser.parse(source),
+            catch: (cause) => new ParserError({ reason: "parse_failed", grammar, detail: errorDetail(cause) }),
+          });
+          if (!tree) return yield* new ParserError({ reason: "parse_failed", grammar });
+          return tree;
+        }),
 
         language: (grammar) => ensureInit.pipe(Effect.andThen(loadLanguage(grammar))),
       });

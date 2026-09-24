@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineRule } from "../../domain/rule.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { testRuleOnSource } from "../../testing.js";
 
 describe("state visitors", () => {
@@ -10,13 +10,13 @@ describe("state visitors", () => {
       detector: {
         id: "typescript/comments",
         version: 1,
-        createOnce(context) {
+        createOnce({ context }) {
           return { comment: (node) => context.report({ node, message: `Found: ${node.text}` }) };
         },
       },
       binding: { id: "comments/review", authority: "agent" },
     });
-    const findings = await testRuleOnSource(rule, "// hello\nconst x = 1\n// world", "fixture.ts");
+    const findings = await testRuleOnSource({ rule, source: "// hello\nconst x = 1\n// world", file: "fixture.ts" });
     expect(findings.map((finding) => finding.message)).toEqual(["Found: // hello", "Found: // world"]);
   });
 
@@ -27,7 +27,7 @@ describe("state visitors", () => {
       detector: {
         id: "typescript/skipped-comments",
         version: 1,
-        createOnce(context) {
+        createOnce({ context }) {
           return {
             before: () => false,
             comment: (node) => context.report({ node, message: "must not fire" }),
@@ -36,6 +36,6 @@ describe("state visitors", () => {
       },
       binding: { id: "comments/skip", authority: "agent" },
     });
-    expect(await testRuleOnSource(rule, "// skipped", "fixture.ts")).toEqual([]);
+    expect(await testRuleOnSource({ rule, source: "// skipped", file: "fixture.ts" })).toEqual([]);
   });
 });

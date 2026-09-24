@@ -47,4 +47,4 @@ Related groups organize navigation only. Independent review hides prior justific
 
 The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.
 
-Acceptance records attribute a declared decision and its reason to exact evidence. They do not authenticate local identity or prove the judgment correct. When a prior decision becomes incompatible, inspect the reported compatibility changes and the actual supporting code. Version 1 fingerprints require new review.
+Acceptance records attribute a declared decision and its reason to exact evidence. They do not authenticate local identity or prove the judgment correct. When a prior decision becomes incompatible, inspect the reported compatibility changes and the actual supporting code. An acceptance recorded under an older fingerprint version requires new review.

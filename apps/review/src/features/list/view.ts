@@ -3,14 +3,22 @@ import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldki
 
 import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { Model, StatusFacet, View } from "../../model";
+import type { Model, StatusFacet, View } from "../../shared/model";
 import { facetCount, type FindingGroup, type ReviewDerivation, statusFacet } from "../../shared/selectors";
 import { button, tip } from "../../shared/ui/controls";
 import { icon } from "../../shared/ui/icons";
 import { relativeTime } from "../../shared/ui/labels";
 import { activeChips, searchBar } from "../filters/view";
 
-const statusDot = (status: StatusFacet, authority: ReviewFindingPayload["authority"], h: HtmlBuilder<Message>): Html =>
+const statusDot = ({
+  status,
+  authority,
+  h,
+}: {
+  readonly status: StatusFacet;
+  readonly authority: ReviewFindingPayload["authority"];
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.span(
     [h.Class(`dot dot--${status === "open" && authority === "human" ? "human" : status}`), h.AriaHidden(true)],
     [],
@@ -27,12 +35,17 @@ interface RowContext {
   readonly generatedAt: string;
 }
 
-const findingRow = (
-  finding: ReviewFindingPayload,
-  selected: boolean,
-  context: RowContext,
-  h: HtmlBuilder<Message>,
-): Html => {
+const findingRow = ({
+  finding,
+  selected,
+  context,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly selected: boolean;
+  readonly context: RowContext;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   const status = statusFacet(context.statusOf.get(finding.id) ?? finding.status);
   const trailing = context.view === "decisions" ? (finding.acceptance?.at ?? null) : null;
   return h.keyed("button")(
@@ -44,7 +57,7 @@ const findingRow = (
       ...(selected ? [h.AriaCurrent("true")] : []),
     ],
     [
-      statusDot(status, finding.authority, h),
+      statusDot({ status, authority: finding.authority, h }),
       h.span(
         [h.Class("row__body")],
         [
@@ -54,21 +67,29 @@ const findingRow = (
       ),
       h.span(
         [h.Class("row__trailing")],
-        [trailing === null ? `L${finding.line}` : relativeTime(trailing, context.generatedAt)],
+        [trailing === null ? `L${finding.line}` : relativeTime({ iso: trailing, nowIso: context.generatedAt })],
       ),
     ],
   );
 };
 
-const renderGroup = (
-  group: FindingGroup,
-  selectedId: string | null,
-  statusOf: RowContext["statusOf"],
-  view: View,
-  byRule: boolean,
-  generatedAt: string,
-  h: HtmlBuilder<Message>,
-): Html =>
+const renderGroup = ({
+  group,
+  selectedId,
+  statusOf,
+  view,
+  byRule,
+  generatedAt,
+  h,
+}: {
+  readonly group: FindingGroup;
+  readonly selectedId: string | null;
+  readonly statusOf: RowContext["statusOf"];
+  readonly view: View;
+  readonly byRule: boolean;
+  readonly generatedAt: string;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
   h.keyed("section")(
     group.key,
     [h.Class("group"), h.Role("group"), h.AriaLabel(group.label)],
@@ -88,7 +109,12 @@ const renderGroup = (
         ],
       ),
       ...group.findings.map((finding) =>
-        findingRow(finding, finding.id === selectedId, { statusOf, view, byRule, generatedAt }, h),
+        findingRow({
+          finding,
+          selected: finding.id === selectedId,
+          context: { statusOf, view, byRule, generatedAt },
+          h,
+        }),
       ),
     ],
   );
@@ -100,21 +126,30 @@ const renderGroup = (
  */
 const lazyGroup = createKeyedLazy();
 
-const renderGroupList = (
-  groups: ReviewDerivation["groups"],
-  selectedId: string | null,
-  statusOf: RowContext["statusOf"],
-  view: View,
-  byRule: boolean,
-  filtered: boolean,
-  generatedAt: string,
-  h: HtmlBuilder<Message>,
-): Html => {
+const renderGroupList = ({
+  groups,
+  selectedId,
+  statusOf,
+  view,
+  byRule,
+  filtered,
+  generatedAt,
+  h,
+}: {
+  readonly groups: ReviewDerivation["groups"];
+  readonly selectedId: string | null;
+  readonly statusOf: RowContext["statusOf"];
+  readonly view: View;
+  readonly byRule: boolean;
+  readonly filtered: boolean;
+  readonly generatedAt: string;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
   if (groups.length === 0) {
     return h.div(
       [h.Class("empty")],
       [
-        h.div([h.Class("empty__mark")], [icon("check", h)]),
+        h.div([h.Class("empty__mark")], [icon({ name: "check", h })]),
         h.p(
           [],
           [
@@ -125,51 +160,119 @@ const renderGroupList = (
                 : "Nothing left to decide.",
           ],
         ),
-        ...(filtered ? [button("Clear filters", Message.ClearedFacets(), "ghost", h, { size: "sm" })] : []),
+        ...(filtered
+          ? [
+              button({
+                label: "Clear filters",
+                message: Message.ClearedFacets(),
+                variant: "ghost",
+                h,
+                options: { size: "sm" },
+              }),
+            ]
+          : []),
       ],
     );
   }
   return h.div(
     [h.Class("list")],
     groups.map((group) =>
-      lazyGroup(group.key, renderGroup, [
-        group,
-        group.findings.some(({ id }) => id === selectedId) ? selectedId : null,
-        statusOf,
-        view,
-        byRule,
-        generatedAt,
-        h,
-      ]),
+      lazyGroup(
+        group.key,
+        (
+          lazyGroupValue: FindingGroup,
+          lazySelectedId: string | null,
+          lazyStatusOf: RowContext["statusOf"],
+          lazyView: View,
+          lazyByRule: boolean,
+          lazyGeneratedAt: string,
+          builder: HtmlBuilder<Message>,
+        ) =>
+          renderGroup({
+            group: lazyGroupValue,
+            selectedId: lazySelectedId,
+            statusOf: lazyStatusOf,
+            view: lazyView,
+            byRule: lazyByRule,
+            generatedAt: lazyGeneratedAt,
+            h: builder,
+          }),
+        [
+          group,
+          group.findings.some(({ id }) => id === selectedId) ? selectedId : null,
+          statusOf,
+          view,
+          byRule,
+          generatedAt,
+          h,
+        ],
+      ),
     ),
   );
 };
 
 const lazyGroupList = createLazy();
 
-const groupList = (state: ReviewStatePayload, model: Model, derived: ReviewDerivation, h: HtmlBuilder<Message>): Html =>
-  lazyGroupList(renderGroupList, [
-    derived.groups,
-    derived.selected?.id ?? null,
-    derived.statusOf,
-    model.view,
-    model.groupBy === "rule" && model.view === "queue",
-    model.query.trim().length > 0 || facetCount(model.facets) > 0,
-    state.generatedAt,
-    h,
-  ]);
+const groupList = ({
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
+  lazyGroupList(
+    (
+      groups: ReviewDerivation["groups"],
+      selectedId: string | null,
+      statusOf: RowContext["statusOf"],
+      view: View,
+      byRule: boolean,
+      filtered: boolean,
+      generatedAt: string,
+      builder: HtmlBuilder<Message>,
+    ) => renderGroupList({ groups, selectedId, statusOf, view, byRule, filtered, generatedAt, h: builder }),
+    [
+      derived.groups,
+      derived.selected?.id ?? null,
+      derived.statusOf,
+      model.view,
+      model.groupBy === "rule" && model.view === "queue",
+      model.query.trim().length > 0 || facetCount(model.facets) > 0,
+      state.generatedAt,
+      h,
+    ],
+  );
 
-export const sidebar = (
-  state: ReviewStatePayload,
-  model: Model,
-  derived: ReviewDerivation,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const tab = (view: View, label: string, count: number, key: string) =>
-    tip(
+export const sidebar = ({
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const tab = ({
+    view,
+    label,
+    count,
+    key,
+  }: {
+    readonly view: View;
+    readonly label: string;
+    readonly count: number;
+    readonly key: string;
+  }) =>
+    tip({
       label,
-      [key],
-      h.button(
+      keys: [key],
+      trigger: h.button(
         [
           h.Type("button"),
           h.OnClick(Message.SelectedView({ view })),
@@ -179,14 +282,17 @@ export const sidebar = (
         [h.span([], [label]), h.span([h.Class("tab__count")], [String(count)])],
       ),
       h,
-    );
-  const chips = activeChips(state, model, derived, h);
+    });
+  const chips = activeChips({ state, model, derived, h });
   return h.aside(
     [h.Class("sidebar")],
     [
       h.div(
         [h.Class("tabs")],
-        [tab("queue", "Queue", derived.queueCount, "1"), tab("decisions", "Decisions", derived.decisionsCount, "2")],
+        [
+          tab({ view: "queue", label: "Queue", count: derived.queueCount, key: "1" }),
+          tab({ view: "decisions", label: "Decisions", count: derived.decisionsCount, key: "2" }),
+        ],
       ),
       ...(state.mode === "review"
         ? [
@@ -204,10 +310,10 @@ export const sidebar = (
             ),
           ]
         : []),
-      searchBar(state, model, derived, h),
+      searchBar({ state, model, derived, h }),
       ...(chips === null ? [] : [chips]),
-      ...(state.mode === "calibration" ? [calibrationPanel(state, model, h)] : []),
-      groupList(state, model, derived, h),
+      ...(state.mode === "calibration" ? [calibrationPanel({ state, model, h })] : []),
+      groupList({ state, model, derived, h }),
     ],
   );
 };

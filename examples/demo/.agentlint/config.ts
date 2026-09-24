@@ -1,4 +1,5 @@
 import { defineConfig, defineRule, type ChangeHunk } from "@aurelienbbn/agentlint";
+import { idempotentPaymentCaptureRule } from "../../payment-rule.js";
 
 /**
  * Working-tree line number of the hunk line at `index`.
@@ -43,45 +44,9 @@ const boundedQueries = defineRule({
   },
 });
 
-const idempotentPaymentCapture = defineRule({
-  lifecycle: "state",
-  standard: {
-    id: "payments/idempotent-capture",
-    revision: 1,
-    title: "Payment captures are safe to retry",
-    guidance: {
-      standard: "Every payment capture supplies a stable idempotency key derived from the business operation.",
-      checks: [
-        "Confirm the key is stable across retries and unique across distinct purchases.",
-        "A request-scoped random value does not satisfy the standard.",
-      ],
-      examples: [
-        {
-          label: "Order identity survives retries",
-          code: "payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })",
-        },
-      ],
-      refs: [{ type: "url", href: "https://docs.stripe.com/api/idempotent_requests" }],
-    },
-  },
-  detector: {
-    id: "typescript/payment-capture-without-idempotency-key",
-    version: 1,
-    match: {
-      pattern: "$CLIENT.capture($$$ARGS)",
-      where: { notHas: "idempotencyKey: $_" },
-      message: "Payment capture has no explicit idempotency key.",
-    },
-    fixtures: {
-      mustReport: ["payments.capture({ orderId, amount })"],
-      mustStaySilent: ["payments.capture({ orderId, amount, idempotencyKey: `order:${orderId}` })"],
-    },
-  },
-  binding: {
-    id: "payments/idempotent-capture",
-    authority: "agent",
-    include: ["src/payments/**/*.ts"],
-  },
+const idempotentPaymentCapture = idempotentPaymentCaptureRule({
+  include: "src/payments/**/*.ts",
+  includeReference: true,
 });
 
 const focusedTests = defineRule({
@@ -151,6 +116,75 @@ const dynamicCodeExecution = defineRule({
   },
 });
 
+const customerDataExports = defineRule({
+  lifecycle: "state",
+  standard: {
+    id: "privacy/customer-data-exports",
+    revision: 1,
+    title: "Customer-data exports follow the repository privacy contract",
+    guidance: {
+      standard:
+        "Customer-data exports contain only the documented fields, require an authenticated customer request, and retain an auditable purpose.",
+      checks: [
+        "Read the related privacy contract before deciding whether the selected fields and call site are allowed.",
+        "Verify authorization, purpose logging, retention, and deletion behavior at the actual export boundary.",
+      ],
+      examples: [
+        {
+          label: "Explicit export boundary",
+          code: "exportCustomerData({ customerId, fields: allowedExportFields, purpose: request.reason })",
+        },
+      ],
+    },
+  },
+  detector: {
+    id: "typescript/customer-data-export",
+    version: 1,
+    scan: "file",
+    createOnce({ context }) {
+      return {
+        call_expression(node) {
+          if (!node.text.startsWith("exportCustomerData(")) return;
+          context.report({
+            node,
+            message: "Customer data crosses an export boundary; review it with the repository privacy contract.",
+            relatedFiles: ["policy/customer-data-exports.md", "src/contracts/customer-data-export.ts"],
+          });
+        },
+      };
+    },
+    fixtures: {
+      mustReport: [
+        {
+          files: {
+            "fixture.ts": "exportCustomerData({ customerId, fields });",
+            "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+            "src/contracts/customer-data-export.ts":
+              'export const allowedCustomerExportFields = ["profile", "orders", "invoices"] as const;',
+          },
+        },
+      ],
+      mustStaySilent: [
+        {
+          files: {
+            "fixture.ts": "renderCustomerProfile({ customerId });",
+            "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+            "src/contracts/customer-data-export.ts":
+              'export const allowedCustomerExportFields = ["profile", "orders", "invoices"] as const;',
+          },
+        },
+      ],
+    },
+  },
+  binding: {
+    id: "privacy/customer-data-exports",
+    authority: "human",
+    include: ["src/**/*.{ts,tsx}"],
+    dependencies: ["policy/customer-data-exports.md", "src/contracts/customer-data-export.ts"],
+    reviewEpoch: 1,
+  },
+});
+
 const destructiveMigrations = defineRule({
   lifecycle: "change",
   standard: {
@@ -167,7 +201,7 @@ const destructiveMigrations = defineRule({
   detector: {
     id: "text/destructive-schema-addition",
     version: 1,
-    detect(context) {
+    detect({ context }) {
       for (const file of context.change.files) {
         for (const hunk of file.hunks) {
           const index = hunk.lines.findIndex(
@@ -218,7 +252,7 @@ const privilegeWidening = defineRule({
   detector: {
     id: "diff/administrative-role-addition",
     version: 1,
-    detect(context) {
+    detect({ context }) {
       for (const file of context.change.files) {
         for (const hunk of file.hunks) {
           let ordinal = 0;
@@ -256,6 +290,7 @@ export default defineConfig({
     idempotentPaymentCapture,
     focusedTests,
     dynamicCodeExecution,
+    customerDataExports,
     destructiveMigrations,
     privilegeWidening,
   ],

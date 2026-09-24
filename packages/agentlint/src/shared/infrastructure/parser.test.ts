@@ -8,7 +8,7 @@ import { Parser, resolvePackagedWasmPath } from "./parser.js";
 
 const fixturesDir = nodePath.resolve(import.meta.dirname, "../../__fixtures__");
 
-const ParserLayer = Parser.layer.pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(Env.layer));
+const ParserLayer = Parser.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, Env.layer)));
 
 function runWithParser<A, E>(effect: Effect.Effect<A, E, Parser>) {
   return Effect.runPromise(effect.pipe(Effect.provide(ParserLayer)));
@@ -16,7 +16,11 @@ function runWithParser<A, E>(effect: Effect.Effect<A, E, Parser>) {
 
 describe("Parser", () => {
   it("resolves packaged WASM files inside the current directory wasm folder", () => {
-    const resolved = resolvePackagedWasmPath(nodePath, import.meta.dirname, "tree-sitter-typescript.wasm");
+    const resolved = resolvePackagedWasmPath({
+      path: nodePath,
+      dir: import.meta.dirname,
+      filename: "tree-sitter-typescript.wasm",
+    });
     const normalized = resolved.replace(/\\/g, "/");
 
     expect(normalized).toContain("/src/shared/infrastructure/wasm/tree-sitter-typescript.wasm");
@@ -29,7 +33,7 @@ describe("Parser", () => {
     await runWithParser(
       Effect.gen(function* () {
         const parser = yield* Parser;
-        const tree = yield* parser.parse(source, "typescript");
+        const tree = yield* parser.parse({ source, grammar: "typescript" });
 
         expect(tree.rootNode.type).toBe("program");
         expect(tree.rootNode.childCount).toBeGreaterThan(0);
@@ -46,7 +50,7 @@ describe("Parser", () => {
     await runWithParser(
       Effect.gen(function* () {
         const parser = yield* Parser;
-        const tree = yield* parser.parse(source, "tsx");
+        const tree = yield* parser.parse({ source, grammar: "tsx" });
 
         expect(tree.rootNode.type).toBe("program");
 
@@ -61,7 +65,7 @@ describe("Parser", () => {
       runWithParser(
         Effect.gen(function* () {
           const parser = yield* Parser;
-          yield* parser.parse("x = 1", "python");
+          yield* parser.parse({ source: "x = 1", grammar: "python" });
         }),
       ),
     ).rejects.toThrow("Unknown grammar");

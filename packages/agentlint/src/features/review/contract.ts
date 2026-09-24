@@ -77,6 +77,7 @@ export const ReviewFindingSource = Schema.Struct({
   detectorVersion: Schema.Number,
   bindingId: Schema.String,
   bindingDigest: Schema.String,
+  reviewEpoch: Schema.optional(Schema.Number),
 });
 export type ReviewFindingSource = Schema.Schema.Type<typeof ReviewFindingSource>;
 
@@ -238,6 +239,72 @@ export const ReviewArtifact = Schema.Struct({
   state: ReviewStatePayload,
 });
 export type ReviewArtifact = Schema.Schema.Type<typeof ReviewArtifact>;
+
+const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
+const NonBlankString = Schema.String.check(Schema.isPattern(/\S/));
+const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
+const IsoTimestamp = Schema.String.check(
+  Schema.makeFilter((value) => {
+    const time = Date.parse(value);
+    return (
+      (!Number.isNaN(time) && new Date(time).toISOString() === value) ||
+      "Expected an ISO-8601 UTC timestamp such as 2026-01-31T12:00:00.000Z"
+    );
+  }),
+);
+
+const DetachedFindingSource = Schema.Struct({
+  standardId: NonEmptyString,
+  standardRevision: PositiveInteger,
+  detectorId: NonEmptyString,
+  detectorVersion: PositiveInteger,
+  bindingId: NonEmptyString,
+  bindingDigest: NonEmptyString,
+  reviewEpoch: Schema.optional(PositiveInteger),
+});
+
+const DetachedFingerprint = Schema.Struct({
+  scheme: NonEmptyString,
+  version: PositiveInteger,
+  digest: NonEmptyString,
+});
+
+/**
+ * One acceptance line a detached review exports. Accepts exactly what the domain `AcceptanceImport` accepts.
+ */
+export const DetachedAcceptance = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  type: Schema.Literal("accept"),
+  source: DetachedFindingSource,
+  fingerprint: DetachedFingerprint,
+  lineageKey: Schema.optional(Schema.String),
+  reason: NonBlankString,
+  authority: Schema.Literals(["agent", "human"]),
+  actor: Schema.optional(Schema.String),
+  acceptedAt: IsoTimestamp,
+  reviewedSource: Schema.String,
+});
+export type DetachedAcceptance = Schema.Schema.Type<typeof DetachedAcceptance>;
+
+/**
+ * One revocation line a detached review exports. Accepts exactly what the domain `AcceptanceRevocation` accepts.
+ */
+export const DetachedRevocation = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  type: Schema.Literal("revoke"),
+  source: DetachedFindingSource,
+  fingerprint: DetachedFingerprint,
+  expectedAcceptedAt: NonBlankString,
+  expectedReason: NonBlankString,
+  reviewedSource: Schema.String,
+});
+export type DetachedRevocation = Schema.Schema.Type<typeof DetachedRevocation>;
+
+/**
+ * A line of the acceptance JSONL written by a detached review and read by `agentlint acceptances import`.
+ */
+export const DetachedDecision = Schema.Union([DetachedAcceptance, DetachedRevocation]);
+export type DetachedDecision = Schema.Schema.Type<typeof DetachedDecision>;
 
 /**
  * Server-session bookkeeping. Not sent over the wire.

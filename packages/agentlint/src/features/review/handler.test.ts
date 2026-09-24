@@ -1,18 +1,14 @@
 import { nextHandler } from "../next/handler.js";
 import { NextCommand } from "../next/request.js";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, FileSystem, Layer, Path } from "effect";
+import { Array as A, Effect, FileSystem, Path } from "effect";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
-import { Env } from "../../config/env.js";
+import { afterEach, describe, expect, it } from "@effect/vitest";
+import { featureTestLayer, featureTestRule } from "../../__fixtures__/feature-test-services.js";
 import { normalizeConfig } from "../../domain/config.js";
-import { defineRule } from "../../domain/rule.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { Git } from "../../shared/infrastructure/git.js";
-import { Parser } from "../../shared/infrastructure/parser.js";
-import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { applyReviewAction, buildReviewPayload, makeReviewSessionState } from "./handler.js";
 import { checkHandler } from "../check/handler.js";
@@ -20,40 +16,8 @@ import { CheckCommand } from "../check/request.js";
 
 const cwd = join(tmpdir(), "agentlint-v02-review-payload-test");
 const source = 'export const result =\n  danger("x")\n';
-const rule = defineRule({
-  lifecycle: "state",
-  standard: { id: "security/danger", revision: 1, title: "Danger is reviewed", guidance: "Review danger calls." },
-  detector: {
-    id: "typescript/danger-call",
-    version: 1,
-    match: { pattern: "danger($$$ARGS)", message: "danger needs judgment" },
-  },
-  binding: { id: "security/danger", authority: "agent", include: ["src/**/*.ts"] },
-});
-const TestEnv = Layer.succeed(
-  Env,
-  Env.of({ cwd, argv: [], actor: "agent:test", platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
-);
-const TestConfig = Layer.succeed(
-  ConfigLoader,
-  ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [rule] })) }),
-);
-const TestGit = Layer.succeed(
-  Git,
-  Git.of({
-    detectDefaultBranch: () => Effect.succeed("main"),
-    changedFiles: () => Effect.succeed([]),
-    changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
-  }),
-);
-const TestLayer = Layer.mergeAll(
-  TestConfig,
-  TestGit,
-  Parser.layer,
-  AcceptanceStore.layer,
-  ProposalStore.layer,
-  SelectorCache.layer,
-).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(TestEnv));
+const rule = featureTestRule();
+const TestLayer = featureTestLayer({ cwd, rules: [rule] });
 
 const cleanup = Effect.gen(function* () {
   yield* (yield* FileSystem.FileSystem).remove(cwd, { recursive: true }).pipe(Effect.orElseSucceed(() => undefined));
@@ -62,17 +26,16 @@ const cleanup = Effect.gen(function* () {
 afterEach(() => Effect.runPromise(cleanup));
 
 describe("review payload", () => {
-  it("revokes accepted findings when changes are requested and reuses captured scan evidence", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("revokes accepted findings when changes are requested and reuses captured scan evidence", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
         const session = makeReviewSessionState();
         const payload = yield* buildReviewPayload({ mode: "review", transport: "attached", session });
-        const findingId = payload.findings[0]?.id;
-        if (!findingId) throw new Error("Expected finding");
+        const findingId = A.getUnsafe(payload.findings, 0).id;
         expect(
           yield* applyReviewAction(
             { type: "accept", findingId, reason: "Reviewed sandbox." },
@@ -114,22 +77,21 @@ describe("review payload", () => {
         expect(artifact.sources["src/demo.ts"]).toBe(source);
         expect(artifact.findings).toHaveLength(1);
         expect(artifact.coverage.scope).toBe("complete");
-      }).pipe(Effect.provide(TestLayer)),
-    );
-  });
-  it("revokes only the decision this session was shown", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
+      }).pipe(Effect.provide(TestLayer));
+    }),
+  );
+  it.effect("revokes only the decision this session was shown", () =>
+    Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const store = yield* AcceptanceStore;
+        const fs = yield* FileSystem.FileSystem;
+        yield* cleanup;
         yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
         const session = makeReviewSessionState();
         const options = { mode: "review" as const, session };
         const load = buildReviewPayload({ mode: "review", transport: "attached", session });
-        const findingId = (yield* load).findings[0]?.id;
-        if (!findingId) throw new Error("Expected finding");
+        const findingId = A.getUnsafe((yield* load).findings, 0).id;
 
         // Recorded elsewhere after this session rendered the finding as unresolved.
         const elsewhere = { mode: "review" as const, session: makeReviewSessionState() };
@@ -167,59 +129,55 @@ describe("review payload", () => {
             { ...options, mode: "calibration" },
           ),
         ).toEqual({ ok: false, message: "Calibration cannot request changes." });
-      }).pipe(Effect.provide(TestLayer)),
-    );
-  });
+      }).pipe(Effect.provide(TestLayer));
+    }),
+  );
 
-  it("includes the complete source and the detector-selected focus range", async () => {
-    await Effect.runPromise(cleanup);
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("includes the complete source and the detector-selected focus range", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         yield* fs.makeDirectory(path.resolve(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(path.resolve(cwd, "src", "demo.ts"), source);
-      }).pipe(Effect.provide(TestLayer)),
-    );
+      }).pipe(Effect.provide(TestLayer));
 
-    const payload = await Effect.runPromise(
-      buildReviewPayload({
+      const payload = yield* buildReviewPayload({
         mode: "review",
         transport: "attached",
         applications: [{ id: "vscode", label: "VS Code" }],
-      }).pipe(Effect.provide(TestLayer)),
-    );
+      }).pipe(Effect.provide(TestLayer));
 
-    expect(payload.findings).toHaveLength(1);
-    expect(payload.sources["src/demo.ts"]).toBe(source);
-    expect(payload.findings[0]?.code).toEqual({
-      focus: { startLine: 2, startColumn: 3, endLine: 2, endColumn: 14 },
-    });
-    expect(payload.findings[0]?.editor).toEqual({ canOpen: true });
-    expect(payload.applications).toEqual([{ id: "vscode", label: "VS Code" }]);
-    expect(payload.findings[0]?.guidance).toMatchObject({
-      summary: null,
-      standard: "Review danger calls.",
-      checks: [],
-      examples: [],
-    });
+      expect(payload.findings).toHaveLength(1);
+      expect(payload.sources["src/demo.ts"]).toBe(source);
+      expect(payload.findings[0]?.code).toEqual({
+        focus: { startLine: 2, startColumn: 3, endLine: 2, endColumn: 14 },
+      });
+      expect(payload.findings[0]?.editor).toEqual({ canOpen: true });
+      expect(payload.applications).toEqual([{ id: "vscode", label: "VS Code" }]);
+      expect(payload.findings[0]?.guidance).toMatchObject({
+        summary: null,
+        standard: "Review danger calls.",
+        checks: [],
+        examples: [],
+      });
 
-    const detached = await Effect.runPromise(
-      buildReviewPayload({ mode: "review", transport: "detached", source: "review.json" }).pipe(
+      const detached = yield* buildReviewPayload({ mode: "review", transport: "detached", source: "review.json" }).pipe(
         Effect.provide(TestLayer),
-      ),
-    );
-    expect(detached.findings[0]?.editor).toBeNull();
-    expect(detached.applications).toEqual([]);
-  });
+      );
+      expect(detached.findings[0]?.editor).toBeNull();
+      expect(detached.applications).toEqual([]);
+    }),
+  );
 });
 
 describe("next handoff", () => {
-  it("resumes exact unresolved work and reopens changed evidence", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
+  it.effect("resumes exact unresolved work and reopens changed evidence", () =>
+    Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const selectors = yield* SelectorCache;
+        const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
         yield* selectors.write([
@@ -239,27 +197,30 @@ describe("next handoff", () => {
         expect(first.source).toBe(source);
         expect(first.finding?.guidance.standard).toBe("Review danger calls.");
         expect(first.actions[0]?.argv[0]).toBe("accept");
+        // The stale cache maps "1" to another finding: `next` must select by full key, never by ordinal.
+        expect(first.selector).toBe(first.finding?.id);
+        expect(first.actions[0]?.argv[1]).toBe(first.finding?.id);
         expect((yield* nextHandler(command)).finding?.id).toBe(first.finding?.id);
-        if (!first.finding) throw new Error("Expected finding");
+        const finding = A.getUnsafe(first.finding === null ? [] : [first.finding], 0);
         yield* applyReviewAction(
-          { type: "accept", findingId: first.finding.id, reason: "Verified sandbox" },
+          { type: "accept", findingId: finding.id, reason: "Verified sandbox" },
           { mode: "review", session: makeReviewSessionState() },
         );
         expect((yield* nextHandler(command)).status).toBe("clear");
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source.replace('"x"', '"changed"'));
         const changed = yield* nextHandler(command);
         expect(changed.status).toBe("unresolved");
-        expect(changed.finding?.id).not.toBe(first.finding.id);
+        expect(changed.finding?.id).not.toBe(finding.id);
         expect(changed.finding?.lineageReason).toContain("Verified sandbox");
         expect((yield* selectors.read()).findings).toMatchObject([{ hash: "previous-finding" }]);
-      }).pipe(Effect.provide(TestLayer)),
-    );
-  });
+      }).pipe(Effect.provide(TestLayer));
+    }),
+  );
 
-  it("offers a proposal and human review when agent acceptance cannot satisfy the binding", async () => {
-    const humanRule = defineRule({ ...rule, binding: { ...rule.binding, authority: "human" } });
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("offers a proposal and human review when agent acceptance cannot satisfy the binding", () =>
+    Effect.gen(function* () {
+      const humanRule = defineRule({ ...rule, binding: { ...rule.binding, authority: "human" } });
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
@@ -274,15 +235,15 @@ describe("next handoff", () => {
           ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules: [humanRule] })) }),
         ),
         Effect.provide(TestLayer),
-      ),
-    );
-  });
+      );
+    }),
+  );
 });
 
 describe("calibration scope", () => {
-  it("keeps the displayed candidates, coverage and writable labels within the selected files", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("keeps the displayed candidates, coverage and writable labels within the selected files", () =>
+    Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         yield* fs.makeDirectory(join(cwd, "src"), { recursive: true });
         yield* fs.writeFileString(join(cwd, "src", "demo.ts"), source);
@@ -293,8 +254,10 @@ describe("calibration scope", () => {
         const selected = yield* buildReviewPayload({ ...options, transport: "attached" });
         expect(selected.findings.map((finding) => finding.file)).toEqual(["src/demo.ts"]);
         expect(selected.coverage).toMatchObject({ scope: "partial", rules: [rule.binding.id], files: ["src/demo.ts"] });
-        const outside = full.findings.find((finding) => finding.file === "src/outside.ts");
-        if (!outside) throw new Error("Fixture missing");
+        const outside = A.getUnsafe(
+          full.findings.filter((finding) => finding.file === "src/outside.ts"),
+          0,
+        );
         expect(
           yield* applyReviewAction(
             {
@@ -309,7 +272,7 @@ describe("calibration scope", () => {
         ).toMatchObject({ ok: false });
         expect(session.calibration).toEqual([]);
         expect((yield* (yield* AcceptanceStore).read()).records).toEqual([]);
-      }).pipe(Effect.provide(TestLayer)),
-    );
-  });
+      }).pipe(Effect.provide(TestLayer));
+    }),
+  );
 });

@@ -50,7 +50,7 @@ export interface NormalizedGuidance {
 }
 
 export function normalizeGuidance(guidance: Guidance): NormalizedGuidance {
-  if (typeof guidance === "string") {
+  if (Schema.is(Schema.String)(guidance)) {
     return {
       standard: guidance.trim(),
       checks: [],

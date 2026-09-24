@@ -1,6 +1,6 @@
 import { evo } from "foldkit/struct";
 
-import type { Model } from "../../model";
+import type { Model } from "../../shared/model";
 import { draftFor, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";
@@ -23,47 +23,59 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   RevealedPriorDecision: ({ findingId }) => {
     const note = model.independentNotes[findingId]?.trim();
     if (!note) return { model };
-    return persistChange(model, (current) =>
-      evo(current, {
-        revealedFindings: (ids) => [...new Set([...ids, findingId])],
-        drafts: (drafts) => ({ ...drafts, [findingId]: { ...draftFor(current, findingId), reason: note } }),
-      }),
-    );
+    return persistChange({
+      model,
+      change: (current) =>
+        evo(current, {
+          revealedFindings: (ids) => [...new Set([...ids, findingId])],
+          drafts: (drafts) => ({
+            ...drafts,
+            [findingId]: { ...draftFor({ model: current, findingId }), reason: note },
+          }),
+        }),
+    });
   },
-  SelectedCodeView: ({ codeView }) => persistChange(model, (current) => evo(current, { codeView: () => codeView })),
-  ToggledGuidance: () => persistChange(model, (current) => evo(current, { guidanceOpen: (open) => !open })),
+  SelectedCodeView: ({ codeView }) =>
+    persistChange({ model, change: (current) => evo(current, { codeView: () => codeView }) }),
+  ToggledGuidance: () => persistChange({ model, change: (current) => evo(current, { guidanceOpen: (open) => !open }) }),
   SetGuidanceOpen: ({ open }) =>
     open === model.guidanceOpen
       ? { model }
-      : persistChange(model, (current) => evo(current, { guidanceOpen: () => open })),
+      : persistChange({ model, change: (current) => evo(current, { guidanceOpen: () => open }) }),
   ClickedCopyFindingContext: ({ findingId }) => {
     if (model.screen._tag !== "Reviewing") return { model };
-    const finding = findingById(model.screen.state, findingId);
+    const finding = findingById({ state: model.screen.state, findingId });
     return finding === undefined
-      ? enqueueToast(model, "The finding is no longer available.", "danger")
+      ? enqueueToast({ model, message: "The finding is no longer available.", tone: "danger" })
       : {
           model,
-          commands: [CopyText({ content: findingContext(finding, model), successMessage: "Finding context copied." })],
+          commands: [
+            CopyText({ content: findingContext({ finding, model }), successMessage: "Finding context copied." }),
+          ],
         };
   },
   ClickedOpenFinding: ({ findingId }) => {
     if (model.screen._tag !== "Reviewing") return { model };
-    const finding = findingById(model.screen.state, findingId);
+    const finding = findingById({ state: model.screen.state, findingId });
     const application = model.screen.state.applications.find(({ id }) => id === model.preferredApplication);
     return finding?.editor !== null && application !== undefined
       ? { model, commands: [OpenEditor({ findingId, application: application.id })] }
-      : enqueueToast(model, "Choose an available application before opening this finding.", "neutral");
+      : enqueueToast({
+          model,
+          message: "Choose an available application before opening this finding.",
+          tone: "neutral",
+        });
   },
   SelectedEditorApplication: ({ findingId, application }) => {
     if (model.screen._tag !== "Reviewing") return { model };
-    const finding = findingById(model.screen.state, findingId);
+    const finding = findingById({ state: model.screen.state, findingId });
     const available = model.screen.state.applications.some(({ id }) => id === application);
     if (finding?.editor === null || !available) {
-      return enqueueToast(model, "That application is not available for this review.", "danger");
+      return enqueueToast({ model, message: "That application is not available for this review.", tone: "danger" });
     }
-    return appendCommands(
-      persistChange(model, (current) => evo(current, { preferredApplication: () => application })),
-      [OpenEditor({ findingId, application })],
-    );
+    return appendCommands({
+      result: persistChange({ model, change: (current) => evo(current, { preferredApplication: () => application }) }),
+      commands: [OpenEditor({ findingId, application })],
+    });
   },
 });

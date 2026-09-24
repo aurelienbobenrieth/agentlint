@@ -1,5 +1,5 @@
 export interface FixtureFailure {
-  readonly expectation: "mustReport" | "mustStaySilent";
+  readonly expectation: "mustReport" | "mustStaySilent" | "deterministic";
   readonly index: number;
   readonly label?: string | undefined;
   readonly findingCount: number;

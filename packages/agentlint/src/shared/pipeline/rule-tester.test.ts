@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defineRule } from "../../domain/rule.js";
+import { Array as A } from "effect";
+import { defineRule } from "../../domain/rule/model.js";
 import { testRuleFixtures, testRuleOnChange } from "../../testing.js";
 import { normalizeChangeFixture } from "./change-fixture.js";
 
@@ -20,7 +21,7 @@ describe("rule fixtures", () => {
         id: "json/document",
         version: 1,
         scan: "file",
-        createOnce(context) {
+        createOnce({ context }) {
           return {
             document(node) {
               if (node.text.includes('"review"')) context.report({ node, message: "Review JSON contract." });
@@ -54,6 +55,28 @@ describe("rule fixtures", () => {
     await expect(testRuleFixtures(rule)).resolves.toEqual({ ruleId: "security/no-eval", total: 2, failures: [] });
   });
 
+  it("rejects an imperative detector whose fixture replay changes", async () => {
+    let run = 0;
+    const rule = defineRule({
+      lifecycle: "state",
+      standard,
+      binding: { id: "state/nondeterministic", authority: "agent" },
+      detector: {
+        id: "state/nondeterministic",
+        version: 1,
+        createOnce({ context }) {
+          run += 1;
+          return { identifier: (node) => context.report({ node, message: `run ${run}` }) };
+        },
+        fixtures: { mustReport: ["value"] },
+      },
+    });
+
+    await expect(testRuleFixtures(rule)).resolves.toMatchObject({
+      failures: [{ expectation: "deterministic", index: 0, findingCount: 1 }],
+    });
+  });
+
   it("normalizes before-and-after repositories", () => {
     const change = normalizeChangeFixture({
       before: { "changed.txt": "old", "deleted.txt": "gone" },
@@ -76,7 +99,7 @@ describe("rule fixtures", () => {
       detector: {
         id: "sql/drop-column",
         version: 1,
-        detect(context) {
+        detect({ context }) {
           for (const file of context.change.files) {
             if (file.after?.content?.includes("DROP COLUMN")) {
               context.report({
@@ -100,9 +123,9 @@ describe("rule fixtures", () => {
     expect(report.failures).toEqual([]);
     const fixture = rule.detector.fixtures?.mustReport?.[0];
     if (!fixture) throw new Error("Expected a mustReport fixture");
-    const findings = await testRuleOnChange(rule, fixture);
+    const findings = await testRuleOnChange({ rule, fixture });
     expect(findings).toHaveLength(1);
-    const [finding] = findings;
+    const finding = A.getUnsafe(findings, 0);
     expect(finding).toMatchObject({
       ruleId: "database/drop-column",
       lifecycle: "change",
@@ -111,8 +134,8 @@ describe("rule fixtures", () => {
       message: "Review data removal.",
       sourceSnippet: "ALTER TABLE users DROP COLUMN email;",
     });
-    expect(finding?.source.detectorId).toBe("sql/drop-column");
-    const again = await testRuleOnChange(rule, fixture);
-    expect(again[0]?.fingerprint).toEqual(finding?.fingerprint);
+    expect(finding.source.detectorId).toBe("sql/drop-column");
+    const again = await testRuleOnChange({ rule, fixture });
+    expect(A.getUnsafe(again, 0).fingerprint).toEqual(finding.fingerprint);
   });
 });

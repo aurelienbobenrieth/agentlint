@@ -1,6 +1,6 @@
 import { Schema as S } from "effect";
 
-import { ToastTone } from "../../model";
+import { ToastTone } from "../../shared/model";
 
 export const fields = {
   HoveredToasts: {},

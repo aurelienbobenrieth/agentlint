@@ -2,8 +2,8 @@
  * Repository configuration contracts. @module @since 0.2.0
  */
 
-import { Schema } from "effect";
-import { defineRule, type AgentlintRule } from "./rule.js";
+import { Result, Schema } from "effect";
+import { defineRule, type AgentlintRule } from "./rule/model.js";
 
 export interface AgentlintConfig {
   /**
@@ -38,32 +38,33 @@ export interface NormalizedConfig {
  * @category Errors
  */
 export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
-  reason: Schema.Literals(["empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
+  reason: Schema.Literals(["invalid_shape", "empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
   ruleId: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "empty_base":
-        return "Config base must not be empty";
-      case "empty_ignore":
-        return "Config ignore patterns must not be empty";
-      case "duplicate_binding":
-        return `Duplicate rule binding id: ${this.ruleId}`;
-      case "extends_cycle":
-        return "Config extends contains a cycle";
-    }
+    return {
+      invalid_shape: `Invalid config shape: ${this.detail}`,
+      empty_base: "Config base must not be empty",
+      empty_ignore: "Config ignore patterns must not be empty",
+      duplicate_binding: `Duplicate rule binding id: ${this.ruleId}`,
+      extends_cycle: "Config extends contains a cycle",
+    }[this.reason];
   }
 }
 
+const decodeConfigShape = Schema.decodeUnknownResult(
+  Schema.Struct({
+    extends: Schema.optional(Schema.Array(Schema.Unknown)),
+    rules: Schema.optional(Schema.Array(Schema.Unknown)),
+    ignores: Schema.optional(Schema.Array(Schema.String)),
+    base: Schema.optional(Schema.String),
+  }),
+);
+
 function assertConfig(config: AgentlintConfig): void {
-  Schema.decodeUnknownSync(
-    Schema.Struct({
-      extends: Schema.optional(Schema.Array(Schema.Unknown)),
-      rules: Schema.optional(Schema.Array(Schema.Unknown)),
-      ignores: Schema.optional(Schema.Array(Schema.String)),
-      base: Schema.optional(Schema.String),
-    }),
-  )(config);
+  const shape = decodeConfigShape(config);
+  if (Result.isFailure(shape)) throw new ConfigError({ reason: "invalid_shape", detail: shape.failure.message });
   if (config.base !== undefined && config.base.trim().length === 0) {
     throw new ConfigError({ reason: "empty_base" });
   }
@@ -80,11 +81,19 @@ export function defineConfig<const Config extends AgentlintConfig>(config: Confi
   return config;
 }
 
-function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active = new Set<AgentlintConfig>()): void {
+function flatten({
+  config,
+  output = [],
+  active = new Set<AgentlintConfig>(),
+}: {
+  readonly config: AgentlintConfig;
+  readonly output?: AgentlintConfig[];
+  readonly active?: Set<AgentlintConfig>;
+}): void {
   assertConfig(config);
   if (active.has(config)) throw new ConfigError({ reason: "extends_cycle" });
   active.add(config);
-  for (const parent of config.extends ?? []) flatten(parent, output, active);
+  for (const parent of config.extends ?? []) flatten({ config: parent, output, active });
   active.delete(config);
   output.push(config);
 }
@@ -94,10 +103,10 @@ function flatten(config: AgentlintConfig, output: AgentlintConfig[] = [], active
  */
 export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   const layers: AgentlintConfig[] = [];
-  flatten(config, layers);
+  flatten({ config, output: layers });
   const rulesById = new Map<string, AgentlintRule>();
   const ignores: string[] = [];
-  let base: string | undefined;
+  const base = layers.findLast((layer) => layer.base !== undefined)?.base;
 
   for (const layer of layers) {
     assertConfig(layer);
@@ -108,7 +117,6 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
       rulesById.set(id, rule);
     }
     ignores.push(...(layer.ignores ?? []));
-    if (layer.base !== undefined) base = layer.base;
   }
 
   return {

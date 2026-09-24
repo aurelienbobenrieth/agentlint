@@ -1,11 +1,20 @@
 // @ts-check
 /**
- * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the action reads. Decoded structurally: the
- * action has no dependency on `effect`.
+ * The subset of the `@aurelienbbn/agentlint/contract` review artifact that the action reads. The artifact is untrusted
+ * input, so the hand-written structural decoder below checks every field it reads at the file boundary and rejects the
+ * artifact otherwise; fields the action does not read are ignored.
  */
 
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+/**
+ * @param {unknown} value @returns {value is string}
+ */
+const isString = (value) => typeof value === "string";
+/**
+ * @param {unknown} value @returns {value is number}
+ */
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
 /**
  * @typedef {object} Proposal
@@ -56,9 +65,11 @@ import { createHash } from "node:crypto";
 
 class ArtifactError extends Error {
   /**
-   * @param {string} path @param {string} detail
+   * @param {object} input
+   * @param {string} input.path
+   * @param {string} input.detail
    */
-  constructor(path, detail) {
+  constructor({ path, detail }) {
     super(`Review artifact ${path} is not readable: ${detail}`);
     this.name = "ArtifactError";
   }
@@ -73,45 +84,49 @@ export function isRecord(value) {
 }
 
 /**
- * @param {Record<string, unknown>} record
- * @param {string} key
+ * @param {object} input
+ * @param {Record<string, unknown>} input.record
+ * @param {string} input.key
  * @returns {string}
  */
-function stringAt(record, key) {
+function stringAt({ record, key }) {
   const value = record[key];
-  if (typeof value !== "string") throw new TypeError(`expected string at ${key}`);
+  if (!isString(value)) throw new TypeError(`expected string at ${key}`);
   return value;
 }
 
 /**
- * @param {Record<string, unknown>} record
- * @param {string} key
+ * @param {object} input
+ * @param {Record<string, unknown>} input.record
+ * @param {string} input.key
  * @returns {number}
  */
-function numberAt(record, key) {
+function numberAt({ record, key }) {
   const value = record[key];
-  if (typeof value !== "number") throw new TypeError(`expected number at ${key}`);
+  if (!isNumber(value)) throw new TypeError(`expected number at ${key}`);
   return value;
 }
 
 /**
- * @param {Record<string, unknown>} record
- * @param {string} key
+ * @param {object} input
+ * @param {Record<string, unknown>} input.record
+ * @param {string} input.key
  * @returns {string | null}
  */
-function nullableStringAt(record, key) {
+function nullableStringAt({ record, key }) {
   const value = record[key];
   if (value === null || value === undefined) return null;
-  if (typeof value !== "string") throw new TypeError(`expected string or null at ${key}`);
+  if (!isString(value)) throw new TypeError(`expected string or null at ${key}`);
   return value;
 }
 
 /**
- * @param {Record<string, unknown>} record
- * @param {string} key
+ * @param {object} input
+ * @param {Record<string, unknown>} input.record
+ * @param {string} input.key
  * @returns {Record<string, unknown>}
  */
-function recordAt(record, key) {
+function recordAt({ record, key }) {
   const value = record[key];
   if (!isRecord(value)) throw new TypeError(`expected object at ${key}`);
   return value;
@@ -119,12 +134,13 @@ function recordAt(record, key) {
 
 /**
  * @template T
- * @param {string} key
- * @param {ReadonlyArray<T>} allowed
- * @param {unknown} value
+ * @param {object} input
+ * @param {string} input.key
+ * @param {ReadonlyArray<T>} input.allowed
+ * @param {unknown} input.value
  * @returns {T}
  */
-function oneOf(key, allowed, value) {
+function oneOf({ key, allowed, value }) {
   const match = allowed.find((candidate) => candidate === value);
   if (match === undefined) throw new TypeError(`unexpected value at ${key}: ${String(value)}`);
   return match;
@@ -136,38 +152,44 @@ function oneOf(key, allowed, value) {
  */
 function decodeFinding(raw) {
   if (!isRecord(raw)) throw new TypeError("finding is not an object");
-  const identity = recordAt(raw, "identity");
-  recordAt(identity, "fingerprint");
-  const guidance = recordAt(raw, "guidance");
+  const identity = recordAt({ record: raw, key: "identity" });
+  recordAt({ record: identity, key: "fingerprint" });
+  const guidance = recordAt({ record: raw, key: "guidance" });
   const checks = guidance["checks"];
   const acceptance = raw["acceptance"];
   const proposal = raw["proposal"];
   return {
-    id: stringAt(raw, "id"),
-    digest: createHash("sha256").update(stringAt(raw, "id")).digest("hex"),
-    ruleId: stringAt(raw, "ruleId"),
-    ruleTitle: stringAt(raw, "ruleTitle"),
-    lifecycle: oneOf("lifecycle", ["state", "change"], raw["lifecycle"]),
-    authority: oneOf("authority", ["agent", "human"], raw["authority"]),
-    file: stringAt(raw, "file"),
-    line: numberAt(raw, "line"),
-    column: numberAt(raw, "column"),
-    message: stringAt(raw, "message"),
+    id: stringAt({ record: raw, key: "id" }),
+    digest: createHash("sha256")
+      .update(stringAt({ record: raw, key: "id" }))
+      .digest("hex"),
+    ruleId: stringAt({ record: raw, key: "ruleId" }),
+    ruleTitle: stringAt({ record: raw, key: "ruleTitle" }),
+    lifecycle: oneOf({ key: "lifecycle", allowed: ["state", "change"], value: raw["lifecycle"] }),
+    authority: oneOf({ key: "authority", allowed: ["agent", "human"], value: raw["authority"] }),
+    file: stringAt({ record: raw, key: "file" }),
+    line: numberAt({ record: raw, key: "line" }),
+    column: numberAt({ record: raw, key: "column" }),
+    message: stringAt({ record: raw, key: "message" }),
     guidance: {
-      standard: stringAt(guidance, "standard"),
-      checks: Array.isArray(checks) ? checks.filter((check) => typeof check === "string") : [],
+      standard: stringAt({ record: guidance, key: "standard" }),
+      checks: Array.isArray(checks) ? checks.filter(isString) : [],
     },
-    status: oneOf("status", ["unresolved", "accepted", "changes_requested"], raw["status"]),
+    status: oneOf({ key: "status", allowed: ["unresolved", "accepted", "changes_requested"], value: raw["status"] }),
     acceptance: isRecord(acceptance)
-      ? { reason: stringAt(acceptance, "reason"), actor: stringAt(acceptance, "actor"), at: stringAt(acceptance, "at") }
+      ? {
+          reason: stringAt({ record: acceptance, key: "reason" }),
+          actor: stringAt({ record: acceptance, key: "actor" }),
+          at: stringAt({ record: acceptance, key: "at" }),
+        }
       : null,
-    lineageReason: nullableStringAt(raw, "lineageReason"),
+    lineageReason: nullableStringAt({ record: raw, key: "lineageReason" }),
     proposal: isRecord(proposal)
       ? {
-          summary: stringAt(proposal, "summary"),
-          diff: nullableStringAt(proposal, "diff"),
-          actor: stringAt(proposal, "actor"),
-          at: stringAt(proposal, "at"),
+          summary: stringAt({ record: proposal, key: "summary" }),
+          diff: nullableStringAt({ record: proposal, key: "diff" }),
+          actor: stringAt({ record: proposal, key: "actor" }),
+          at: stringAt({ record: proposal, key: "at" }),
         }
       : null,
   };
@@ -179,12 +201,12 @@ function decodeFinding(raw) {
  */
 export function decodeArtifact(raw) {
   if (!isRecord(raw) || raw["version"] !== 3) throw new TypeError("not a version 3 review artifact");
-  const state = recordAt(raw, "state");
+  const state = recordAt({ record: raw, key: "state" });
   const findings = state["findings"];
   if (!Array.isArray(findings)) throw new TypeError("state.findings is not an array");
   return {
-    project: stringAt(state, "project"),
-    base: stringAt(state, "base"),
+    project: stringAt({ record: state, key: "project" }),
+    base: stringAt({ record: state, key: "base" }),
     findings: findings.map(decodeFinding),
   };
 }
@@ -194,16 +216,13 @@ export function decodeArtifact(raw) {
  * @returns {Promise<Artifact>}
  */
 export async function readArtifact(path) {
-  let text;
-  try {
-    text = await readFile(path, "utf8");
-  } catch (error) {
-    throw new ArtifactError(path, error instanceof Error ? error.message : String(error));
-  }
+  const text = await readFile(path, "utf8").catch((error) => {
+    throw new ArtifactError({ path, detail: error instanceof Error ? error.message : String(error) });
+  });
   try {
     return decodeArtifact(JSON.parse(text));
   } catch (error) {
-    throw new ArtifactError(path, error instanceof Error ? error.message : String(error));
+    throw new ArtifactError({ path, detail: error instanceof Error ? error.message : String(error) });
   }
 }
 

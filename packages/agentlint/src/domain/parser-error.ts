@@ -12,17 +12,12 @@ export class ParserError extends Schema.TaggedError<ParserError>()("agentlint/Pa
   detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
-    switch (this.reason) {
-      case "wasm_missing":
-        return `WASM file not found: ${this.detail}`;
-      case "unknown_grammar":
-        return `Unknown grammar: ${this.grammar}`;
-      case "init_failed":
-        return `Parser failed to initialize${this.detail ? `: ${this.detail}` : ""}`;
-      case "load_failed":
-        return `Failed to load grammar ${this.grammar}: ${this.detail}`;
-      case "parse_failed":
-        return `Parse failed${this.grammar ? ` (${this.grammar})` : ""}: ${this.detail ?? "parser returned null tree"}`;
-    }
+    return {
+      wasm_missing: `WASM file not found: ${this.detail}`,
+      unknown_grammar: `Unknown grammar: ${this.grammar}`,
+      init_failed: `Parser failed to initialize${this.detail ? `: ${this.detail}` : ""}`,
+      load_failed: `Failed to load grammar ${this.grammar}: ${this.detail}`,
+      parse_failed: `Parse failed${this.grammar ? ` (${this.grammar})` : ""}: ${this.detail ?? "parser returned null tree"}`,
+    }[this.reason];
   }
 }
