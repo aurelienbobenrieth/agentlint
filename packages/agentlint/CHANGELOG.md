@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- [#37](https://github.com/aurelienbobenrieth/agentlint/pull/37) [`5c8eadf`](https://github.com/aurelienbobenrieth/agentlint/commit/5c8eadfde53d3a6ac3a0bac8f50eb3549d5a125c) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Show the CI, npm version, and license badges on the npm package page.
+
 ## 0.2.0
 
 ### Minor Changes
