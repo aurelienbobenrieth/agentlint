@@ -57,9 +57,9 @@ jobs:
         with:
           node-version: 22
       - name: Run the agentlint gate
-        uses: aurelienbobenrieth/agentlint/action@v0.1.5
+        uses: aurelienbobenrieth/agentlint/action@v0.2.0
         with:
-          version: "0.1.5"
+          version: "0.2.0"
 
   command:
     if: >-
@@ -85,9 +85,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply the agentlint command
-        uses: aurelienbobenrieth/agentlint/action@v0.1.5
+        uses: aurelienbobenrieth/agentlint/action@v0.2.0
         with:
-          version: "0.1.5"
+          version: "0.2.0"
 ```
 
 - `fetch-depth: 0`: change rules diff against the merge base with `origin/<base>`.
@@ -116,7 +116,7 @@ Correctness never depends on it: if the branch moved between fetch and push, the
 
 | Input               | Default                  | Meaning                                                                                                                                                                                                                                                   |
 | ------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`           | `0.1.5`                  | `@aurelienbbn/agentlint` version for `npx --yes`, or `file:<path>` to run `<path>/dist/bin.mjs` from a built checkout (relative to the workspace root). A copy installed by the repository (`install: true`) wins, with a warning if its version differs. |
+| `version`           | `0.2.0`                  | `@aurelienbbn/agentlint` version for `npx --yes`, or `file:<path>` to run `<path>/dist/bin.mjs` from a built checkout (relative to the workspace root). A copy installed by the repository (`install: true`) wins, with a warning if its version differs. |
 | `base`              | `${{ github.base_ref }}` | Base branch, slashes allowed (`release/1.x`). Passed to `--base` as `origin/<base>`, fetched if missing. `HEAD`, `origin/...`, `refs/...` pass through.                                                                                                   |
 | `working-directory` | `.`                      | Directory holding `.agentlint/config.ts`.                                                                                                                                                                                                                 |
 | `install`           | `false`                  | Install first, by lockfile (working directory, then workspace): `pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, `yarn install --immutable`, or `npm ci`.                                                                               |
