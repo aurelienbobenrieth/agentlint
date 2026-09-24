@@ -42,7 +42,7 @@ jobs:
 
       - name: Run the action in dry-run
         id: smoke
-        uses: ./action
+        uses: ./action # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
         continue-on-error: true
         with:
           working-directory: examples/demo

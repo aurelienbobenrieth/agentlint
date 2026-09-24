@@ -49,7 +49,7 @@ jobs:
 
       - name: Validate and pack
         id: package
-        uses: ./.github/actions/validate
+        uses: ./.github/actions/validate # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
 
   workflows:
     name: Lint workflows
