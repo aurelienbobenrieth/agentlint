@@ -40,7 +40,7 @@ jobs:
         with: { fetch-depth: 0, persist-credentials: false } # required: change rules use the merge base
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
-      - uses: aurelienbobenrieth/agentlint/action@v0.2.2
+      - uses: aurelienbobenrieth/agentlint/action@v0.3.0
   command:
     if: >-
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/agentlint'))
@@ -55,7 +55,7 @@ jobs:
         with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
-      - uses: aurelienbobenrieth/agentlint/action@v0.2.2
+      - uses: aurelienbobenrieth/agentlint/action@v0.3.0
 ```
 
 - `fetch-depth: 0` is required: change rules use the merge base.
