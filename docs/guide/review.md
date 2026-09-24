@@ -79,7 +79,7 @@ Revocations apply to the current store; they aren't persisted as another finding
 
 | Artifact fact | Value                                                                              |
 | ------------- | ---------------------------------------------------------------------------------- |
-| Version       | 3. Regenerate version 1 or 2 artifacts.                                            |
+| Version       | 3                                                                                  |
 | Contents      | Each source file once, plus scan scope, executed bindings, and inspected files     |
 | Snapshot      | Reuses the original check snapshot, including transient prior reasoning; no rescan |
 | Excludes      | Machine paths and application capabilities                                         |

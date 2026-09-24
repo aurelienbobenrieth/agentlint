@@ -60,7 +60,6 @@ jobs:
         uses: aurelienbobenrieth/agentlint/action@v0.1.5
         with:
           version: "0.1.5"
-          install: "true"
 
   command:
     if: >-
@@ -89,7 +88,6 @@ jobs:
         uses: aurelienbobenrieth/agentlint/action@v0.1.5
         with:
           version: "0.1.5"
-          install: "true"
 ```
 
 - `fetch-depth: 0`: change rules diff against the merge base with `origin/<base>`.
@@ -242,4 +240,4 @@ Checking a repository executes its configuration and detectors:
 - The `command` job runs same-repository branches (a bot's, an agent's) with `contents: write`. Hence the credential scrubbing above, and no other secret in that job.
 - Detached artifacts contain full source files with findings and review reasons. Restrict their audience and retention like the repository's.
 
-See [the security model](../SECURITY.md).
+See [the security model](../docs/security-model.md).

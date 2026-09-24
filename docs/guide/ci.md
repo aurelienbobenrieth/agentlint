@@ -26,12 +26,10 @@ A collaborator with write access replies `/agentlint approve <reason>` in a thre
 ```yaml
 name: agentlint
 on:
-  pull_request:
+  pull_request: { types: [opened, synchronize, reopened, ready_for_review] }
   issue_comment: { types: [created] }
   pull_request_review_comment: { types: [created] }
-concurrency:
-  group: agentlint-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: false
+permissions: {}
 jobs:
   gate:
     if: github.event_name == 'pull_request'
@@ -39,23 +37,29 @@ jobs:
     permissions: { contents: read, pull-requests: write, checks: write }
     steps:
       - uses: actions/checkout@v5
-        with: { fetch-depth: 0 } # required: change rules use the merge base
+        with: { fetch-depth: 0, persist-credentials: false } # required: change rules use the merge base
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - uses: aurelienbobenrieth/agentlint/action@v0.1.5
   command:
-    if: github.event_name != 'pull_request' && startsWith(github.event.comment.body, '/agentlint')
+    if: >-
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/agentlint'))
+      || (github.event_name == 'pull_request_review_comment' && startsWith(github.event.comment.body, '/agentlint'))
+    concurrency:
+      group: agentlint-command-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, checks: write }
     steps:
       - uses: actions/checkout@v5
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - uses: aurelienbobenrieth/agentlint/action@v0.1.5
 ```
 
 - `fetch-depth: 0` is required: change rules use the merge base.
+- `persist-credentials: false` keeps the token out of `.git/config`, where the install and `.agentlint/config.ts` could read it. The action passes it to `git fetch` and the approval push itself.
 - The action runs `npx @aurelienbbn/agentlint@<version>` and resolves the package for `.agentlint/config.ts` itself. Set `install: true` only if the config imports third-party rule packages.
 - Fork pull requests get a read-only token: annotations and the review artifact, no comments or approvals.
 - Every input and output, and `dry-run` for testing: [action README](../../action/README.md).

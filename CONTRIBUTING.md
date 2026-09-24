@@ -50,6 +50,8 @@ flowchart LR
 
 `publish.yml` rejects a tag that doesn't match the package version or isn't on `main`, then rebuilds, checks, smoke-tests, publishes with provenance, and creates the GitHub release.
 
+Publishing uses npm trusted publishing, with no token. The package's trusted publisher on npmjs.com must name repository `aurelienbobenrieth/agentlint`, workflow `publish.yml`, and environment `npm`; any mismatch fails the publish step after validation has passed.
+
 ## Writing rules
 
 One `defineRule` composes a revisioned `standard`, a versioned `detector`, and a repository `binding` ([guide](docs/guide/writing-rules.md)). Fixtures are proof samples, not a catalogue of mistakes. Before enabling a binding, run `agentlint rules test` and calibrate with `agentlint rules scan --review`.

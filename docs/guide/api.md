@@ -42,5 +42,5 @@ Detectors report synchronously. Breaking the reporting contract or returning a p
 
 ## Wire contract and calibration
 
-- `@aurelienbbn/agentlint/contract` holds the review wire contract. Decode `agentlint next --format json` with `NextResult`.
+- `@aurelienbbn/agentlint/contract` holds the review wire contract. Decode `agentlint next --format json` with `NextResult`. The contract and calibration exports are Effect Schemas: install the exact `effect` version pinned in agentlint's `dependencies` to decode them, because Schema values from two `effect` copies do not mix.
 - `@aurelienbbn/agentlint/calibration` holds the version 1 calibration report schemas and pure helpers used by `rules calibration`.
