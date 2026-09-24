@@ -23,6 +23,8 @@ flowchart LR
 
 The standard travels with every finding: its text, checks, and permitted examples. The agent doesn't rely on recall.
 
+One standard can have several detectors, one rule each. Share one `standard` object between them: config loading rejects rules whose standard has the same id but a different revision, title, summary, source, or guidance.
+
 ## A state rule is a code shape plus a standard
 
 ```ts

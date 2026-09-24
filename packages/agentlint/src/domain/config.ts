@@ -2,8 +2,9 @@
  * Repository configuration contracts. @module @since 0.2.0
  */
 
-import { Result, Schema } from "effect";
-import { defineRule, type AgentlintRule } from "./rule/model.js";
+import { Equal, Result, Schema } from "effect";
+import { normalizeGuidance } from "./guidance.js";
+import { defineRule, type AgentlintRule, type RuleStandard } from "./rule/model.js";
 
 export interface AgentlintConfig {
   /**
@@ -38,8 +39,17 @@ export interface NormalizedConfig {
  * @category Errors
  */
 export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/ConfigError", {
-  reason: Schema.Literals(["invalid_shape", "empty_base", "empty_ignore", "duplicate_binding", "extends_cycle"]),
+  reason: Schema.Literals([
+    "invalid_shape",
+    "empty_base",
+    "empty_ignore",
+    "duplicate_binding",
+    "conflicting_standard",
+    "extends_cycle",
+  ]),
   ruleId: Schema.optional(Schema.String),
+  standardId: Schema.optional(Schema.String),
+  conflictingRuleId: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
@@ -48,6 +58,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
       empty_base: "Config base must not be empty",
       empty_ignore: "Config ignore patterns must not be empty",
       duplicate_binding: `Duplicate rule binding id: ${this.ruleId}`,
+      conflicting_standard: `Standard ${this.standardId} differs between bindings ${this.conflictingRuleId} and ${this.ruleId}; share one standard definition`,
       extends_cycle: "Config extends contains a cycle",
     }[this.reason];
   }
@@ -99,12 +110,26 @@ function flatten({
 }
 
 /**
- * Resolve config layers and reject ambiguous binding identities. Internal to the engine.
+ * What a finding shows for its standard. An absent optional field equals one set to `undefined`.
+ */
+function standardView(standard: RuleStandard) {
+  return {
+    revision: standard.revision,
+    title: standard.title,
+    summary: standard.summary,
+    source: standard.source,
+    guidance: normalizeGuidance(standard.guidance),
+  };
+}
+
+/**
+ * Resolve config layers and reject ambiguous binding identities and standards. Internal to the engine.
  */
 export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   const layers: AgentlintConfig[] = [];
   flatten({ config, output: layers });
   const rulesById = new Map<string, AgentlintRule>();
+  const rulesByStandard = new Map<string, AgentlintRule>();
   const ignores: string[] = [];
   const base = layers.findLast((layer) => layer.base !== undefined)?.base;
 
@@ -115,6 +140,16 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
       const id = rule.binding.id;
       if (rulesById.has(id)) throw new ConfigError({ reason: "duplicate_binding", ruleId: id });
       rulesById.set(id, rule);
+      const first = rulesByStandard.get(rule.standard.id);
+      if (first === undefined) rulesByStandard.set(rule.standard.id, rule);
+      else if (!Equal.equals(standardView(first.standard), standardView(rule.standard))) {
+        throw new ConfigError({
+          reason: "conflicting_standard",
+          standardId: rule.standard.id,
+          ruleId: id,
+          conflictingRuleId: first.binding.id,
+        });
+      }
     }
     ignores.push(...(layer.ignores ?? []));
   }

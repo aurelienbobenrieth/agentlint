@@ -30,7 +30,7 @@ flowchart LR
 | Detector | `id`, `version`, `fixtures?`, then `match`/`createOnce`/`scan?` (state) or `detect` (change)   | detector package | `version`: normalized evidence semantics change                            |
 | Binding  | `id`, `authority`, `include?`, `exclude?`, `options?`, `dependencies?` (state), `reviewEpoch?` | repository       | `reviewEpoch`: the repository wants a fresh review                         |
 
-- **Standard.** No technology in the `id` unless the policy is technology-specific. `guidance` states decision checks and permitted paths, never known-bad code as an example. No authority, scope, or enabled flag.
+- **Standard.** No technology in the `id` unless the policy is technology-specific. `guidance` states decision checks and permitted paths, never known-bad code as an example. No authority, scope, or enabled flag. Rules sharing a standard id must carry the same revision, title, summary, source, and guidance; config loading rejects a mismatch with `ConfigError`.
 - **Detector.** Options must not change the standard's question. If they would change evidence semantics substantially, write another detector. Detector ids are not checked for uniqueness: the package owns its namespace.
 - **Binding.** Packages recommend, the repository selects. Binding ids must be unique. One detector can be bound twice with different ids and disjoint scopes. `reviewEpoch` invalidates compatible acceptances without a clock, for a policy or architecture change that source evidence does not show.
 
@@ -110,5 +110,6 @@ defineRule({
 - 2026-08-10: Accepted the standard, detector, and binding model. Added semantic standard revisions and material binding digests. Selected one discriminated `defineRule`.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-23: Reformatted for scanning. Corrected the binding digest inputs, which also cover `dependencies`, the `scan` mode, and `reviewEpoch`. Recorded the `dependencies` and `reviewEpoch` binding fields. Decision unchanged.
+- 2026-09-24: Config loading rejects rules that share a standard id but differ in its content, so one standard can't reach reviewers at two revisions or with two guidance texts.
 
 </details>
