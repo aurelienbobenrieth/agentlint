@@ -108,7 +108,14 @@ const relatedContext = ({
         h.details(
           [h.Class("guidance")],
           [
-            h.summary([h.Class("guidance__summary")], [icon({ name: "file", h }), h.code([], [file])]),
+            h.summary(
+              [h.Class("guidance__summary")],
+              [
+                h.span([h.Class("guidance__chevron")], [icon({ name: "chevron", h })]),
+                icon({ name: "file", h }),
+                h.code([], [file]),
+              ],
+            ),
             h.pre(
               [h.Class("code__lines")],
               highlightedLines({ source: state.sources[file] ?? "", file }).map((markup, index) =>
@@ -297,7 +304,7 @@ const guidance = ({
       h.summary(
         [h.Class("guidance__summary")],
         [
-          icon({ name: "chevron", h }),
+          h.span([h.Class("guidance__chevron")], [icon({ name: "chevron", h })]),
           h.span([], ["Rule guidance"]),
           ...kbd({ keys: ["G"], h }),
           h.code([], [finding.ruleId]),

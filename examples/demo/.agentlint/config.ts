@@ -148,7 +148,7 @@ const customerDataExports = defineRule({
           context.report({
             node,
             message: "Customer data crosses an export boundary; review it with the repository privacy contract.",
-            relatedFiles: ["policy/customer-data-exports.md"],
+            relatedFiles: ["policy/customer-data-exports.md", "src/contracts/customer-data-export.ts"],
           });
         },
       };
@@ -159,6 +159,8 @@ const customerDataExports = defineRule({
           files: {
             "fixture.ts": "exportCustomerData({ customerId, fields });",
             "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+            "src/contracts/customer-data-export.ts":
+              'export const allowedCustomerExportFields = ["profile", "orders", "invoices"] as const;',
           },
         },
       ],
@@ -167,6 +169,8 @@ const customerDataExports = defineRule({
           files: {
             "fixture.ts": "renderCustomerProfile({ customerId });",
             "policy/customer-data-exports.md": "Exports require an authenticated customer request.",
+            "src/contracts/customer-data-export.ts":
+              'export const allowedCustomerExportFields = ["profile", "orders", "invoices"] as const;',
           },
         },
       ],
@@ -176,7 +180,7 @@ const customerDataExports = defineRule({
     id: "privacy/customer-data-exports",
     authority: "human",
     include: ["src/**/*.{ts,tsx}"],
-    dependencies: ["policy/customer-data-exports.md"],
+    dependencies: ["policy/customer-data-exports.md", "src/contracts/customer-data-export.ts"],
     reviewEpoch: 1,
   },
 });

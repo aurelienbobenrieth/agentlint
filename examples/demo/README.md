@@ -85,9 +85,9 @@ pnpm agentlint review --base origin/main
 
 ### QA a multi-file finding
 
-Open **Customer-data exports follow the repository privacy contract**. Under **Related review context**, expand `policy/customer-data-exports.md` (the written policy) to read it beside the primary finding.
+Open **Customer-data exports follow the repository privacy contract**. Under **Related review context**, expand `policy/customer-data-exports.md` (the written policy) and `src/contracts/customer-data-export.ts` (the executable field contract) to read them beside the primary finding.
 
-The rule lists the policy in both `dependencies` and `relatedFiles` on purpose: dependencies participate in finding identity; `relatedFiles` selects the sources the reviewer sees.
+The rule lists both files in `dependencies` and in `relatedFiles` on purpose: dependencies participate in finding identity; `relatedFiles` selects the sources the reviewer sees.
 
 The binding also sets `reviewEpoch: 1`. Increment it only to make every otherwise-compatible decision for this rule be revisited; the next review then explains that the repository advanced the epoch.
 

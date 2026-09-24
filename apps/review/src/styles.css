@@ -1221,12 +1221,13 @@ pre {
   color: var(--text);
 }
 
-.guidance__summary .icon {
+.guidance__chevron {
+  display: inline-flex;
   rotate: -90deg;
   transition: rotate 140ms var(--ease);
 }
 
-.guidance[open] .guidance__summary .icon {
+.guidance[open] .guidance__chevron {
   rotate: 0deg;
 }
 
