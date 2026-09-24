@@ -30,7 +30,7 @@ flowchart LR
 | Detector | `id`, `version`, `fixtures?`, then `match`/`createOnce`/`scan?` (state) or `detect` (change)   | detector package | `version`: normalized evidence semantics change                            |
 | Binding  | `id`, `authority`, `include?`, `exclude?`, `options?`, `dependencies?` (state), `reviewEpoch?` | repository       | `reviewEpoch`: the repository wants a fresh review                         |
 
-- **Standard.** No technology in the `id` unless the policy is technology-specific. `guidance` states decision checks and permitted paths, never known-bad code as an example. No authority, scope, or enabled flag. Rules sharing a standard id must carry the same revision, title, summary, source, and guidance; config loading rejects a mismatch with `ConfigError`.
+- **Standard.** No technology in the `id` unless the policy is technology-specific. `guidance` states decision checks and permitted paths, never known-bad code as an example. No authority, scope, or enabled flag.
 - **Detector.** Options must not change the standard's question. If they would change evidence semantics substantially, write another detector. Detector ids are not checked for uniqueness: the package owns its namespace.
 - **Binding.** Packages recommend, the repository selects. Binding ids must be unique. One detector can be bound twice with different ids and disjoint scopes. `reviewEpoch` invalidates compatible acceptances without a clock, for a policy or architecture change that source evidence does not show.
 
@@ -78,6 +78,7 @@ defineRule({
 `FindingSource` = standard id and revision + detector id and version + binding id and digest + `reviewEpoch` when set. [ADR-005](./adr-005-fingerprints-and-lineage.md) adds the fingerprint. Acceptances key on all of it, never the standard alone.
 
 - Findings with the same standard are not merged. Their evidence can differ in meaning or lifetime. Presentation may group them without changing the gate.
+- **One standard id has one definition.** Config loading rejects rules whose standards share an id but differ in revision, title, summary, source, or guidance.
 - Any source change invalidates acceptances. The prior reason can show as lineage.
 
 ## Consequences
@@ -98,6 +99,7 @@ defineRule({
 | Standard owns lifecycle            | A standard can need both. Lifecycle is evidence lifetime, not intent.                                            |
 | Automatic detector selection       | Suggestions are fine. Auto-activation can apply wrong assumptions or scope.                                      |
 | Technology-specific standards only | Duplicates guidance and policy history across stacks.                                                            |
+| Match shared standards by revision | Editorial guidance edits keep the revision, so two definitions could still show reviewers different text.        |
 
 ## Reconsider when
 
@@ -110,6 +112,6 @@ defineRule({
 - 2026-08-10: Accepted the standard, detector, and binding model. Added semantic standard revisions and material binding digests. Selected one discriminated `defineRule`.
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-23: Reformatted for scanning. Corrected the binding digest inputs, which also cover `dependencies`, the `scan` mode, and `reviewEpoch`. Recorded the `dependencies` and `reviewEpoch` binding fields. Decision unchanged.
-- 2026-09-24: Config loading rejects rules that share a standard id but differ in its content, so one standard can't reach reviewers at two revisions or with two guidance texts.
+- 2026-09-24: One standard id has one definition; config loading rejects rules that disagree on it.
 
 </details>
