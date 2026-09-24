@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+### Patch Changes
+
+- [#35](https://github.com/aurelienbobenrieth/agentlint/pull/35) [`b092937`](https://github.com/aurelienbobenrieth/agentlint/commit/b092937ab65e14339967b86e586ab9a5b74e4c17) Thanks [@dependabot](https://github.com/apps/dependabot)! - Build and publish with current GitHub Actions: checkout 7, setup-node 7, pnpm action-setup 6, and changesets/action 2.
+
 ## 0.2.1
 
 ### Patch Changes
