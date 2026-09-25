@@ -8,10 +8,12 @@
  * @since 0.2.0
  */
 
-import { Effect, type FileSystem, type PlatformError } from "effect";
+import { Clock, Effect, type FileSystem, type PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 
-const ATTEMPTS = 100;
+// A waiter queues behind every writer ahead of it, and a loaded machine stretches each of their critical sections, so
+// the budget is wall-clock time rather than a retry count.
+const WAIT_MS = 10_000;
 const RETRY_MS = 20;
 
 const ownerFrom = (content: string): string => content.split("\n", 1)[0] ?? "";
@@ -32,7 +34,8 @@ export const withFileLock =
     const owner = randomUUID();
     const acquire = Effect.gen(function* () {
       yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(fail));
-      for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+      const deadline = (yield* Clock.currentTimeMillis) + WAIT_MS;
+      while ((yield* Clock.currentTimeMillis) < deadline) {
         const result = yield* fs.writeFileString(lock, `${owner}\n`, { flag: "wx" }).pipe(Effect.result);
         if (result._tag === "Success") return owner;
 
