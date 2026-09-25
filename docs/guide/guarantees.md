@@ -34,7 +34,7 @@ sequenceDiagram
 - A failure before replacement keeps the previous file; afterwards readers see the complete new file.
 - Power-loss durability and network filesystems are not certified.
 - A transaction holds its `.agentlint/*.lock` for milliseconds. Locks carry an ownership token, and a writer releases only its own.
-- **A lock is never stolen based on age**: a paused process may resume and write. After an abrupt process death, delete the orphaned lock by hand. The CLI fails clearly after a bounded wait (about 2 seconds).
+- **A lock is never stolen based on age**: a paused process may resume and write. After an abrupt process death, delete the orphaned lock by hand. The CLI fails clearly after a bounded wait of 10 seconds.
 - Git keeps historical decisions and outcomes. Lineage explains invalidation from the pre-cleanup snapshot; it is not a history service.
 
 ## Local human authority is accountability, not identity

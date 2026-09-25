@@ -60,6 +60,21 @@ afterEach(() => {
 });
 
 describe("cross-process file lock", () => {
+  it("waits for a slow owner that releases within the wait budget", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "agentlint-process-lock-"));
+    directories.add(directory);
+    const lock = join(directory, "store.lock");
+
+    const owner = start(directory, lock, 4_000);
+    const ownerResult = output(owner);
+    await acquired(owner);
+
+    const contender = await output(start(directory, lock, 0));
+    expect(await ownerResult).toMatchObject({ code: 0 });
+    expect(contender).toMatchObject({ code: 0, stdout: "ACQUIRED\nRELEASED\n" });
+    expect(existsSync(lock)).toBe(false);
+  }, 20_000);
+
   it("fails closed after an owner is interrupted and recovers only after explicit cleanup", async () => {
     const directory = mkdtempSync(join(tmpdir(), "agentlint-process-lock-"));
     directories.add(directory);
@@ -85,5 +100,5 @@ describe("cross-process file lock", () => {
     const recovered = await output(start(directory, lock, 10));
     expect(recovered).toMatchObject({ code: 0, stdout: "ACQUIRED\nRELEASED\n" });
     expect(existsSync(lock)).toBe(false);
-  }, 20_000);
+  }, 45_000);
 });
