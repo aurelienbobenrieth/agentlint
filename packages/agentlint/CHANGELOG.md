@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- [#42](https://github.com/aurelienbobenrieth/agentlint/pull/42) [`50127bd`](https://github.com/aurelienbobenrieth/agentlint/commit/50127bd83276ad456e89fd48e5445de44b8781b6) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Store writers now wait up to 10 seconds for a busy `.agentlint/*.lock` instead of about 2 seconds, so concurrent `accept`, `propose`, and outcome writes on a slow machine no longer fail with "The store is locked". An orphaned lock still fails closed, now after the longer wait.
+
 ## 0.3.0
 
 ### Minor Changes

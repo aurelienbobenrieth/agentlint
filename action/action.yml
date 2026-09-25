@@ -10,7 +10,7 @@ inputs:
   version:
     description: "@aurelienbbn/agentlint version to run, or file:<path> to a built checkout"
     required: false
-    default: "0.3.0"
+    default: "0.3.1"
   base:
     description: "Base branch of the pull request. Change rules diff against origin/<base>. HEAD, origin/..., and refs/... are passed as is."
     required: false
