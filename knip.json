@@ -9,7 +9,12 @@
     "packages/agentlint": {
       "entry": ["scripts/*.mjs", "skills/**/*.mjs"],
       "ignore": ["src/__fixtures__/**"],
-      "ignoreDependencies": ["@effect/platform-node-shared", "@tanstack/intent", "tree-sitter-wasms"]
+      "ignoreDependencies": [
+        "@effect/platform-node-shared",
+        "@tanstack/intent",
+        "tree-sitter-typescript",
+        "tree-sitter-wasms"
+      ]
     },
     "action": {
       "entry": ["test/fixtures/cli-stub.mjs"]
