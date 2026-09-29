@@ -97,6 +97,7 @@
     "@types/node": "22.20.4",
     "@types/picomatch": "4.0.3",
     "@vitest/coverage-v8": "5.0.1",
+    "tree-sitter-typescript": "0.23.2",
     "tree-sitter-wasms": "0.1.13",
     "tsdown": "0.23.0",
     "typescript": "catalog:",

@@ -60,6 +60,34 @@ describe("Parser", () => {
     );
   });
 
+  it.each([
+    { grammar: "tsx", label: "a Tailwind arbitrary variant", value: "[&_svg]:size-4" },
+    { grammar: "tsx", label: "a bare ampersand", value: "a & b" },
+  ])("parses a JSX string attribute holding $label with the $grammar grammar", async ({ grammar, value }) => {
+    await runWithParser(
+      Effect.gen(function* () {
+        const parser = yield* Parser;
+        const tree = yield* parser.parse({ source: `const A = () => <div className="${value}" />;\n`, grammar });
+
+        expect(tree.rootNode.hasError).toBe(false);
+      }),
+    );
+  });
+
+  it("parses a tagged template with an object type argument with the typescript grammar", async () => {
+    await runWithParser(
+      Effect.gen(function* () {
+        const parser = yield* Parser;
+        const tree = yield* parser.parse({
+          source: "const rows = sql<{ readonly id: string }>`SELECT id FROM job`;\n",
+          grammar: "typescript",
+        });
+
+        expect(tree.rootNode.hasError).toBe(false);
+      }),
+    );
+  });
+
   it("fails for unknown grammar", async () => {
     await expect(
       runWithParser(
