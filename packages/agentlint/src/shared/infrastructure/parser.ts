@@ -25,6 +25,14 @@ const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
   ["json", "tree-sitter-json.wasm"],
 );
 
+/**
+ * Where an unbuilt checkout finds a grammar. TSX comes from tree-sitter-typescript 0.23.2, since the 0.20 build in
+ * tree-sitter-wasms rejects `&` in JSX string attributes. TypeScript stays on 0.20, since 0.23.2 rejects a tagged
+ * template with an object type argument (`` sql<{ id: string }>`…` ``).
+ */
+const grammarDirectory = (filename: string): readonly string[] =>
+  filename === "tree-sitter-tsx.wasm" ? ["tree-sitter-typescript"] : ["tree-sitter-wasms", "out"];
+
 export function resolvePackagedWasmPath({
   path,
   dir,
@@ -88,7 +96,7 @@ export class Parser extends Context.Service<
             const current = path.resolve(nmBase, "web-tree-sitter", filename);
             if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
           } else {
-            const grammar = path.resolve(nmBase, "tree-sitter-wasms", "out", filename);
+            const grammar = path.resolve(nmBase, ...grammarDirectory(filename), filename);
             if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;
           }
         }
