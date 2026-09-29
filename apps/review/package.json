@@ -21,7 +21,7 @@
   "devDependencies": {
     "@aurelienbbn/agentlint": "workspace:*",
     "@effect/vitest": "catalog:",
-    "@foldkit/vite-plugin": "0.23.0",
+    "@foldkit/vite-plugin": "0.24.0",
     "@playwright/test": "1.63.0",
     "typescript": "catalog:",
     "vite": "8.3.0",
