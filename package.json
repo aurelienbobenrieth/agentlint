@@ -39,8 +39,8 @@
     "effect": "catalog:",
     "knip": "6.37.0",
     "npm": "12.0.2",
-    "oxfmt": "0.68.0",
-    "oxlint": "1.83.0",
+    "oxfmt": "0.70.0",
+    "oxlint": "1.85.0",
     "publint": "0.3.24"
   },
   "engines": {
