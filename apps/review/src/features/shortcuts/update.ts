@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
@@ -105,7 +105,7 @@ const pressedShortcut = ({
  */
 const closeHelp = (model: Model): UpdateReturn =>
   model.helpOpen
-    ? { model: evo(model, { helpOpen: () => false }), commands: [FocusElement({ selector: HELP_TRIGGER })] }
+    ? { model: modifyFields(model, { helpOpen: () => false }), commands: [FocusElement({ selector: HELP_TRIGGER })] }
     : { model };
 
 export const cases = ({
@@ -117,7 +117,9 @@ export const cases = ({
 }): Handlers<keyof typeof fields> => ({
   PressedShortcut: ({ action }) => pressedShortcut({ model, action, update }),
   ToggledHelp: () =>
-    model.helpOpen ? closeHelp(model) : { model: evo(model, { helpOpen: () => true }), commands: [ShowHelp()] },
+    model.helpOpen
+      ? closeHelp(model)
+      : { model: modifyFields(model, { helpOpen: () => true }), commands: [ShowHelp()] },
   ClosedHelp: () => closeHelp(model),
   PerformedDomEffect: () => ({ model }),
 });

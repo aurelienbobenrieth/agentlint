@@ -287,9 +287,9 @@ const cache: {
 } = { last: undefined, selection: undefined };
 
 /**
- * Memoised on the model fields it reads. `evo` keeps untouched fields referentially stable, so most renders (toasts,
- * resize, hover) hit the cache. The selection is resolved outside that memo so moving through the list never recomputes
- * statuses, groups or the sort.
+ * Memoised on the model fields it reads. `modifyFields` keeps untouched fields referentially stable, so most renders
+ * (toasts, resize, hover) hit the cache. The selection is resolved outside that memo so moving through the list never
+ * recomputes statuses, groups or the sort.
  */
 export const deriveReview = ({
   state,

@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
 import { draftFor, findingById } from "../../shared/selectors";
@@ -11,14 +11,14 @@ import { findingContext } from "./selectors";
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   ToggledIndependentReview: () => ({
-    model: evo(model, {
+    model: modifyFields(model, {
       independentReview: (active) => !active,
       revealedFindings: () => [],
       independentNotes: () => ({}),
     }),
   }),
   UpdatedIndependentNote: ({ findingId, value }) => ({
-    model: evo(model, { independentNotes: (notes) => ({ ...notes, [findingId]: value }) }),
+    model: modifyFields(model, { independentNotes: (notes) => ({ ...notes, [findingId]: value }) }),
   }),
   RevealedPriorDecision: ({ findingId }) => {
     const note = model.independentNotes[findingId]?.trim();
@@ -26,7 +26,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     return persistChange({
       model,
       change: (current) =>
-        evo(current, {
+        modifyFields(current, {
           revealedFindings: (ids) => [...new Set([...ids, findingId])],
           drafts: (drafts) => ({
             ...drafts,
@@ -36,12 +36,13 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     });
   },
   SelectedCodeView: ({ codeView }) =>
-    persistChange({ model, change: (current) => evo(current, { codeView: () => codeView }) }),
-  ToggledGuidance: () => persistChange({ model, change: (current) => evo(current, { guidanceOpen: (open) => !open }) }),
+    persistChange({ model, change: (current) => modifyFields(current, { codeView: () => codeView }) }),
+  ToggledGuidance: () =>
+    persistChange({ model, change: (current) => modifyFields(current, { guidanceOpen: (open) => !open }) }),
   SetGuidanceOpen: ({ open }) =>
     open === model.guidanceOpen
       ? { model }
-      : persistChange({ model, change: (current) => evo(current, { guidanceOpen: () => open }) }),
+      : persistChange({ model, change: (current) => modifyFields(current, { guidanceOpen: () => open }) }),
   ClickedCopyFindingContext: ({ findingId }) => {
     if (model.screen._tag !== "Reviewing") return { model };
     const finding = findingById({ state: model.screen.state, findingId });
@@ -74,7 +75,10 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       return enqueueToast({ model, message: "That application is not available for this review.", tone: "danger" });
     }
     return appendCommands({
-      result: persistChange({ model, change: (current) => evo(current, { preferredApplication: () => application }) }),
+      result: persistChange({
+        model,
+        change: (current) => modifyFields(current, { preferredApplication: () => application }),
+      }),
       commands: [OpenEditor({ findingId, application })],
     });
   },

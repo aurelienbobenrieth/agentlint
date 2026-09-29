@@ -55,7 +55,7 @@ export const keyboard = (entry: SubscriptionEntry) =>
       Subscription.fromEventFilterMap({
         target: () => window,
         type: "keydown",
-        toMessage: (event) => {
+        filterMapEvent: (event) => {
           if (event.isComposing || event.repeat) return Option.none();
           const action = shortcutFor({
             key: event.key,

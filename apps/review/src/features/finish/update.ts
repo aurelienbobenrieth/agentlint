@@ -1,5 +1,5 @@
 import { calibrationOutput } from "../calibration/selectors";
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import { type ExportKind, type Model, Screen } from "../../shared/model";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
@@ -25,7 +25,7 @@ const finished = ({
   readonly screen: Finished;
   readonly pendingExports: ReadonlyArray<ExportKind>;
 }): UpdateReturn => ({
-  model: evo(model, {
+  model: modifyFields(model, {
     screen: () => screen,
     toasts: () => [],
     finishing: () => false,
@@ -49,7 +49,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   ClickedFinish: () => {
     if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null || model.finishing) return { model };
     return {
-      model: evo(model, { finishing: () => true }),
+      model: modifyFields(model, { finishing: () => true }),
       commands: [model.screen.state.transport === "detached" ? PrepareDetachedFinish() : FinishReview()],
     };
   },
@@ -73,7 +73,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       pendingExports: [],
     }),
   FailedFinish: ({ message }) =>
-    enqueueToast({ model: evo(model, { finishing: () => false }), message, tone: "danger" }),
+    enqueueToast({ model: modifyFields(model, { finishing: () => false }), message, tone: "danger" }),
   ClickedCopyInstructions: () => ({
     model,
     commands: [CopyText({ content: agentInstructions(model), ...exportKind({ model, kind: "feedback" }) })],
@@ -110,7 +110,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     const pending = model.pendingExports.filter((candidate) => candidate !== kind);
     const settled = pending.length === 0 && model.pendingExports.length > 0 ? [MarkDirty({ dirty: false })] : [];
     return appendCommands({
-      result: enqueueToast({ model: evo(model, { pendingExports: () => pending }), message, tone: "success" }),
+      result: enqueueToast({ model: modifyFields(model, { pendingExports: () => pending }), message, tone: "success" }),
       commands: settled,
     });
   },

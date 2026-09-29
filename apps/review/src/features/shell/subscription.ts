@@ -5,7 +5,7 @@ import { Message } from "../../message";
 import type { SubscriptionEntry } from "../../shared/subscription";
 
 const ended = (type: "pointerup" | "pointercancel") =>
-  Subscription.fromEvent({ target: () => window, type, toMessage: () => Message.EndedSidebarResize() });
+  Subscription.fromEvent({ target: () => window, type, mapEvent: () => Message.EndedSidebarResize() });
 
 /**
  * Pointer tracking only runs while a resize drag is active. `pointercancel` (touch scroll takeover, a system gesture)
@@ -22,7 +22,7 @@ export const sidebarResize = (entry: SubscriptionEntry) =>
             Subscription.fromEvent({
               target: () => window,
               type: "pointermove",
-              toMessage: (event) => Message.ResizedSidebar({ width: event.clientX }),
+              mapEvent: (event) => Message.ResizedSidebar({ width: event.clientX }),
             }),
             Stream.merge(ended("pointerup"), ended("pointercancel")),
           ),

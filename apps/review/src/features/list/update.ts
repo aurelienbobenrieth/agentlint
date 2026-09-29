@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
 import { deriveReview } from "../../shared/selectors";
@@ -12,7 +12,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     persistChange({
       model,
       change: (current) => {
-        const switched = evo(current, { view: () => view });
+        const switched = modifyFields(current, { view: () => view });
         const first =
           switched.screen._tag === "Reviewing"
             ? deriveReview({ state: switched.screen.state, model: switched }).visible[0]
@@ -23,8 +23,8 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   SelectedFinding: ({ findingId }) =>
     persistChange({
       model,
-      change: (current) => evo(selectFinding({ model: current, findingId }), { sidebarOpen: () => true }),
+      change: (current) => modifyFields(selectFinding({ model: current, findingId }), { sidebarOpen: () => true }),
     }),
   SettledSelection: ({ version }) =>
-    version === model.selectionVersion ? { model: evo(model, { selectionSettled: () => true }) } : { model },
+    version === model.selectionVersion ? { model: modifyFields(model, { selectionSettled: () => true }) } : { model },
 });
