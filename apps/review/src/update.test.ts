@@ -745,24 +745,24 @@ describe("selection after a decision", () => {
   });
 });
 
-describe("loaded state", () => {
-  const loaded = ({
-    payload,
-    saved,
-  }: {
-    readonly payload: ReviewStatePayload;
-    readonly saved: ReturnType<typeof decodeSavedReview>;
-  }) =>
-    update({
-      model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
-      message: Message.LoadedState({
-        state: payload,
-        saved: saved.saved,
-        savedUnreadable: saved.unreadable,
-        savedError: null,
-      }),
-    });
+const loaded = ({
+  payload,
+  saved,
+}: {
+  readonly payload: ReviewStatePayload;
+  readonly saved: ReturnType<typeof decodeSavedReview>;
+}) =>
+  update({
+    model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
+    message: Message.LoadedState({
+      state: payload,
+      saved: saved.saved,
+      savedUnreadable: saved.unreadable,
+      savedError: null,
+    }),
+  });
 
+describe("loaded state", () => {
   it("rejects a state that repeats a finding id", () => {
     const payload = state("review");
     const original = payload.findings[0];

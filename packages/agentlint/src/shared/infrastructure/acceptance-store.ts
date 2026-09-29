@@ -214,6 +214,13 @@ export function reconcileAcceptanceRecords({
   return { records: sorted, byKey: new Map(sorted.map((record) => [keyOf(record), record])), removed };
 }
 
+const ioError = (error: PlatformError.PlatformError | string) =>
+  new AcceptanceStoreError({
+    reason: "io",
+    detail: Schema.is(Schema.String)(error) ? error : error.message,
+    line: undefined,
+  });
+
 export class AcceptanceStore extends Context.Service<
   AcceptanceStore,
   {
@@ -231,12 +238,6 @@ export class AcceptanceStore extends Context.Service<
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(env.cwd, ...ACCEPTANCE_PATH);
       const lock = path.resolve(directory, "acceptances.lock");
-      const ioError = (error: PlatformError.PlatformError | string) =>
-        new AcceptanceStoreError({
-          reason: "io",
-          detail: Schema.is(Schema.String)(error) ? error : error.message,
-          line: undefined,
-        });
       const locked = withFileLock({ fs, directory, lock, fail: ioError });
 
       const readRecords = (): Effect.Effect<AcceptanceRecord[], AcceptanceStoreError> =>

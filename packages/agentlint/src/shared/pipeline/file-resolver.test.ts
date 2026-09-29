@@ -192,46 +192,44 @@ describe("resolveFiles", () => {
   });
 });
 
-describe("resolveFiles over a repository", () => {
-  const withDirectory = async ({
-    contents,
-    body,
-  }: {
-    readonly contents: Record<string, string>;
-    readonly body: (context: {
-      readonly root: string;
-      readonly git: (...args: string[]) => string;
-      readonly resolveWithGit: (options: ResolveOptions) => Promise<ReadonlyArray<string>>;
-    }) => Promise<void>;
-  }) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentlint-resolver-")));
-    const git = (...args: string[]) =>
-      execFileSync(
-        "git",
-        ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", ...args],
-        { cwd: root, windowsHide: true, stdio: "pipe", encoding: "utf8" },
-      ).trim();
-    const layer = Git.layer.pipe(Layer.provideMerge(envLayer(root)));
-    try {
-      for (const [file, content] of Object.entries(contents)) {
-        mkdirSync(dirname(join(root, file)), { recursive: true });
-        writeFileSync(join(root, file), content);
-      }
-      await body({
-        root,
-        git,
-        resolveWithGit: (options) =>
-          Effect.runPromise(
-            Effect.flatMap(Git, (service) => resolveFiles({ options, gitService: service })).pipe(
-              Effect.provide(layer),
-            ),
-          ),
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
+const withDirectory = async ({
+  contents,
+  body,
+}: {
+  readonly contents: Record<string, string>;
+  readonly body: (context: {
+    readonly root: string;
+    readonly git: (...args: string[]) => string;
+    readonly resolveWithGit: (options: ResolveOptions) => Promise<ReadonlyArray<string>>;
+  }) => Promise<void>;
+}) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentlint-resolver-")));
+  const git = (...args: string[]) =>
+    execFileSync(
+      "git",
+      ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", ...args],
+      { cwd: root, windowsHide: true, stdio: "pipe", encoding: "utf8" },
+    ).trim();
+  const layer = Git.layer.pipe(Layer.provideMerge(envLayer(root)));
+  try {
+    for (const [file, content] of Object.entries(contents)) {
+      mkdirSync(dirname(join(root, file)), { recursive: true });
+      writeFileSync(join(root, file), content);
     }
-  };
+    await body({
+      root,
+      git,
+      resolveWithGit: (options) =>
+        Effect.runPromise(
+          Effect.flatMap(Git, (service) => resolveFiles({ options, gitService: service })).pipe(Effect.provide(layer)),
+        ),
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+};
 
+describe("resolveFiles over a repository", () => {
   const tree = {
     ".gitignore": "build/\nnode_modules/\n",
     "src/dist/x.ts": "x();\n",

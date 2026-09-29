@@ -36,6 +36,20 @@ const definitionError = (rule: RuntimeRuleDefinition): RuleDefinitionError | und
   return undefined;
 };
 
+const withOptions =
+  (
+    options:
+      | CanonicalValue
+      | Date
+      | RegExp
+      | (() => boolean)
+      | { readonly callback: () => boolean }
+      | { readonly since: Date }
+      | { readonly matcher: RegExp },
+  ) =>
+  () =>
+    Reflect.apply(defineRule, undefined, [{ ...valid, binding: { ...valid.binding, options } }]);
+
 describe("defineRule rejects what the type system cannot see", () => {
   it("accepts the baseline rules used below", () => {
     expect(definitionError(valid)).toBeUndefined();
@@ -124,19 +138,6 @@ describe("defineRule rejects what the type system cannot see", () => {
   });
 
   it("rejects options that cannot be part of a stable binding digest", () => {
-    const withOptions =
-      (
-        options:
-          | CanonicalValue
-          | Date
-          | RegExp
-          | (() => boolean)
-          | { readonly callback: () => boolean }
-          | { readonly since: Date }
-          | { readonly matcher: RegExp },
-      ) =>
-      () =>
-        Reflect.apply(defineRule, undefined, [{ ...valid, binding: { ...valid.binding, options } }]);
     expect(withOptions({ limit: 5, tags: ["a"], nested: { on: true } })).not.toThrow();
     expect(withOptions({ since: new Date(0) })).toThrow("plain objects");
     expect(withOptions({ matcher: /x/ })).toThrow("plain objects");
