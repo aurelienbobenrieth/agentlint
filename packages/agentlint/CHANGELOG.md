@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+### Patch Changes
+
+- [#51](https://github.com/aurelienbobenrieth/agentlint/pull/51) [`7fc45f0`](https://github.com/aurelienbobenrieth/agentlint/commit/7fc45f02ef7eab436d97a5709d69e50b8d84b78c) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Upgrade Effect and its Node platform packages to `4.0.0-rc.116`. Consumers that pin `@effect/platform-node-shared` alongside agentlint should move that pin to rc.116.
+
 ## 0.3.2
 
 ### Patch Changes
