@@ -88,7 +88,7 @@
     "effect": "catalog:",
     "jiti": "2.7.0",
     "picomatch": "4.0.7",
-    "web-tree-sitter": "0.25.10"
+    "web-tree-sitter": "0.27.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
