@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
 import { deriveReview } from "../../shared/selectors";
@@ -15,7 +15,7 @@ export const selectFinding = ({
   readonly model: Model;
   readonly findingId: string | null;
 }): Model =>
-  evo(model, {
+  modifyFields(model, {
     selectedFindingId: () => findingId,
     selectionSettled: () => true,
     selectionVersion: (version) => version + 1,
@@ -49,7 +49,7 @@ export const reconcileSelection = ({
   if (next === after.selectedFindingId) return { model: after };
   const version = after.selectionVersion + 1;
   return {
-    model: evo(after, {
+    model: modifyFields(after, {
       selectedFindingId: () => next,
       selectionSettled: () => next === null,
       selectionVersion: () => version,

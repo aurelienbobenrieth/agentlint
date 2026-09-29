@@ -1,5 +1,5 @@
 import { independentHidden } from "../detail/selectors";
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { ReviewActionRequest, ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { type Draft, type Model, Screen } from "../../shared/model";
@@ -23,7 +23,7 @@ const updateDraft = ({
   readonly findingId: string;
   readonly change: (draft: Draft) => Draft;
 }): Model =>
-  evo(model, {
+  modifyFields(model, {
     drafts: (drafts) => ({ ...drafts, [findingId]: change(draftFor({ model, findingId })) }),
   });
 
@@ -140,7 +140,7 @@ export const submit = ({
     });
   }
   return appendCommands({
-    result: persist(evo(model, { busyFindingId: () => findingId })),
+    result: persist(modifyFields(model, { busyFindingId: () => findingId })),
     commands: [SubmitAction({ request })],
   });
 };
@@ -191,7 +191,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   CompletedAction: ({ findingId, state, message }) => {
     const duplicate = duplicateFindingId(state);
     if (duplicate !== null) return rejectDuplicateIds({ model, id: duplicate });
-    const confirmed = evo(
+    const confirmed = modifyFields(
       updateDraft({
         model,
         findingId,
@@ -215,10 +215,10 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   // offers the reload.
   RecordedActionRefreshFailed: () =>
     enqueueToast({
-      model: evo(model, { busyFindingId: () => null, refreshFailed: () => true }),
+      model: modifyFields(model, { busyFindingId: () => null, refreshFailed: () => true }),
       message: "Decision saved; reload to refresh.",
       tone: "neutral",
     }),
   FailedAction: ({ message }) =>
-    enqueueToast({ model: evo(model, { busyFindingId: () => null }), message, tone: "danger" }),
+    enqueueToast({ model: modifyFields(model, { busyFindingId: () => null }), message, tone: "danger" }),
 });

@@ -12,16 +12,17 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@effect/platform-browser": "catalog:",
     "@fontsource-variable/geist": "5.3.0",
     "@fontsource-variable/geist-mono": "5.3.0",
     "effect": "catalog:",
-    "foldkit": "0.162.0",
+    "foldkit": "0.163.0",
     "highlight.js": "11.12.0"
   },
   "devDependencies": {
     "@aurelienbbn/agentlint": "workspace:*",
     "@effect/vitest": "catalog:",
-    "@foldkit/vite-plugin": "0.23.0",
+    "@foldkit/vite-plugin": "0.24.0",
     "@playwright/test": "1.63.0",
     "typescript": "catalog:",
     "vite": "8.3.0",

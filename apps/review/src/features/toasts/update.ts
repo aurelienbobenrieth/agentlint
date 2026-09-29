@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 
 import type { Model, ToastTone } from "../../shared/model";
 import type { Handlers, UpdateReturn } from "../../shared/update";
@@ -38,7 +38,7 @@ export const enqueueToast = ({
   readonly tone?: ToastTone;
 }): UpdateReturn => {
   const id = model.nextToastId;
-  const next = evo(model, {
+  const next = modifyFields(model, {
     toasts: (toasts) => capped([...toasts, { id, message, tone, phase: "visible" as const }]),
     nextToastId: (value) => value + 1,
   });
@@ -51,7 +51,7 @@ export const dismissToast = ({ model, id }: { readonly model: Model; readonly id
   const toast = model.toasts.find((candidate) => candidate.id === id);
   if (toast === undefined || toast.phase === "leaving") return { model };
   return {
-    model: evo(model, {
+    model: modifyFields(model, {
       toasts: (toasts) =>
         toasts.map((candidate) => (candidate.id === id ? { ...candidate, phase: "leaving" as const } : candidate)),
     }),
@@ -60,13 +60,15 @@ export const dismissToast = ({ model, id }: { readonly model: Model; readonly id
 };
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
-  HoveredToasts: () => ({ model: evo(model, { toastsPaused: () => true }) }),
-  LeftToasts: () => ({ model: evo(model, { toastsPaused: () => false }) }),
+  HoveredToasts: () => ({ model: modifyFields(model, { toastsPaused: () => true }) }),
+  LeftToasts: () => ({ model: modifyFields(model, { toastsPaused: () => false }) }),
   ClickedDismissToast: ({ id }) => dismissToast({ model, id }),
   ExpiredToast: ({ id }) =>
     model.toastsPaused && model.toasts.some((toast) => toast.id === id)
       ? { model, commands: [ExpireToast({ id, delayMs: 1_500 })] }
       : dismissToast({ model, id }),
-  RemovedToast: ({ id }) => ({ model: evo(model, { toasts: (toasts) => toasts.filter((toast) => toast.id !== id) }) }),
+  RemovedToast: ({ id }) => ({
+    model: modifyFields(model, { toasts: (toasts) => toasts.filter((toast) => toast.id !== id) }),
+  }),
   CompletedUtility: ({ message, tone }) => enqueueToast({ model, message, tone }),
 });

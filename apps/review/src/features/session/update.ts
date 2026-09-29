@@ -1,4 +1,4 @@
-import { evo } from "foldkit/struct";
+import { modifyFields } from "foldkit/struct";
 import { Schema } from "effect";
 
 import { type Model, PersistedReview, persistedReview, Screen } from "../../shared/model";
@@ -51,7 +51,7 @@ export const persistChange = ({
 export const persistLater = (model: Model): UpdateReturn => {
   if (model.screen._tag !== "Reviewing") return { model };
   const version = model.saveVersion + 1;
-  return { model: evo(model, { saveVersion: () => version }), commands: [DelayPersist({ version })] };
+  return { model: modifyFields(model, { saveVersion: () => version }), commands: [DelayPersist({ version })] };
 };
 
 /**
@@ -59,7 +59,7 @@ export const persistLater = (model: Model): UpdateReturn => {
  * decision for both, so it is refused outright.
  */
 export const rejectDuplicateIds = ({ model, id }: { readonly model: Model; readonly id: string }): UpdateReturn => ({
-  model: evo(model, {
+  model: modifyFields(model, {
     screen: () =>
       Screen.LoadFailed({
         message: `This review lists the finding id "${id}" more than once, so a decision could not be tied to one finding. Generate the review again.`,
@@ -72,7 +72,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   LoadedState: ({ state, saved, savedUnreadable, savedError }) => {
     const duplicate = duplicateFindingId(state);
     if (duplicate !== null) return rejectDuplicateIds({ model, id: duplicate });
-    const restored = evo(model, {
+    const restored = modifyFields(model, {
       screen: () => Screen.Reviewing({ state }),
       view: () => saved?.view ?? model.view,
       facets: () => saved?.facets ?? model.facets,
@@ -90,7 +90,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       toasts: () => [],
     });
     // The selection always names a listed finding. Nothing was decided yet, so shortcuts need not wait.
-    const selected = evo(reconcileSelection({ before: restored, after: restored }).model, {
+    const selected = modifyFields(reconcileSelection({ before: restored, after: restored }).model, {
       selectionSettled: () => true,
     });
     const commands = [MarkDirty({ dirty: hasUnexportedDecisions(selected) })];
@@ -117,16 +117,18 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     // A failed reload keeps the review on screen; only the first load has nothing else to show.
     model.screen._tag === "Reviewing"
       ? enqueueToast({ model, message: `Reload failed: ${message}`, tone: "danger" })
-      : { model: evo(model, { screen: () => Screen.LoadFailed({ message }) }) },
+      : { model: modifyFields(model, { screen: () => Screen.LoadFailed({ message }) }) },
   ClickedReloadReview: () => ({ model, commands: [LoadReview()] }),
   ElapsedPersistDelay: ({ version }) => (version === model.saveVersion ? persist(model) : { model }),
-  CompletedPersistence: () => ({ model: model.persistFailed ? evo(model, { persistFailed: () => false }) : model }),
+  CompletedPersistence: () => ({
+    model: model.persistFailed ? modifyFields(model, { persistFailed: () => false }) : model,
+  }),
   // A failing store fails on every write. The reviewer is told once, until a write succeeds again.
   FailedPersistence: ({ message }) =>
     model.persistFailed
       ? { model }
       : enqueueToast({
-          model: evo(model, { persistFailed: () => true }),
+          model: modifyFields(model, { persistFailed: () => true }),
           message: `Local save failed: ${message}. New decisions exist only in this tab until it succeeds.`,
           tone: "danger",
         }),

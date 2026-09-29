@@ -10,10 +10,11 @@ onlyBuiltDependencies:
   - msgpackr-extract
 
 catalog:
-  "@effect/platform-node": 4.0.0-rc.115
-  "@effect/platform-node-shared": 4.0.0-rc.115
+  "@effect/platform-browser": 4.0.0-rc.116
+  "@effect/platform-node": 4.0.0-rc.116
+  "@effect/platform-node-shared": 4.0.0-rc.116
   "@tanstack/intent": 0.4.0
-  effect: 4.0.0-rc.115
-  "@effect/vitest": 4.0.0-rc.115
+  effect: 4.0.0-rc.116
+  "@effect/vitest": 4.0.0-rc.116
   typescript: 7.0.2
   vitest: 5.0.1
