@@ -51,7 +51,7 @@ agentlint has no warning level. A finding is either a current obligation or not 
 
 ## 4. Wire the gate into the coding agent
 
-Copy `agentlint-gate.mjs` from this skill's directory (`node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/agentlint-gate.mjs`) to `.agentlint/hooks/agentlint-gate.mjs` and commit it. It runs the local CLI, maps a closed gate to exit code 2 with the findings on stderr, and lets a stop continue when `stop_hook_active` is set, so a human-authority finding interrupts once instead of looping.
+Copy `agentlint-gate.mjs` from this skill's directory (`node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/agentlint-gate.mjs`) to `.agentlint/hooks/agentlint-gate.mjs` and commit it. It runs the local CLI, maps a closed gate to exit code 2 with the findings on stderr, lets a stop continue when `stop_hook_active` is set, so a human-authority finding interrupts once instead of looping, and gates only a turn that edited files, so a question asked after earlier coding is never handed the open findings.
 
 Merge into an existing hook file; do not replace other hooks.
 
@@ -77,7 +77,7 @@ Merge into an existing hook file; do not replace other hooks.
 }
 ```
 
-The Stop hook runs the complete gate and returns every unresolved finding to the agent once. Harnesses mark the retry with `stop_hook_active`; the adapter then lets the turn end so a human-authority finding cannot create an infinite loop. CI remains the hard merge gate. For earlier feedback, optionally add the same command with `edit` as a `PostToolUse` hook (matcher `Edit|Write` for Claude Code, `apply_patch|Edit|Write` for Codex). It runs the partial `check` after each edit and reports without blocking. Offer it only for small rule sets; it repeats open findings after every edit.
+The Stop hook runs the complete gate after any turn that called an edit tool and returns every unresolved finding to the agent once. It reads the edit calls from the transcript, so shell edits go unseen; CI still gates them. Harnesses mark the retry with `stop_hook_active`; the adapter then lets the turn end so a human-authority finding cannot create an infinite loop. CI remains the hard merge gate. For earlier feedback, optionally add the same command with `edit` as a `PostToolUse` hook (matcher `Edit|Write` for Claude Code, `apply_patch|Edit|Write` for Codex). It runs the partial `check` after each edit and reports without blocking. Offer it only for small rule sets; it repeats open findings after every edit.
 
 For any other agent, add one line to `AGENTS.md`: "Run `<agentlint-cmd> check --all` before you finish; the work is complete only when it exits 0." An instruction is weaker than a hook, so the CI gate matters more there.
 

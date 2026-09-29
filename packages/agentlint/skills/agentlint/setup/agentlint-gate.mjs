@@ -33,9 +33,55 @@ const findFrom = (directory) => {
 
 const findBin = () => findFrom(root);
 
-// A stop that this hook already blocked continues, so a finding the agent cannot
-// close (human authority) interrupts once instead of looping.
-if (mode === "stop" && readInput().stop_hook_active === true) process.exit(0);
+const editTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"]);
+const callTypes = new Set(["tool_use", "function_call", "custom_tool_call"]);
+
+// Codex code mode routes every tool through `exec`; a patch shows only in its input.
+const isEditCall = (node) => {
+  if (Array.isArray(node)) return node.some(isEditCall);
+  if (node === null || typeof node !== "object") return false;
+  if (callTypes.has(node.type) && editTools.has(node.name)) return true;
+  if (callTypes.has(node.type) && `${node.input ?? node.arguments ?? ""}`.includes("*** Begin Patch")) return true;
+  return Object.values(node).some(isEditCall);
+};
+
+// Claude Code logs a typed prompt as a user message without tool results; hook
+// feedback, compaction summaries and task notifications are not prompts. Codex
+// logs each turn as `task_started` (older builds: `user_message`).
+const isTurnStart = (entry) => {
+  if (entry?.type === "event_msg") return ["task_started", "user_message"].includes(entry.payload?.type);
+  if (entry?.type !== "user" || entry.isMeta === true || entry.isCompactSummary === true) return false;
+  const content = entry.message?.content;
+  if (typeof content === "string") return !content.startsWith("<task-notification>");
+  return Array.isArray(content) && !content.some((block) => block?.type === "tool_result");
+};
+
+// Only a turn that called an edit tool is gated: a question, a review, or talk after
+// earlier coding changed nothing, so open findings (often another agent's work in
+// progress) must not hijack the reply. Edits made through a shell go unseen; CI
+// still gates them. Without a readable transcript the gate runs.
+const turnEdited = (transcriptPath) => {
+  if (typeof transcriptPath !== "string" || !existsSync(transcriptPath)) return true;
+  const entries = readFileSync(transcriptPath, "utf8")
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        // REASON: a partially written last line holds no completed tool call.
+        return [];
+      }
+    });
+  return entries.slice(entries.findLastIndex(isTurnStart) + 1).some(isEditCall);
+};
+
+if (mode === "stop") {
+  const input = readInput();
+  // A stop that this hook already blocked continues, so a finding the agent cannot
+  // close (human authority) interrupts once instead of looping.
+  if (input.stop_hook_active === true) process.exit(0);
+  if (!turnEdited(input.transcript_path)) process.exit(0);
+}
 
 const bin = findBin();
 if (!bin) {
