@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Patch Changes
+
+- [#49](https://github.com/aurelienbobenrieth/agentlint/pull/49) [`046588c`](https://github.com/aurelienbobenrieth/agentlint/commit/046588c905837f37049ea4c77b14dd8ca169d1dc) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - The `setup` Stop hook (`agentlint-gate.mjs`) now gates only a turn that edited files. A question or a review asked after earlier coding ends normally instead of being handed the open findings, which are often another agent's work in progress. Codex edits made through code mode's `exec` tool (an `apply_patch` inside its input) now count as edits. Copy the new `agentlint-gate.mjs` over `.agentlint/hooks/agentlint-gate.mjs` to pick this up.
+
 ## 0.3.1
 
 ### Patch Changes
