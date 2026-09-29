@@ -17,9 +17,10 @@ function decodePackageManifest(text) {
   const value = JSON.parse(text);
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new TypeError("invalid package manifest");
-  const raw = /**
-   * @type {Record<string, unknown>}
-   */ (value);
+  const raw =
+    /**
+     * @type {Record<string, unknown>}
+     */ (value);
   const version = raw["version"];
   const bin = raw["bin"];
   if (version !== undefined && typeof version !== "string") throw new TypeError("invalid package version");
@@ -31,9 +32,10 @@ function decodePackageManifest(text) {
     ...(typeof version === "string" ? { version } : {}),
     ...(typeof bin === "string" || (typeof bin === "object" && bin !== null)
       ? {
-          bin: /**
-           * @type {string | Record<string, string>}
-           */ (bin),
+          bin:
+            /**
+             * @type {string | Record<string, string>}
+             */ (bin),
         }
       : {}),
   };

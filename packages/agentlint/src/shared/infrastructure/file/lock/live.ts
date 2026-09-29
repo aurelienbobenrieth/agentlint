@@ -18,19 +18,29 @@ const RETRY_MS = 20;
 
 const ownerFrom = (content: string): string => content.split("\n", 1)[0] ?? "";
 
-export const withFileLock =
-  <E>({
-    fs,
-    directory,
-    lock,
-    fail,
-  }: {
-    readonly fs: FileSystem.FileSystem;
-    readonly directory: string;
-    readonly lock: string;
-    readonly fail: (detail: PlatformError.PlatformError | string) => E;
-  }) =>
-  <A, E2, R>(operation: Effect.Effect<A, E2, R>): Effect.Effect<A, E | E2, R> => {
+export const withFileLock = <E>({
+  fs,
+  directory,
+  lock,
+  fail,
+}: {
+  readonly fs: FileSystem.FileSystem;
+  readonly directory: string;
+  readonly lock: string;
+  readonly fail: (detail: PlatformError.PlatformError | string) => E;
+}) => {
+  // A failed release is a typed store failure: the write may have landed, but the lock was not ours to remove.
+  const release = (acquiredOwner: string) =>
+    fs.readFileString(lock).pipe(
+      Effect.mapError(fail),
+      Effect.flatMap((content) =>
+        ownerFrom(content) === acquiredOwner
+          ? fs.remove(lock).pipe(Effect.mapError(fail))
+          : Effect.fail(fail(`Lock ownership changed while the store was open: ${lock}`)),
+      ),
+    );
+
+  return <A, E2, R>(operation: Effect.Effect<A, E2, R>): Effect.Effect<A, E | E2, R> => {
     const owner = randomUUID();
     const acquire = Effect.gen(function* () {
       yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(fail));
@@ -64,16 +74,6 @@ export const withFileLock =
       );
     });
 
-    // A failed release is a typed store failure: the write may have landed, but the lock was not ours to remove.
-    const release = (acquiredOwner: string) =>
-      fs.readFileString(lock).pipe(
-        Effect.mapError(fail),
-        Effect.flatMap((content) =>
-          ownerFrom(content) === acquiredOwner
-            ? fs.remove(lock).pipe(Effect.mapError(fail))
-            : Effect.fail(fail(`Lock ownership changed while the store was open: ${lock}`)),
-        ),
-      );
-
     return Effect.acquireUseRelease(acquire, () => operation, release);
   };
+};

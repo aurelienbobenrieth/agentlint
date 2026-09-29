@@ -63,6 +63,13 @@ function serializeProposals(records: ReadonlyArray<ProposalRecord>): string {
   return sorted.length === 0 ? "" : `${sorted.map((record) => encodeRecord(record)).join("\n")}\n`;
 }
 
+const io = (error: PlatformError.PlatformError | string) =>
+  new ProposalStoreError({
+    reason: "io",
+    detail: Schema.is(Schema.String)(error) ? error : error.message,
+    line: undefined,
+  });
+
 export class ProposalStore extends Context.Service<
   ProposalStore,
   {
@@ -87,12 +94,6 @@ export class ProposalStore extends Context.Service<
       const path = yield* Path.Path;
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(env.cwd, ...PROPOSAL_PATH);
-      const io = (error: PlatformError.PlatformError | string) =>
-        new ProposalStoreError({
-          reason: "io",
-          detail: Schema.is(Schema.String)(error) ? error : error.message,
-          line: undefined,
-        });
       const locked = withFileLock({ fs, directory, lock: path.resolve(directory, "proposals.lock"), fail: io });
 
       const readRecords = (): Effect.Effect<ProposalRecord[], ProposalStoreError> =>

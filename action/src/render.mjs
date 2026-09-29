@@ -240,9 +240,10 @@ export function renderSummary(input) {
    */
   const pushWithinBudget = ({ items, render, noun }) => {
     const fitting = {
-      lines: /**
-       * @type {string[]}
-       */ ([]),
+      lines:
+        /**
+         * @type {string[]}
+         */ ([]),
       used: 0,
       full: false,
     };

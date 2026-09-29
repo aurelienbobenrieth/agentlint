@@ -96,6 +96,18 @@ type SideContent =
 /**
  * @since 0.2.0
  */
+const safeRef = (ref: string) =>
+  ref.startsWith("-")
+    ? Effect.fail(new GitError({ reason: "unsafe_ref", operation: "reference lookup", ref }))
+    : Effect.succeed(ref);
+
+const toSnapshot = (side: SideContent | undefined): FileSnapshot | null =>
+  side === undefined || side._tag === "Skipped"
+    ? null
+    : side._tag === "Text"
+      ? snapshot(side.content)
+      : unloadedSnapshot(side.blob);
+
 export class Git extends Context.Service<
   Git,
   {
@@ -172,11 +184,6 @@ export class Git extends Context.Service<
           : run({ operation: "repository prefix", args: ["rev-parse", "--show-prefix"] }).pipe(
               Effect.tap((value) => Effect.sync(() => (memo.repositoryPrefix = value))),
             );
-
-      const safeRef = (ref: string) =>
-        ref.startsWith("-")
-          ? Effect.fail(new GitError({ reason: "unsafe_ref", operation: "reference lookup", ref }))
-          : Effect.succeed(ref);
 
       const existsRef = (ref: string) =>
         run({ operation: "reference lookup", args: ["rev-parse", "--verify", "--quiet", ref] }).pipe(
@@ -315,13 +322,6 @@ export class Git extends Context.Service<
           ),
         );
       });
-
-      const toSnapshot = (side: SideContent | undefined): FileSnapshot | null =>
-        side === undefined || side._tag === "Skipped"
-          ? null
-          : side._tag === "Text"
-            ? snapshot(side.content)
-            : unloadedSnapshot(side.blob);
 
       const collectStatus = Effect.fn("Git.collectStatus")(function* (baseCommit: string) {
         const tracked = parseGitRawStatus(

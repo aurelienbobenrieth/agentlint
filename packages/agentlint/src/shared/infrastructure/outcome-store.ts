@@ -41,6 +41,13 @@ function parse(content: string): Result.Result<OutcomeRecord[], OutcomeStoreErro
   return Result.succeed(sort([...records.values()]));
 }
 
+const io = (error: PlatformError.PlatformError | string) =>
+  new OutcomeStoreError({
+    reason: "io",
+    detail: Schema.is(Schema.String)(error) ? error : error.message,
+    line: undefined,
+  });
+
 export class OutcomeStore extends Context.Service<
   OutcomeStore,
   {
@@ -56,12 +63,6 @@ export class OutcomeStore extends Context.Service<
       const path = yield* Path.Path;
       const directory = path.resolve(env.cwd, ".agentlint");
       const file = path.resolve(directory, "outcomes.jsonl");
-      const io = (error: PlatformError.PlatformError | string) =>
-        new OutcomeStoreError({
-          reason: "io",
-          detail: Schema.is(Schema.String)(error) ? error : error.message,
-          line: undefined,
-        });
       const locked = withFileLock({ fs, directory, lock: path.resolve(directory, "outcomes.lock"), fail: io });
       const read = (): Effect.Effect<OutcomeRecord[], OutcomeStoreError> =>
         fs.exists(file).pipe(

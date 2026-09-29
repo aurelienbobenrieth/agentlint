@@ -94,18 +94,19 @@ const digests = (findings: Awaited<ReturnType<typeof testRuleOnSource>>) =>
     Order.String,
   );
 
+const via = (detector: typeof danger.detector) =>
+  testRuleOnSource({
+    rule: defineRule({
+      lifecycle: "state",
+      standard: danger.standard,
+      detector,
+      binding: danger.binding,
+    }),
+    source: "a; { b(danger(1)); danger(2) }",
+  });
+
 describe("structural position", () => {
   it("names the same occurrence whether the matcher, a query, or a visitor reports the node", async () => {
-    const via = (detector: typeof danger.detector) =>
-      testRuleOnSource({
-        rule: defineRule({
-          lifecycle: "state",
-          standard: danger.standard,
-          detector,
-          binding: danger.binding,
-        }),
-        source: "a; { b(danger(1)); danger(2) }",
-      });
     const pattern = await via({ id: "danger", version: 1, match: { pattern: "danger($A)", message: "m" } });
     const query = await via({
       id: "danger",
