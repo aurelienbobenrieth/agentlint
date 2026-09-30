@@ -18,9 +18,6 @@
     },
     "action": {
       "entry": ["test/fixtures/cli-stub.mjs"]
-    },
-    "apps/review": {
-      "ignoreDependencies": ["@effect/platform-browser"]
     }
   }
 }
