@@ -29,6 +29,17 @@ pnpm refs:sync                       # refresh the reference clones under .agent
 5. Anything a user can notice (public API, CLI, persisted data, dependencies, packaged skills) needs a changeset: `pnpm changeset`. Use conventional commit prefixes.
 6. Run `pnpm fmt` and `pnpm check` before opening the pull request.
 
+## Measure performance
+
+```bash
+pnpm build
+node scripts/benchmark.mjs                     # medians and Git processes per scenario
+node scripts/benchmark.mjs --changed 1000      # a larger branch
+node scripts/benchmark.mjs --bin /tmp/before/bin.mjs   # another build, e.g. a copy of dist/ from main
+```
+
+`changed-repository` and `changed-files-only` run a state and a change rule over a branch that changes `--changed` files. Their `gitProcesses` must stay flat as `--changed` grows; a count that grows with it means Git is called per file again.
+
 ## Smoke-test the tarball after dependency, build, or CLI-entry changes
 
 CI packs the tarball and installs it in an empty project. Locally:
