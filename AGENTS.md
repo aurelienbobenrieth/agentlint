@@ -2,6 +2,21 @@
 
 agentlint is a deterministic review gate. Read [`packages/agentlint/README.md`](packages/agentlint/README.md) for the product, [`docs/decisions/`](docs/decisions/README.md) for its design, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for maintainer commands.
 
+## Skills
+
+Maintainer skills live in `.agents/skills/` (local, from Harness). When present, read `.agents/skills/communication/SKILL.md` before your first reply; it governs all prose. Load the matching skill before acting:
+
+```text
+open requirements, ambiguous domain terms   → align
+feature, fix, refactor, new module/export   → build (with testing)
+writing or judging tests                    → testing
+commit, history, push, PR                   → git
+review a change                             → code-review
+same correction twice, recurring friction   → retrospect
+reusable script, CLI, scaffold, doctor      → toolsmith
+writing or improving a skill                → skill-writing
+```
+
 ## Invariants
 
 1. The same repository state produces the same findings. The engine uses no model, network, or clock.
