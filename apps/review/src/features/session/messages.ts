@@ -1,6 +1,6 @@
 import { Schema as S } from "effect";
 
-import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
+import { ReviewProgress, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { PersistedReview } from "../../shared/model";
 
 export const fields = {
@@ -14,6 +14,10 @@ export const fields = {
     savedError: S.NullOr(S.String),
   },
   FailedLoadState: { message: S.String },
+  /**
+   * `null` when the server could not answer; the page keeps waiting for the state either way.
+   */
+  ReceivedProgress: { progress: S.NullOr(ReviewProgress) },
   ClickedReloadReview: {},
   /**
    * The debounce timer for a text edit fired. Only the latest `version` writes.

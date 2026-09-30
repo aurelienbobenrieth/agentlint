@@ -13,10 +13,14 @@ import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { Git } from "../../shared/infrastructure/git/service.js";
 import { Parser } from "../../shared/infrastructure/parser.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
+import { collectFindings } from "../../shared/pipeline/collect-findings.js";
+import { ScanProgress, type ScanProgressReporter } from "../../shared/pipeline/scan-progress.js";
 import {
   ReviewActionRequest,
   ReviewOpenRequest,
+  ReviewSessionRequest,
   type EditorApplication,
+  type ReviewProgress,
   type ReviewActionResult,
   type ReviewFinishResult,
   type ReviewMode,
@@ -29,7 +33,9 @@ import {
   findReviewFinding,
   isInsideDirectory,
   makeReviewSessionState,
+  type ReviewCollection,
 } from "./handler.js";
+import { scanRevision } from "./revision.js";
 import {
   hasSessionCookie,
   isAuthorizedReviewRequest,
@@ -75,7 +81,13 @@ export class ReviewServerError extends Schema.TaggedError<ReviewServerError>()("
 
 const ActionDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewActionRequest));
 const OpenRequestDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewOpenRequest));
+const SessionRequestDecoder = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewSessionRequest));
 const INVALID_SESSION = { ok: false, message: "Invalid review session." };
+const SPENT_LINK = {
+  ok: false,
+  message:
+    "This review link was already opened in another browser, or it belongs to another session. Use that browser, or run agentlint review again.",
+};
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
@@ -128,9 +140,14 @@ export interface ReviewListenerConfig {
 export interface ReviewListener {
   readonly handle: (input: { readonly request: IncomingMessage; readonly response: ServerResponse }) => void;
   /**
-   * Single-use secret for the advertised URL. It is traded for the session cookie and never accepted again.
+   * Single-use secret for the advertised URL. The page trades it for the session cookie once; it is never accepted
+   * again, but a browser holding the cookie may present it as often as it likes.
    */
   readonly bootstrapToken: string;
+  /**
+   * Start the scan before the browser asks for it.
+   */
+  readonly prepare: () => void;
   /**
    * Settles when no review action is in flight.
    */
@@ -173,10 +190,51 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
     return work;
   };
   const idle = (): Promise<void> => (inFlight.size === 0 ? Promise.resolve() : Promise.allSettled(inFlight).then(idle));
+
+  const progress: { current: ReviewProgress } = { current: { phase: "preparing", files: 0, analyzed: 0 } };
+  const reporter: ScanProgressReporter = {
+    analyzing: (count) => (progress.current = { phase: "analyzing", files: count, analyzed: 0 }),
+    analyzed: () => (progress.current = { ...progress.current, analyzed: progress.current.analyzed + 1 }),
+    comparing: () => (progress.current = { ...progress.current, phase: "comparing" }),
+  };
+  /**
+   * The last scan and the repository revision it read. Requests take turns through `queue`, so a reload during a scan
+   * waits for that scan instead of starting another.
+   */
+  const scan: { revision: string | undefined; result: Promise<ReviewCollection> | undefined; queue: Promise<unknown> } =
+    { revision: undefined, result: undefined, queue: Promise.resolve() };
+  const scanOnce = async (): Promise<{ readonly result: Promise<ReviewCollection> }> => {
+    // A repository Git cannot describe gets a fresh scan every time.
+    const revision = await run(
+      scanRevision({ rules: [...(rules ?? [])], base }).pipe(Effect.orElseSucceed(() => undefined)),
+    );
+    if (revision !== undefined && revision === scan.revision && scan.result) return { result: scan.result };
+    progress.current = { phase: "preparing", files: 0, analyzed: 0 };
+    const result = run(
+      collectFindings({ all: true, rules: [...(rules ?? [])], base, files: [...(files ?? [])] }).pipe(
+        Effect.provideService(ScanProgress, reporter),
+      ),
+    );
+    scan.revision = revision;
+    scan.result = result;
+    const current = () => scan.result === result;
+    result.then(
+      () => (progress.current = current() ? { ...progress.current, phase: "ready" } : progress.current),
+      // A failed scan is never reused.
+      () => (scan.result = current() ? undefined : scan.result),
+    );
+    return { result };
+  };
+  const collected = (): Promise<ReviewCollection> => {
+    const next = scan.queue.then(scanOnce);
+    scan.queue = next.then(({ result }) => result).catch(() => undefined);
+    return next.then(({ result }) => result);
+  };
+  const reviewed = { ...selection, collected };
   const currentPayload = () =>
     run(
       buildReviewPayload({
-        ...selection,
+        ...reviewed,
         transport: "attached",
         session: sessionState,
         applications: config.applications,
@@ -235,24 +293,35 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
-      const fresh =
-        !mutable.bootstrapUsed &&
-        tokenMatches({ actual: url.searchParams.get("token") ?? undefined, expected: bootstrapToken });
-      // A browser that already holds the session may revisit the spent link from its history.
-      if (!fresh && !hasSessionCookie({ request, guard: session, token: sessionToken })) {
-        response.writeHead(403, { "cache-control": "no-store", "content-type": "text/plain; charset=utf-8" });
-        response.end("This review link is invalid or was already used. Run agentlint review again.\n");
+    // The link itself only loads the page, so a prefetch or a link preview cannot spend it. The page trades it here.
+    if (request.method === "POST" && url.pathname === "/api/session") {
+      if (!session.origins.has(request.headers.origin ?? "")) {
+        sendJson({ response, status: 403, payload: INVALID_SESSION });
+        return;
+      }
+      const exchange = await readJson({
+        request,
+        response,
+        decode: SessionRequestDecoder,
+        invalid: "Invalid session request.",
+      });
+      if (!exchange) return;
+      // A browser that already holds the session may open the link again, from its history or from another page.
+      if (hasSessionCookie({ request, guard: session, token: sessionToken })) {
+        sendJson({ response, status: 200, payload: { ok: true, message: "Signed in." } });
+        return;
+      }
+      if (mutable.bootstrapUsed || !tokenMatches({ actual: exchange.token, expected: bootstrapToken })) {
+        sendJson({ response, status: 403, payload: SPENT_LINK });
         return;
       }
       mutable.bootstrapUsed = true;
-      response.writeHead(302, {
-        "cache-control": "no-store",
-        location: "/",
-        "referrer-policy": "no-referrer",
-        ...(fresh ? { "set-cookie": `${session.cookieName}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/` } : {}),
+      sendJson({
+        response,
+        status: 200,
+        payload: { ok: true, message: "Signed in." },
+        headers: { "set-cookie": `${session.cookieName}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/` },
       });
-      response.end();
       return;
     }
 
@@ -266,6 +335,12 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
 
     if (request.method === "GET" && url.pathname === "/api/state") {
       sendJson({ response, status: 200, payload: artifact ?? (await currentPayload()) });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/progress") {
+      const payload: ReviewProgress = artifact ? { phase: "ready", files: 0, analyzed: 0 } : progress.current;
+      sendJson({ response, status: 200, payload });
       return;
     }
 
@@ -284,7 +359,7 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
         sendJson({ response, status: 409, payload: { ok: false, message: "The review is finishing." } });
         return;
       }
-      const proceed = () => run(applyReviewAction(action, { ...selection, session: sessionState }));
+      const proceed = () => run(applyReviewAction(action, { ...reviewed, session: sessionState }));
       const result = await track(config.executeAction ? config.executeAction(proceed) : proceed());
       if (result.ok) actionCounts.set(action.type, (actionCounts.get(action.type) ?? 0) + 1);
       sendJson({ response, status: result.ok ? 200 : 409, payload: result });
@@ -311,7 +386,7 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
         sendJson({ response, status: 409, payload: { ok: false, message: "That application is not available." } });
         return;
       }
-      const finding = await run(findReviewFinding(openRequest.findingId, selection));
+      const finding = await run(findReviewFinding(openRequest.findingId, reviewed));
       if (!finding) {
         sendJson({ response, status: 404, payload: { ok: false, message: "The finding is no longer available." } });
         return;
@@ -431,7 +506,13 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
     });
   };
 
-  return { handle, bootstrapToken, idle } satisfies ReviewListener;
+  const prepare = (): void => {
+    if (artifact) return;
+    // A failure here reaches the terminal again when the page asks for the state.
+    collected().catch(() => undefined);
+  };
+
+  return { handle, bootstrapToken, idle, prepare } satisfies ReviewListener;
 });
 
 export const runReviewSession = Effect.fn("runReviewSession")(function* (options: ReviewSessionOptions) {
@@ -485,6 +566,7 @@ export const runReviewSession = Effect.fn("runReviewSession")(function* (options
       const reviewUrl = `http://127.0.0.1:${port}/?token=${listener.bootstrapToken}`;
       terminal.log(`agentlint review at ${reviewUrl} (Ctrl+C to abort)`);
       if (options.open) openBrowser({ url: reviewUrl, platform: env.platform });
+      listener.prepare();
     });
     // An interrupted session must not leave an action between its lock and its rename either.
     return Effect.tryPromise({

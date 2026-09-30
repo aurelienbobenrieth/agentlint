@@ -112,3 +112,47 @@ it.effect("moves an unreadable saved review to its backup key", () =>
     expect(removed).toEqual([reviewStorageKey(state)]);
   }),
 );
+
+const linkServer = (session: { readonly status: number; readonly body: string }) => {
+  const requests: Array<readonly [string, string, string | null]> = [];
+  const replaced: Array<string> = [];
+  vi.stubGlobal("window", { location: { search: "?token=abc123", pathname: "/" } });
+  vi.stubGlobal("history", { state: null, replaceState: (_: unknown, __: string, url: string) => replaced.push(url) });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      requests.push([url, init?.method ?? "GET", typeof init?.body === "string" ? init.body : null]);
+      return url === "/api/session"
+        ? new Response(session.body, { status: session.status, headers: { "content-type": "application/json" } })
+        : new Response('{"ok":false,"message":"stop here"}', { status: 409 });
+    }),
+  );
+  return { requests, replaced };
+};
+
+it.effect("trades the link token for the session before loading, and drops it from the address bar", () =>
+  Effect.gen(function* () {
+    const server = linkServer({ status: 200, body: '{"ok":true,"message":"Signed in."}' });
+    expect(yield* LoadReview().effect).toMatchObject({ _tag: "FailedLoadState", message: "Load rejected: stop here" });
+    expect(server.requests).toEqual([
+      ["/api/session", "POST", '{"token":"abc123"}'],
+      ["/api/state", "GET", null],
+    ]);
+    expect(server.replaced).toEqual(["/"]);
+  }),
+);
+
+it.effect("explains a link another browser already used, without asking for the state", () =>
+  Effect.gen(function* () {
+    const server = linkServer({
+      status: 403,
+      body: '{"ok":false,"message":"This review link was already opened in another browser."}',
+    });
+    expect(yield* LoadReview().effect).toMatchObject({
+      _tag: "FailedLoadState",
+      message: "Sign-in rejected: This review link was already opened in another browser.",
+    });
+    expect(server.requests.map(([url]) => url)).toEqual(["/api/session"]);
+    expect(server.replaced).toEqual(["/"]);
+  }),
+);

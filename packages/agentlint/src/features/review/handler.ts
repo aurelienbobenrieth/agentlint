@@ -68,8 +68,30 @@ export function makeReviewSessionState(): ReviewSessionState {
   return { feedback: [], calibration: [], requested: new Set(), served: new Map() };
 }
 
+/**
+ * One scan of the reviewed selection.
+ */
+export type ReviewCollection = Effect.Success<ReturnType<typeof collectFindings>>;
+
+/**
+ * Scan the selection, or reuse the scan the session already holds for this repository state.
+ */
+const collectSelection = (selection: ReviewSelection) =>
+  selection.collected
+    ? Effect.promise(selection.collected)
+    : collectFindings({
+        all: true,
+        rules: [...(selection.rules ?? [])],
+        base: selection.base,
+        files: [...(selection.files ?? [])],
+      });
+
 export interface BuildReviewPayloadOptions {
   readonly check?: CheckResult;
+  /**
+   * The session's scan; without it, the payload scans.
+   */
+  readonly collected?: (() => Promise<ReviewCollection>) | undefined;
   readonly rules?: ReadonlyArray<string> | undefined;
   readonly files?: ReadonlyArray<string> | undefined;
   readonly base?: string | undefined;
@@ -102,14 +124,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       }
     : yield* (yield* AcceptanceStore).read();
   const proposals = yield* (yield* ProposalStore).read();
-  const collection =
-    options.check ??
-    (yield* collectFindings({
-      all: true,
-      rules: [...(options.rules ?? [])],
-      base: options.base ?? config.base,
-      files: [...(options.files ?? [])],
-    }));
+  const collection = options.check ?? (yield* collectSelection({ ...options, base: options.base ?? config.base }));
   const findings: ReviewFindingPayload[] = [];
 
   for (const finding of collection.findings) {
@@ -270,6 +285,7 @@ export interface ReviewSelection {
   readonly base?: string | undefined;
   readonly rules?: ReadonlyArray<string> | undefined;
   readonly files?: ReadonlyArray<string> | undefined;
+  readonly collected?: (() => Promise<ReviewCollection>) | undefined;
 }
 
 /**
@@ -279,12 +295,7 @@ export const findReviewFinding = Effect.fn("findReviewFinding")(function* (
   findingId: string,
   selection: ReviewSelection,
 ) {
-  const collection = yield* collectFindings({
-    all: true,
-    rules: [...(selection.rules ?? [])],
-    base: selection.base,
-    files: [...(selection.files ?? [])],
-  });
+  const collection = yield* collectSelection(selection);
   return collection.findings.find((candidate) => findingKey(candidate) === findingId);
 });
 

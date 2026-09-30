@@ -167,6 +167,11 @@ export class Git extends Context.Service<
      * no work tree, or a working directory the enclosing repository ignores.
      */
     readonly listFiles?: (() => Effect.Effect<ReadonlyArray<string> | undefined, GitError>) | undefined;
+    /**
+     * `HEAD` and the change baseline for `baseRef`, as commit ids. Equal answers mean the same commits are compared;
+     * the working tree is not part of it. A baseline that cannot be resolved answers `unresolved`.
+     */
+    readonly revision?: ((baseRef?: string) => Effect.Effect<string, GitError>) | undefined;
   }
 >()("agentlint/Git") {
   static readonly layer: Layer.Layer<Git, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
@@ -614,7 +619,19 @@ export class Git extends Context.Service<
           );
         });
 
-      return Git.of({ detectDefaultBranch, changedFiles, changeSet, listFiles });
+      const revision = Effect.fn("Git.revision")(function* (baseRef?: string) {
+        const head = yield* run({
+          operation: "revision lookup",
+          args: ["rev-parse", "--verify", "--quiet", "HEAD"],
+        }).pipe(Effect.catchIf(answersNo, () => Effect.succeed("unborn")));
+        const baseline = yield* resolveBaseline(baseRef).pipe(
+          Effect.map(({ ref, commit }) => `${ref} ${commit}`),
+          Effect.catch(() => Effect.succeed("unresolved")),
+        );
+        return `${head} ${baseline}`;
+      });
+
+      return Git.of({ detectDefaultBranch, changedFiles, changeSet, listFiles, revision });
     }),
   );
 }

@@ -1,5 +1,6 @@
 import {
   fetchReview,
+  postJson,
   responseJson,
   responseMessage,
   BrowserRequestError,
@@ -9,12 +10,22 @@ import {
 import { Effect, Option, Schema as S } from "effect";
 import { Command } from "foldkit";
 
-import { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
+import { ReviewProgress, ReviewSessionRequest, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
 import { PersistedReview } from "../../shared/model";
 import { markDirty } from "../../shared/dirty-flag";
 
 const decodeState = S.decodeUnknownEffect(ReviewStatePayload);
+const decodeProgress = S.decodeUnknownEffect(ReviewProgress);
+const encodeSessionRequest = S.encodeSync(S.fromJsonString(ReviewSessionRequest));
+const PageLocation = S.Struct({ search: S.String, pathname: S.String });
+
+/**
+ * A first scan of a large repository takes a while; the progress poll shows it is alive, so only a stalled server
+ * should end the wait.
+ */
+const STATE_TIMEOUT_MS = 10 * 60_000;
+const PROGRESS_INTERVAL_MS = 400;
 
 /**
  * A detached artifact embeds its state in the page. No review server stands behind such a page.
@@ -30,13 +41,47 @@ export const fetchState = Effect.gen(function* () {
     return yield* decodeState(embedded);
   }
 
-  const response = yield* fetchReview({ url: "/api/state" });
+  const response = yield* fetchReview({ url: "/api/state", timeoutMs: STATE_TIMEOUT_MS });
   if (!response.ok) {
     const detail = yield* responseMessage({ response, fallback: `HTTP ${response.status}` });
     return yield* Effect.fail(new BrowserRequestError({ operation: "Load rejected", detail }));
   }
   const body = yield* responseJson(response);
   return yield* decodeState(body);
+});
+
+/**
+ * Trade the link's one-time token for the session cookie, then drop it from the address bar and history. Following the
+ * link only loads this page, so a prefetch cannot spend the token; a reload finds the cookie already set.
+ */
+const signIn = Effect.gen(function* () {
+  const location = Reflect.get(window, "location");
+  if (!S.is(PageLocation)(location)) return;
+  const token = new URLSearchParams(location.search).get("token");
+  if (token === null) return;
+  const response = yield* postJson({ url: "/api/session", body: encodeSessionRequest({ token }) });
+  yield* browserOperation({
+    operation: "Clear the review link",
+    execute: () => history.replaceState(history.state, "", location.pathname),
+  }).pipe(Effect.ignore);
+  if (!response.ok) {
+    const detail = yield* responseMessage({ response, fallback: `HTTP ${response.status}` });
+    return yield* Effect.fail(new BrowserRequestError({ operation: "Sign-in rejected", detail }));
+  }
+});
+
+/**
+ * Ask how far the server's scan got. Any failure answers `null`: the page keeps waiting for the state either way.
+ */
+export const PollProgress = Command.define("PollProgress", {
+  messages: [Message.ReceivedProgress],
+  execute: Effect.gen(function* () {
+    yield* Effect.sleep(PROGRESS_INTERVAL_MS);
+    const response = yield* fetchReview({ url: "/api/progress" });
+    if (!response.ok) return Message.ReceivedProgress({ progress: null });
+    const progress = yield* responseJson(response).pipe(Effect.flatMap(decodeProgress));
+    return Message.ReceivedProgress({ progress });
+  }).pipe(Effect.catch(() => Effect.succeed(Message.ReceivedProgress({ progress: null })))),
 });
 
 export const reviewStorageKey = (state: ReviewStatePayload): string =>
@@ -86,7 +131,8 @@ export const readSavedReview = (
 
 export const LoadReview = Command.define("LoadReview", {
   messages: [Message.LoadedState, Message.FailedLoadState],
-  execute: fetchState.pipe(
+  execute: signIn.pipe(
+    Effect.andThen(fetchState),
     Effect.flatMap((state) =>
       readSavedReview(state).pipe(
         Effect.map(({ saved, unreadable, error }) =>

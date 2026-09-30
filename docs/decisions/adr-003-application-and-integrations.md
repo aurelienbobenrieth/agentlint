@@ -48,7 +48,7 @@ Exit codes: `0` gate open, `1` unresolved findings, `2` usage, configuration, de
 - The server listens on IPv4 loopback with a session token and decodes every request.
 - Complete means `--all` with no file or rule selection. Only a complete check removes stale acceptances ([ADR-002](./adr-002-acceptance-model.md)).
 - Local and CI share gate meaning. Only selection and presentation differ.
-- Change input and base resolution: [ADR-001](./adr-001-rule-lifecycles.md). No session-start snapshots.
+- Change input and base resolution: [ADR-001](./adr-001-rule-lifecycles.md). No session-start snapshots: a review session reuses its last scan only while the compared commits and every file some rule can see are unchanged, and checks that on every request.
 
 ## CI
 

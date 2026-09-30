@@ -5,11 +5,15 @@ import {
   CalibrationReason,
   CalibrationObservation,
   EditorApplicationId,
+  ReviewProgress,
   ReviewStatePayload,
 } from "@aurelienbbn/agentlint/contract";
 
 export const Screen = defineTaggedUnion({
-  Loading: {},
+  /**
+   * `progress` is the server's last answer while it scans, `null` before the first one.
+   */
+  Loading: { progress: S.NullOr(ReviewProgress) },
   LoadFailed: { message: S.String },
   Reviewing: { state: ReviewStatePayload },
   Finished: { summary: S.String, feedback: S.String, acceptanceOutput: S.String, calibrationOutput: S.String },

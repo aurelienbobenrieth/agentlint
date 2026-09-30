@@ -35,10 +35,12 @@ export const featureTestLayer = ({
   cwd,
   rules,
   actor = "agent:test",
+  git = {},
 }: {
   readonly cwd: string;
   readonly rules: ReadonlyArray<AgentlintRule>;
   readonly actor?: string;
+  readonly git?: Partial<Git["Service"]>;
 }) =>
   Layer.mergeAll(
     Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules })) })),
@@ -48,6 +50,7 @@ export const featureTestLayer = ({
         detectDefaultBranch: () => Effect.succeed("main"),
         changedFiles: () => Effect.succeed([]),
         changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
+        ...git,
       }),
     ),
     Parser.layer,

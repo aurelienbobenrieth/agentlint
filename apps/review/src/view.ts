@@ -9,7 +9,7 @@ import { type Model, Screen } from "./shared/model";
 export const view = ({ model, h }: { readonly model: Model; readonly h: HtmlBuilder<Message> }): Document => ({
   title: "agentlint · Review",
   body: Screen.match<Html>(model.screen, {
-    Loading: () => loadingView(h),
+    Loading: ({ progress }) => loadingView({ progress, h }),
     LoadFailed: ({ message }) => loadFailedView({ message, h }),
     Reviewing: ({ state }) => reviewView({ state, model, h }),
     Finished: ({ summary, feedback, acceptanceOutput, calibrationOutput }) =>

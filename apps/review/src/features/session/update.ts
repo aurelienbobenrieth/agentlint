@@ -6,7 +6,7 @@ import { duplicateFindingId } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
 import { enqueueToast } from "../toasts/update";
-import { DelayPersist, LoadReview, MarkDirty, PersistReview, reviewStorageKey } from "./command";
+import { DelayPersist, LoadReview, MarkDirty, PersistReview, PollProgress, reviewStorageKey } from "./command";
 import type { fields } from "./messages";
 
 const encodePersistedReview = Schema.encodeUnknownSync(Schema.fromJsonString(PersistedReview));
@@ -119,6 +119,19 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       ? enqueueToast({ model, message: `Reload failed: ${message}`, tone: "danger" })
       : { model: modifyFields(model, { screen: () => Screen.LoadFailed({ message }) }) },
   ClickedReloadReview: () => ({ model, commands: [LoadReview()] }),
+  // Polling stops once the review is on screen or failed to load.
+  ReceivedProgress: ({ progress }) =>
+    model.screen._tag === "Loading"
+      ? {
+          model: modifyFields(model, {
+            screen: () =>
+              Screen.Loading({
+                progress: progress ?? (model.screen._tag === "Loading" ? model.screen.progress : null),
+              }),
+          }),
+          commands: [PollProgress()],
+        }
+      : { model },
   ElapsedPersistDelay: ({ version }) => (version === model.saveVersion ? persist(model) : { model }),
   CompletedPersistence: () => ({
     model: model.persistFailed ? modifyFields(model, { persistFailed: () => false }) : model,

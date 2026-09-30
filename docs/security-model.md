@@ -20,7 +20,7 @@ flowchart LR
 
 ## Local review server
 
-`agentlint review` binds to `127.0.0.1` and advertises `http://127.0.0.1:<port>`. A one-time link becomes a session cookie:
+`agentlint review` binds to `127.0.0.1` and advertises `http://127.0.0.1:<port>`. The page, not the link, trades a one-time token for a session cookie:
 
 ```mermaid
 sequenceDiagram
@@ -29,22 +29,26 @@ sequenceDiagram
   participant S as Review server
   S->>T: http://127.0.0.1:PORT/?token=LINK_TOKEN
   B->>S: GET /?token=LINK_TOKEN
-  S-->>B: 302 to /, Set-Cookie agentlint_review_PORT=SESSION_SECRET<br/>HttpOnly, SameSite=Strict
+  S-->>B: the SPA shell (the token is not spent)
+  B->>S: POST /api/session {token} + loopback Origin + application/json
+  S-->>B: Set-Cookie agentlint_review_PORT=SESSION_SECRET<br/>HttpOnly, SameSite=Strict
   Note over S: Link token is now spent
+  Note over B: the SPA drops the token from the address bar
   B->>S: GET /api/state + cookie
   S-->>B: review state
   B->>S: POST /api/... + cookie + loopback Origin + application/json
   S-->>B: result
 ```
 
-The session secret is a different random value from the link token. Reusing the link without the cookie is refused; a browser that already holds the cookie may revisit it.
+The session secret is a different random value from the link token. Following the link only loads the page, so a prefetch or a link preview cannot spend the token. Once it is spent, a browser without the cookie is refused; the browser that holds it may reload, or open the link again from any page.
 
 The server answers each request by these rules:
 
 | Request                | Required                                                                       | Otherwise                                                        |
 | ---------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
 | Any                    | `Host` is `127.0.0.1:<port>` or `localhost:<port>`                             | 403                                                              |
-| `/api/*`               | The session cookie                                                             | 403                                                              |
+| `/api/session`         | A loopback `Origin`, and the session cookie or the unspent link token          | 403                                                              |
+| Other `/api/*`         | The session cookie                                                             | 403                                                              |
 | `/api/*` read          | The browser does not identify it as cross-site or same-site (`Sec-Fetch-Site`) | 403                                                              |
 | `/api/*` mutation      | A loopback `Origin`                                                            | 403                                                              |
 | Mutation with a body   | `application/json`, at most 128 KiB                                            | 415 or 413                                                       |
