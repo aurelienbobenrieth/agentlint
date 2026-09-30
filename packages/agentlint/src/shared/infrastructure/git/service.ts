@@ -113,6 +113,10 @@ export class Git extends Context.Service<
   {
     detectDefaultBranch(): Effect.Effect<string, GitError>;
     /**
+     * Where HEAD left `baseRef`, else the default branch: the baseline a change set compares against.
+     */
+    baseline(baseRef?: string): Effect.Effect<{ readonly ref: string; readonly commit: string }, GitError>;
+    /**
      * Paths that exist in the working tree and differ from the merge base. Deleted paths are excluded.
      */
     changedFiles(baseRef?: string): Effect.Effect<ReadonlyArray<string>, GitError>;
@@ -478,7 +482,7 @@ export class Git extends Context.Service<
           );
         });
 
-      return Git.of({ detectDefaultBranch, changedFiles, changeSet, listFiles });
+      return Git.of({ detectDefaultBranch, baseline: resolveBaseline, changedFiles, changeSet, listFiles });
     }),
   );
 }

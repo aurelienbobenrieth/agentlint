@@ -303,6 +303,13 @@ export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
 }
 
 /**
+ * Whether the fingerprint digests change evidence, which exists only relative to the baseline it was found against.
+ */
+export function isChangeFingerprint(fingerprint: Fingerprint): boolean {
+  return fingerprint.scheme === "git-change";
+}
+
+/**
  * A deterministic key for one exact finding identity.
  */
 export function findingIdentityKey({

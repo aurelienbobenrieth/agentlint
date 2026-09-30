@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { featureTestLayer, featureTestRule } from "../../__fixtures__/feature-test-services.js";
 import { normalizeConfig } from "../../domain/config.js";
-import { defineRule } from "../../domain/rule/model.js";
+import { defineRule, type AgentlintRule } from "../../domain/rule/model.js";
+import { findingKey } from "../../domain/finding.js";
 import { acceptFinding } from "../accept/handler.js";
+import { proposeHandler } from "../propose/handler.js";
+import { ProposeCommand } from "../propose/request.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
-import { Git } from "../../shared/infrastructure/git/service.js";
+import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
+import { Git, GitError } from "../../shared/infrastructure/git/service.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { normalizeChangeFixture } from "../../shared/pipeline/change-fixture.js";
 import { checkHandler } from "./handler.js";
@@ -117,6 +121,7 @@ describe("binary check and acceptance loop", () => {
           Git,
           Git.of({
             detectDefaultBranch: () => Effect.succeed("main"),
+            baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
             changedFiles: () => Effect.succeed(["migrations/1.sql"]),
             changeSet: () =>
               Effect.succeed(
@@ -149,6 +154,7 @@ describe("binary check and acceptance loop", () => {
         Git,
         Git.of({
           detectDefaultBranch: () => Effect.succeed("main"),
+          baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
           changedFiles: () => Effect.succeed(["src/demo.ts"]),
           changeSet: () => Effect.die("State-only scans must not load snapshots"),
         }),
@@ -296,3 +302,193 @@ describe("binary check and acceptance loop", () => {
 const readStoredAcceptances = Effect.gen(function* () {
   return (yield* (yield* AcceptanceStore).read()).records;
 }).pipe(Effect.provide(TestLayer));
+
+const trunk = "origin/main";
+const parent = "feature/parent";
+// Where HEAD left each ref. The parent branch already holds the migration, so only the trunk sees it change.
+const mergeBases: Record<string, string> = { [trunk]: "trunk-merge-base", [parent]: "parent-merge-base" };
+const migrationRule = ({ authority }: { readonly authority: "agent" | "human" }) =>
+  defineRule({
+    lifecycle: "change",
+    standard: { id: "database/safe-migration", revision: 1, title: "Migrations", guidance: "Review drops." },
+    detector: {
+      id: "sql/drop",
+      version: 1,
+      detect({ context }) {
+        for (const changed of context.change.files)
+          context.report({
+            key: changed.path,
+            file: changed.path,
+            message: "Review this migration.",
+            evidence: { statement: changed.after?.content ?? "" },
+          });
+      },
+    },
+    binding: { id: "database/safe-migration", authority, include: ["migrations/**"] },
+  });
+const checkAgainst = (base: string | undefined) => new CheckCommand({ all: true, rules: [], base, files: [] });
+
+const branch = ({
+  rules,
+  trunkChange,
+}: {
+  readonly rules: ReadonlyArray<AgentlintRule>;
+  readonly trunkChange: Record<string, string>;
+}) =>
+  Layer.mergeAll(
+    Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules })) })),
+    Layer.succeed(
+      Git,
+      Git.of({
+        detectDefaultBranch: () => Effect.succeed(trunk),
+        baseline: (baseRef = trunk) => Effect.succeed({ ref: baseRef, commit: mergeBases[baseRef] ?? "unknown" }),
+        changedFiles: () => Effect.succeed([]),
+        changeSet: (input) => {
+          const ref = input?.baseRef ?? trunk;
+          const change = normalizeChangeFixture({ before: {}, after: ref === trunk ? trunkChange : {} });
+          return Effect.succeed({ ...change, baseline: { kind: "git", ref, commit: mergeBases[ref] } });
+        },
+      }),
+    ),
+  );
+const withBranch =
+  (layer: ReturnType<typeof branch>) =>
+  <T, E, R>(effect: Effect.Effect<T, E, R>) =>
+    effect.pipe(Effect.provide(layer), Effect.provide(TestLayer));
+const storedProposals = Effect.flatMap(ProposalStore, (store) => store.read());
+
+describe("records a check against another base cannot see", () => {
+  it.effect("keeps a change acceptance through a check against a narrower base", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      const run = withBranch(
+        branch({
+          rules: [migrationRule({ authority: "agent" })],
+          trunkChange: { "migrations/1.sql": "DROP TABLE users;" },
+        }),
+      );
+      const first = yield* run(checkHandler(checkAgainst(trunk)));
+      expect(first.unresolved).toHaveLength(1);
+      yield* run(acceptFinding(A.getUnsafe(first.unresolved, 0), { authority: "agent", reason: "Table is unused." }));
+
+      const narrow = yield* run(checkHandler(checkAgainst(parent)));
+      expect(narrow).toMatchObject({ scope: "complete", findings: [], staleCount: 0, exitCode: 0 });
+      expect(yield* readStoredAcceptances).toHaveLength(1);
+
+      const again = yield* run(checkHandler(checkAgainst(trunk)));
+      expect(again.accepted).toHaveLength(1);
+      expect(again.exitCode).toBe(0);
+    }),
+  );
+
+  it.effect("keeps a change proposal through a check against a narrower base", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      const run = withBranch(
+        branch({
+          rules: [migrationRule({ authority: "human" })],
+          trunkChange: { "migrations/1.sql": "DROP TABLE users;" },
+        }),
+      );
+      const first = yield* run(checkHandler(checkAgainst(trunk)));
+      const finding = A.getUnsafe(first.unresolved, 0);
+      const proposed = yield* run(
+        proposeHandler(
+          new ProposeCommand({
+            selector: findingKey(finding),
+            summary: "Backfilled the table before the drop.",
+            diff: undefined,
+            base: trunk,
+          }),
+        ),
+      );
+      expect(proposed.exitCode).toBe(0);
+
+      yield* run(checkHandler(checkAgainst(parent)));
+      expect((yield* run(storedProposals)).map(findingKey)).toEqual([findingKey(finding)]);
+
+      const again = yield* run(checkHandler(checkAgainst(trunk)));
+      expect(again.unresolved.map(findingKey)).toEqual([findingKey(finding)]);
+      expect((yield* run(storedProposals)).map(findingKey)).toEqual([findingKey(finding)]);
+    }),
+  );
+
+  it.effect("keeps a change acceptance when Git cannot resolve the default branch", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      const rules = [migrationRule({ authority: "agent" })];
+      const run = withBranch(branch({ rules, trunkChange: { "migrations/1.sql": "DROP TABLE users;" } }));
+      const first = yield* run(checkHandler(checkAgainst(trunk)));
+      yield* run(acceptFinding(A.getUnsafe(first.unresolved, 0), { authority: "agent", reason: "Unused." }));
+
+      const noDefault = new GitError({ reason: "no_default_branch", operation: "default branch detection" });
+      const withoutDefault = Layer.succeed(
+        Git,
+        Git.of({
+          detectDefaultBranch: () => Effect.fail(noDefault),
+          baseline: (baseRef) =>
+            baseRef === undefined
+              ? Effect.fail(noDefault)
+              : Effect.succeed({ ref: baseRef, commit: "parent-merge-base" }),
+          changedFiles: () => Effect.succeed([]),
+          changeSet: () =>
+            Effect.succeed({
+              ...normalizeChangeFixture({ before: {}, after: {} }),
+              baseline: { kind: "git", ref: parent, commit: "parent-merge-base" },
+            }),
+        }),
+      );
+      const narrow = yield* run(checkHandler(checkAgainst(parent)).pipe(Effect.provide(withoutDefault)));
+      expect(narrow.staleCount).toBe(0);
+      expect(yield* readStoredAcceptances).toHaveLength(1);
+    }),
+  );
+
+  it.effect("still prunes a stale state acceptance through a check against a narrower base", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* writeSource('danger("x")\n');
+      const run = withBranch(
+        branch({
+          rules: [rule, migrationRule({ authority: "agent" })],
+          trunkChange: { "migrations/1.sql": "DROP TABLE users;" },
+        }),
+      );
+      const first = yield* run(checkHandler(checkAgainst(trunk)));
+      expect(first.unresolved.map((finding) => finding.lifecycle).toSorted()).toEqual(["change", "state"]);
+      yield* Effect.forEach(first.unresolved, (finding) =>
+        run(acceptFinding(finding, { authority: "agent", reason: "Reviewed." })),
+      );
+      yield* writeSource('danger("x", "new evidence")\n');
+
+      const narrow = yield* run(checkHandler(checkAgainst(parent)));
+      expect(narrow.staleCount).toBe(1);
+      expect((yield* readStoredAcceptances).map((record) => record.fingerprint.scheme)).toEqual(["git-change"]);
+    }),
+  );
+
+  it.effect("prunes a change acceptance once a check against the default branch's merge base no longer finds it", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      const pending = withBranch(
+        branch({
+          rules: [migrationRule({ authority: "agent" })],
+          trunkChange: { "migrations/1.sql": "DROP TABLE users;" },
+        }),
+      );
+      const first = yield* pending(checkHandler(checkAgainst(undefined)));
+      yield* pending(acceptFinding(A.getUnsafe(first.unresolved, 0), { authority: "agent", reason: "Unused." }));
+
+      // The migration reached the trunk: no base shows it any more.
+      const merged = withBranch(branch({ rules: [migrationRule({ authority: "agent" })], trunkChange: {} }));
+      const narrow = yield* merged(checkHandler(checkAgainst(parent)));
+      expect(narrow.staleCount).toBe(0);
+      expect(yield* readStoredAcceptances).toHaveLength(1);
+
+      // `--base` names the default branch here: the same merge base, so the same view.
+      const complete = yield* merged(checkHandler(checkAgainst(trunk)));
+      expect(complete.staleCount).toBe(1);
+      expect(yield* readStoredAcceptances).toEqual([]);
+    }),
+  );
+});

@@ -94,10 +94,13 @@ The epoch participates in finding identity, so bumping it invalidates compatible
 
 ## Complete scans remove dead acceptances
 
-| Scan                                                        | Unexamined acceptances |
-| ----------------------------------------------------------- | ---------------------- |
-| Complete (`check --all`, `next`, `acceptances clean`)       | Dead ones removed      |
-| Partial (`check` without `--all`, explicit files, `--rule`) | Kept                   |
+| Scan                                                                           | Unexamined acceptances and proposals          |
+| ------------------------------------------------------------------------------ | --------------------------------------------- |
+| Complete (`check --all`, `next`, `acceptances clean`) against the default base | Dead ones removed                             |
+| Complete against another merge base (`--base`, config `base`)                  | Dead state ones removed, change ones all kept |
+| Partial (`check` without `--all`, explicit files, `--rule`)                    | Kept                                          |
+
+A change finding exists only against a merge base. The default base is the one Git names (`origin/HEAD`, else `origin/main`, `main`, `origin/master`, `master`); a check against another merge base cannot tell a change record's finding is gone, so it keeps it.
 
 ```bash
 pnpm agentlint acceptances list

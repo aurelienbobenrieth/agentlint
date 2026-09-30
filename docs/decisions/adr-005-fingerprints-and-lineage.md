@@ -100,13 +100,16 @@ Anything else leaves the finding unresolved. A malformed or duplicate record is 
 
 ## Only a complete check removes stale records
 
-A record is stale when a complete check (`check --all`, no file or rule filter) has no equal finding.
+A record is stale when a complete check (`check --all`, no file or rule filter) that could have found it has no equal finding. A `git-change` finding exists only against a merge base, so only a check against the default branch's merge base (the one Git names, whatever ref `--base` or config `base` spells it with) can prove a change record stale.
 
-| Operation                             | Removes                      | Why                                           |
-| ------------------------------------- | ---------------------------- | --------------------------------------------- |
-| complete `check`, `acceptances clean` | stale records                | It sees every finding.                        |
-| partial `check`                       | nothing                      | It cannot see unexamined findings.            |
-| accept, approve, import               | only the same exact identity | Related lineage never removes another record. |
+| Operation                                                 | Removes                      | Why                                                |
+| --------------------------------------------------------- | ---------------------------- | -------------------------------------------------- |
+| complete `check`, `acceptances clean`, default merge base | stale records                | It sees every finding.                             |
+| complete `check`, `acceptances clean`, another merge base | stale state records          | It sees change findings only relative to its base. |
+| partial `check`                                           | nothing                      | It cannot see unexamined findings.                 |
+| accept, approve, import                                   | only the same exact identity | Related lineage never removes another record.      |
+
+Proposals follow the same rule.
 
 `acceptances import` checks every decision against a complete scan and the reviewed source, all-or-nothing. Git keeps old reasons; the core keeps no archive or ledger.
 
@@ -127,6 +130,7 @@ A record is stale when a complete check (`check --all`, no file or rule filter) 
 | One version number                       | Storage and fingerprint semantics change for different reasons; one field hides the migration boundary. |
 | Permanent lineage records                | Recreates an event ledger. Git already keeps old records.                                               |
 | Delete stale records after every check   | A partial check can delete a valid acceptance it did not examine.                                       |
+| Store the base on each change record     | A persisted field, one record seen from several bases, and records for deleted bases that never go.     |
 
 ## Reconsider when
 
@@ -142,5 +146,6 @@ A record is stale when a complete check (`check --all`, no file or rule filter) 
 - 2026-09-05: `source-structure` v2 keeps Unicode distinctions and adds containing-file structure and declared dependencies, because probes showed node-only evidence kept decisions after a guard was removed. Structural occurrence identity fixes lineage collisions. Partial updates keep other exact identities even when lineage matches. v1 stays readable but needs new review.
 - 2026-09-20: `source-structure` v3 adds text between child nodes and reads with LF line endings, because v2 gave template literal types with different literal text one fingerprint, and CRLF and LF checkouts different ones. v2 stays readable but needs new review.
 - 2026-09-23: Reformatted. Recorded `reviewEpoch`, path rules, `FingerprintError`, the change lineage fallback, and all-or-nothing import. Decision unchanged.
+- 2026-10-01: A complete check against a merge base other than the default branch's keeps change records and proposals, because it cannot see their findings: a narrower base removed acceptances a later default-base check needed again.
 
 </details>

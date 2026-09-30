@@ -83,7 +83,7 @@ interface AcceptanceRecord {
 
 ## Stale records go only on a complete check
 
-A record is stale when no current finding has its identity. `check --all` with no file or rule filter removes them and reports the count. A partial check never does. `agentlint acceptances clean` does it on demand.
+A record is stale when no current finding has its identity. `check --all` with no file or rule filter removes them and reports the count. A partial check never does. `agentlint acceptances clean` does it on demand. Against a merge base other than the default branch's, both keep change records, whose findings exist only relative to a base ([ADR-005](./adr-005-fingerprints-and-lineage.md#only-a-complete-check-removes-stale-records)).
 
 ## CLI and CI
 
