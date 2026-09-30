@@ -37,20 +37,27 @@ function decision({
   finding,
   authority,
   digest = finding.fingerprint.digest,
+  legacy,
 }: {
   readonly finding: FindingRecord;
   readonly authority: "agent" | "human";
   readonly digest?: string;
+  /**
+   * The fingerprint an artifact from an earlier version carries instead of the current one.
+   */
+  readonly legacy?: Fingerprint;
 }) {
   return new AcceptanceImport({
     schemaVersion: 1,
     type: "accept",
     source: finding.source,
-    fingerprint: new Fingerprint({
-      scheme: finding.fingerprint.scheme,
-      version: finding.fingerprint.version,
-      digest,
-    }),
+    fingerprint:
+      legacy ??
+      new Fingerprint({
+        scheme: finding.fingerprint.scheme,
+        version: finding.fingerprint.version,
+        digest,
+      }),
     lineageKey: finding.lineageKey,
     reason: `Imported for ${finding.ruleId}.`,
     authority,
@@ -87,6 +94,16 @@ describe("acceptances import", () => {
     expect(await run(storedRecords)).toEqual([]);
     expect((await run(checkAll)).unresolved).toHaveLength(2);
     expect((await run(importCommand([revoked]))).rejectedCount).toBe(1);
+  });
+
+  it("imports a decision an earlier version recorded under source-structure v3, stored under v4", async () => {
+    const finding = A.getUnsafe((await run(checkAll)).unresolved, 0);
+    const legacy = A.getUnsafe(finding.legacyFingerprints ?? [], 0);
+    expect(legacy.version).toBe(3);
+    const result = await run(importCommand([decision({ finding, authority: "human", legacy })]));
+    expect([result.exitCode, result.rejectedCount]).toEqual([0, 0]);
+    expect((await run(storedRecords)).map((record) => record.fingerprint)).toEqual([finding.fingerprint]);
+    expect((await run(checkAll)).unresolved).toHaveLength(1);
   });
 
   it("imports every decision when all of them identify current findings with enough authority", async () => {

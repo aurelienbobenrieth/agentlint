@@ -15,6 +15,8 @@ import {
   AcceptanceRecord,
   acceptanceKey,
   acceptanceSnapshot,
+  legacyKeys,
+  rekeyedAcceptance,
   staleScopeCovers,
   type AcceptanceSnapshot,
   type StaleScope,
@@ -43,7 +45,9 @@ export interface ReconcileInput {
    * The absent records this view may remove.
    */
   readonly stale: StaleScope;
-  readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>;
+  readonly current: ReadonlyArray<
+    Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints"> & { readonly lineageKey?: string | undefined }
+  >;
   readonly accepted?: ReadonlyArray<AcceptanceRecord>;
   readonly revoked?: ReadonlyArray<
     Pick<FindingRecord, "source" | "fingerprint"> & {
@@ -55,6 +59,36 @@ export interface ReconcileInput {
 
 export interface ReconcileResult extends AcceptanceSnapshot {
   readonly removed: ReadonlyArray<AcceptanceRecord>;
+  /**
+   * Decisions stored under a legacy fingerprint of a current finding, now stored under its current one.
+   */
+  readonly migrated: ReadonlyArray<AcceptanceRecord>;
+}
+
+/**
+ * Re-key every record stored under a legacy fingerprint of a finding in `current`. A record the current fingerprint
+ * already has a decision for is redundant and dropped.
+ */
+function migrateAcceptanceRecords({
+  existing,
+  current,
+}: {
+  readonly existing: ReadonlyArray<AcceptanceRecord>;
+  readonly current: ReconcileInput["current"];
+}): { readonly records: ReadonlyArray<AcceptanceRecord>; readonly migrated: ReadonlyArray<AcceptanceRecord> } {
+  const byLegacyKey = new Map(current.flatMap((finding) => legacyKeys(finding).map((key) => [key, finding] as const)));
+  if (byLegacyKey.size === 0) return { records: existing, migrated: [] };
+  const stored = new Set(existing.map((record) => acceptanceKey(record)));
+  const migrated: AcceptanceRecord[] = [];
+  const records = existing.flatMap((record) => {
+    const finding = byLegacyKey.get(acceptanceKey(record));
+    if (finding === undefined) return [record];
+    const next = rekeyedAcceptance({ record, finding });
+    if (stored.has(acceptanceKey(next))) return [];
+    migrated.push(next);
+    return [next];
+  });
+  return { records, migrated };
 }
 
 const ACCEPTANCE_PATH = [".agentlint", "acceptances.jsonl"] as const;
@@ -162,12 +196,14 @@ export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): 
  * complete one against the default branch.
  */
 export function reconcileAcceptanceRecords({
-  existing,
+  existing: stored,
   input,
 }: {
   readonly existing: ReadonlyArray<AcceptanceRecord>;
   readonly input: ReconcileInput;
 }): ReconcileResult {
+  const migration = migrateAcceptanceRecords({ existing: stored, current: input.current });
+  const existing = migration.records;
   const currentKeys = new Set(
     input.current.map((finding) => findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint })),
   );
@@ -217,7 +253,12 @@ export function reconcileAcceptanceRecords({
   const keptKeys = new Set(state.records.map(keyOf));
   const removed = existing.filter((record) => !keptKeys.has(keyOf(record)));
   const sorted = sortByKey({ records: state.records, keys });
-  return { records: sorted, byKey: new Map(sorted.map((record) => [keyOf(record), record])), removed };
+  return {
+    records: sorted,
+    byKey: new Map(sorted.map((record) => [keyOf(record), record])),
+    removed,
+    migrated: migration.migrated.filter((record) => keptKeys.has(keyOf(record))),
+  };
 }
 
 const ioError = (error: PlatformError.PlatformError | string) =>

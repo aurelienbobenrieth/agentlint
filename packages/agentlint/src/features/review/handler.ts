@@ -4,7 +4,7 @@
 
 import { Array as A, Clock, Effect, Path, Schema } from "effect";
 import type { CheckResult } from "../check/request.js";
-import { acceptanceKey, lookupAcceptance } from "../../domain/acceptance.js";
+import { acceptanceKey, findStoredAcceptance, lookupAcceptance } from "../../domain/acceptance.js";
 import { Env } from "../../config/env.js";
 import { findLineage, invalidationReasons } from "../../domain/acceptance.js";
 import { findingKey } from "../../domain/finding.js";
@@ -133,7 +133,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
     if (!rule) return yield* Effect.die(new ReviewRuleMissing({ ruleId: finding.ruleId }));
     const id = findingKey(finding);
     const acceptance = lookupAcceptance({ acceptances: snapshot, finding });
-    const stored = snapshot.byKey.get(id);
+    const stored = findStoredAcceptance({ acceptances: snapshot, finding });
     options.session?.served.set(id, stored ? { acceptedAt: stored.acceptedAt, reason: stored.reason } : null);
     const lineage = findLineage({ records: snapshot.records, finding });
     const reasons = lineage ? invalidationReasons({ prior: lineage, current: finding }) : [];

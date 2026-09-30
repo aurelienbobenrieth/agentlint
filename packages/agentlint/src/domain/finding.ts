@@ -43,6 +43,11 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
   authority: RuleAuthority,
   source: FindingSource,
   fingerprint: Fingerprint,
+  /**
+   * The same finding's fingerprints under earlier versions of its scheme. A decision recorded under one of them still
+   * opens the gate, because equal earlier evidence implies equal current evidence. Never persisted.
+   */
+  legacyFingerprints: Schema.optional(Schema.Array(Fingerprint)),
   lineageKey: Schema.UndefinedOr(Schema.String),
   file: Schema.String,
   line: Schema.Number,
@@ -85,6 +90,7 @@ export function withSelector({
     authority: finding.authority,
     source: finding.source,
     fingerprint: finding.fingerprint,
+    legacyFingerprints: finding.legacyFingerprints,
     lineageKey: finding.lineageKey,
     file: finding.file,
     line: finding.line,

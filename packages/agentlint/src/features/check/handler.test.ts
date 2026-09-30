@@ -15,6 +15,7 @@ import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
 import { Git, GitError } from "../../shared/infrastructure/git/service.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
 import { normalizeChangeFixture } from "../../shared/pipeline/change-fixture.js";
+import { encodeJson } from "../../shared/infrastructure/json.js";
 import { checkHandler } from "./handler.js";
 import { CheckCommand } from "./request.js";
 
@@ -299,6 +300,90 @@ describe("binary check and acceptance loop", () => {
   );
 });
 
+// Written by `agentlint accept 1` with agentlint 0.4.0 for the source below, with the same rule.
+const recordedBy040 = encodeJson({
+  schemaVersion: 1,
+  source: {
+    standardId: "security/danger",
+    standardRevision: 1,
+    detectorId: "typescript/danger-call",
+    detectorVersion: 1,
+    bindingId: "security/danger",
+    bindingDigest: "b3097d01d66bb57c15a05389c0eefdb1d49498f91a6cd26dc67a47cb5d262f7f",
+  },
+  fingerprint: {
+    scheme: "source-structure",
+    version: 3,
+    digest: "9cf881171642444731339e0228554fab70ad93e1418836124c54d6e521178bae",
+  },
+  lineageKey: "efd7a91990a48dc21a9f08360aecd7f5ae7a55fddd0faf41263338e11ac00cc8",
+  reason: "Recorded by agentlint 0.4.0 for the migration test.",
+  authority: "agent",
+  actor: "agent:fixture",
+  acceptedAt: "2026-09-30T22:38:52.762Z",
+});
+const reviewedSource = 'export const result = danger("x", { limit: 10 });\n';
+const writeV3Store = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.makeDirectory(join(cwd, ".agentlint"), { recursive: true });
+  yield* fs.writeFileString(join(cwd, ".agentlint", "acceptances.jsonl"), `${recordedBy040}\n`);
+}).pipe(Effect.provide(TestLayer));
+
+describe("source-structure v3 decisions after the upgrade to v4", () => {
+  it.effect("keeps the gate open and moves the decision to v4 on the first complete check", () =>
+    Effect.gen(function* () {
+      yield* writeSource(reviewedSource);
+      yield* writeV3Store;
+      const partial = yield* checkHandler(
+        new CheckCommand({ all: false, rules: [], base: undefined, files: ["src/demo.ts"] }),
+      ).pipe(Effect.provide(TestLayer));
+      expect([partial.exitCode, partial.accepted.length, partial.migratedCount]).toEqual([0, 1, 0]);
+
+      const first = yield* checkHandler(command).pipe(Effect.provide(TestLayer));
+      expect([first.exitCode, first.accepted.length, first.staleCount, first.migratedCount]).toEqual([0, 1, 0, 1]);
+      const [stored] = yield* readStoredAcceptances;
+      expect(stored?.fingerprint).toEqual(first.findings[0]?.fingerprint);
+      expect(stored?.fingerprint.version).toBe(4);
+      expect([stored?.reason, stored?.actor, stored?.acceptedAt, stored?.authority]).toEqual([
+        "Recorded by agentlint 0.4.0 for the migration test.",
+        "agent:fixture",
+        "2026-09-30T22:38:52.762Z",
+        "agent",
+      ]);
+
+      const second = yield* checkHandler(command).pipe(Effect.provide(TestLayer));
+      expect([second.exitCode, second.accepted.length, second.staleCount, second.migratedCount]).toEqual([0, 1, 0, 0]);
+
+      // Once on v4, a reformat keeps the decision.
+      yield* writeSource('export const result = danger(\n  "x",\n  {\n    limit: 10,\n  },\n)\n');
+      const reformatted = yield* checkHandler(command).pipe(Effect.provide(TestLayer));
+      expect([reformatted.exitCode, reformatted.accepted.length]).toEqual([0, 1]);
+    }),
+  );
+
+  it.effect("drops a v3 decision whose evidence changed", () =>
+    Effect.gen(function* () {
+      yield* writeSource('export const result = danger("x", { limit: 11 });\n');
+      yield* writeV3Store;
+      const result = yield* checkHandler(command).pipe(Effect.provide(TestLayer));
+      expect([result.exitCode, result.unresolved.length, result.staleCount, result.migratedCount]).toEqual([
+        1, 1, 1, 0,
+      ]);
+      expect(yield* readStoredAcceptances).toEqual([]);
+    }),
+  );
+
+  it.effect("cannot prove a v3 decision equivalent after a reformat that came first", () =>
+    Effect.gen(function* () {
+      // v3 digests formatting tokens, so it no longer matches; run one check on the upgrade before formatting.
+      yield* writeSource('export const result = danger(\n  "x",\n  {\n    limit: 10,\n  },\n)\n');
+      yield* writeV3Store;
+      const result = yield* checkHandler(command).pipe(Effect.provide(TestLayer));
+      expect([result.exitCode, result.unresolved.length]).toEqual([1, 1]);
+    }),
+  );
+});
+
 const readStoredAcceptances = Effect.gen(function* () {
   return (yield* (yield* AcceptanceStore).read()).records;
 }).pipe(Effect.provide(TestLayer));
@@ -492,3 +577,110 @@ describe("records a check against another base cannot see", () => {
     }),
   );
 });
+
+const appendToStore = (file: "acceptances.jsonl" | "proposals.jsonl", line: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(cwd, ".agentlint", file);
+    const existing = yield* fs.readFileString(path).pipe(Effect.orElseSucceed(() => ""));
+    yield* fs.writeFileString(path, `${existing}${line}\n`);
+  }).pipe(Effect.provide(TestLayer));
+
+describe("v3 migration in a check against another merge base", () => {
+  const layer = branch({
+    rules: [rule, migrationRule({ authority: "agent" })],
+    trunkChange: { "migrations/1.sql": "DROP TABLE users;" },
+  });
+  const run = withBranch(layer);
+
+  /**
+   * A change acceptance recorded against the trunk, then the v3 state acceptance an earlier version wrote.
+   */
+  const recordBoth = Effect.gen(function* () {
+    const first = yield* run(checkHandler(checkAgainst(trunk)));
+    const change = A.getUnsafe(
+      first.unresolved.filter((finding) => finding.lifecycle === "change"),
+      0,
+    );
+    yield* run(acceptFinding(change, { authority: "agent", reason: "Table is unused." }));
+    yield* appendToStore("acceptances.jsonl", recordedBy040);
+    return change;
+  });
+
+  it.effect("moves a matching v3 state acceptance to v4 and leaves the change acceptance as it was", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* writeSource(reviewedSource);
+      const change = yield* recordBoth;
+      const before = (yield* readStoredAcceptances).find((record) => record.fingerprint.scheme === "git-change");
+
+      const narrow = yield* run(checkHandler(checkAgainst(parent)));
+      expect([narrow.exitCode, narrow.staleCount, narrow.migratedCount]).toEqual([0, 0, 1]);
+      const stored = yield* readStoredAcceptances;
+      expect(stored.map((record) => [record.fingerprint.scheme, record.fingerprint.version]).toSorted()).toEqual([
+        ["git-change", 2],
+        ["source-structure", 4],
+      ]);
+      // Neither re-keyed nor removed: the narrower base cannot see the change finding.
+      expect(stored.find((record) => record.fingerprint.scheme === "git-change")).toEqual(before);
+      expect(stored.find((record) => record.fingerprint.scheme === "source-structure")?.reason).toBe(
+        "Recorded by agentlint 0.4.0 for the migration test.",
+      );
+
+      const trunkCheck = yield* run(checkHandler(checkAgainst(trunk)));
+      expect([trunkCheck.exitCode, trunkCheck.accepted.map(findingKey).toSorted()]).toEqual([
+        0,
+        [findingKey(change), findingKey(A.getUnsafe(narrow.accepted, 0))].toSorted(),
+      ]);
+    }),
+  );
+
+  it.effect("removes a v3 state acceptance whose evidence changed and keeps the change acceptance", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* writeSource('export const result = danger("x", { limit: 11 });\n');
+      yield* recordBoth;
+
+      const narrow = yield* run(checkHandler(checkAgainst(parent)));
+      expect([narrow.exitCode, narrow.staleCount, narrow.migratedCount]).toEqual([1, 1, 0]);
+      expect((yield* readStoredAcceptances).map((record) => record.fingerprint.scheme)).toEqual(["git-change"]);
+    }),
+  );
+
+  it.effect("moves a v3 state proposal and keeps a change proposal through a narrower base", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      yield* writeSource(reviewedSource);
+      const first = yield* run(checkHandler(checkAgainst(trunk)));
+      const propose = (finding: FindingRecordLike) =>
+        run(
+          proposeHandler(
+            new ProposeCommand({ selector: findingKey(finding), summary: "Proposed.", diff: undefined, base: trunk }),
+          ),
+        );
+      for (const finding of first.unresolved) expect((yield* propose(finding)).exitCode).toBe(0);
+      const state = A.getUnsafe(
+        first.unresolved.filter((finding) => finding.lifecycle === "state"),
+        0,
+      );
+      const legacy = A.getUnsafe(state.legacyFingerprints ?? [], 0);
+      // Rewrite the state proposal as an earlier version stored it.
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = join(cwd, ".agentlint", "proposals.jsonl");
+        const content = yield* fs.readFileString(path);
+        yield* fs.writeFileString(
+          path,
+          content.replace(state.fingerprint.digest, legacy.digest).replace('"version":4', '"version":3'),
+        );
+      }).pipe(Effect.provide(TestLayer));
+
+      yield* run(checkHandler(checkAgainst(parent)));
+      expect((yield* run(storedProposals)).map(findingKey).toSorted()).toEqual(
+        first.unresolved.map(findingKey).toSorted(),
+      );
+    }),
+  );
+});
+
+type FindingRecordLike = Parameters<typeof findingKey>[0];

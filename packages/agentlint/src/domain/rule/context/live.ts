@@ -2,13 +2,13 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState, repositoryPath } from "../../fingerprint.js";
+import { canonicalDigest, fingerprintState, legacyStateFingerprint, repositoryPath } from "../../fingerprint.js";
 import { Result, Schema } from "effect";
-import type { CanonicalValue } from "../../fingerprint.js";
 import { type FindingOptions, FindingRecord } from "../../finding.js";
 import type { AgentlintNode, Position } from "../../node.js";
 import { findingSourceForRule } from "../identity.js";
 import { DetectorContractError, type StateRule } from "../model.js";
+import { normalizeFile } from "./structure.js";
 import type { RuleContext } from "./model.js";
 
 /**
@@ -68,12 +68,30 @@ export function semanticStructure({
 }
 
 /**
- * The digest of a file's `semanticStructure`, computed once for every rule that reports in the file. All of a file's
- * nodes share its one root, so the first report's root answers for the others.
+ * A file's structure digests, `current` for `source-structure` v4 and `legacy` for v3, and where a node sits in v4's.
  */
-export function fileStructureDigest(source: string): (root: AgentlintNode) => string {
-  const memo: { digest: string | undefined } = { digest: undefined };
-  return (root) => (memo.digest ??= canonicalDigest(semanticStructure({ root, source })));
+export interface StructureDigests {
+  readonly current: string;
+  readonly legacy: string;
+  readonly occurrence: (node: AgentlintNode) => string;
+}
+
+/**
+ * The digests of a file's structure, computed once for every rule that reports in the file. All of a file's nodes share
+ * its one root, so the first report's root answers for the others.
+ */
+export function fileStructureDigest(source: string): (root: AgentlintNode) => StructureDigests {
+  const memo: { digests: StructureDigests | undefined } = { digests: undefined };
+  return (root) => {
+    if (memo.digests) return memo.digests;
+    const normalized = normalizeFile({ root, source });
+    memo.digests = {
+      current: canonicalDigest(normalized.structure),
+      legacy: canonicalDigest(semanticStructure({ root, source })),
+      occurrence: normalized.occurrence,
+    };
+    return memo.digests;
+  };
 }
 
 function comparePositions({ left, right }: { readonly left: Position; readonly right: Position }): number {
@@ -129,8 +147,12 @@ export class RuleContextImpl implements RuleContext {
    * The first root seen for the current file. Its wrapped children are reused by every later report.
    */
   #root: AgentlintNode | undefined;
-  #fileStructure: CanonicalValue | undefined;
-  #structureDigest: ((root: AgentlintNode) => string) | undefined;
+  #fileStructure: StructureDigests | undefined;
+  #structureDigest: ((root: AgentlintNode) => StructureDigests) | undefined;
+  /**
+   * Occurrences taken in the current file under v4, which folds some distinct nodes (parentheses and what they wrap).
+   */
+  #occurrences = new Set<string>();
   /**
    * The node the walker is handing to visitors, with its child indices from the file root.
    */
@@ -163,12 +185,13 @@ export class RuleContextImpl implements RuleContext {
     /**
      * Shared by the rules walking the same file; see `fileStructureDigest`.
      */
-    readonly structureDigest?: (root: AgentlintNode) => string;
+    readonly structureDigest?: (root: AgentlintNode) => StructureDigests;
   }): void {
     this.#absolutePath = absolutePath;
     this.#file = file.replace(/\\/g, "/");
     this.#source = source;
     this.#keys = new Set();
+    this.#occurrences = new Set();
     this.#root = undefined;
     this.#visiting = undefined;
     this.#fileStructure = undefined;
@@ -264,11 +287,15 @@ export class RuleContextImpl implements RuleContext {
     if (!occurrenceKey.trim()) throw this.#reportError("empty_key", occurrenceKey);
     if (this.#keys.has(occurrenceKey)) throw this.#reportError("duplicate_key", occurrenceKey);
     this.#keys.add(occurrenceKey);
-    const structure = {
-      file: this.#fileStructure,
+    // Two reported nodes v4 folds into one slot (parentheses and their content) stay two findings.
+    const slot = options.key ?? this.#fileStructure.occurrence(options.node);
+    const occurrence = this.#occurrences.has(slot) ? `${slot}#${occurrenceKey}` : slot;
+    this.#occurrences.add(occurrence);
+    const evidence = (file: string) => ({
+      file,
       dependencies: this.#dependencyDigest,
       evidence: options.evidence ?? null,
-    };
+    });
     const relatedFiles = [
       ...new Set(
         (options.relatedFiles ?? []).map((file) => {
@@ -291,14 +318,21 @@ export class RuleContextImpl implements RuleContext {
         source: this.#sourceIdentity,
         fingerprint: fingerprintState({
           path: this.#file,
-          structure,
-          occurrence: occurrenceKey,
+          structure: evidence(this.#fileStructure.current),
+          occurrence,
         }),
+        legacyFingerprints: [
+          legacyStateFingerprint({
+            path: this.#file,
+            structure: evidence(this.#fileStructure.legacy),
+            occurrence: occurrenceKey,
+          }),
+        ],
         lineageKey: canonicalDigest({
           kind: "state-lineage",
           bindingId: this.rule.binding.id,
           path: this.#file,
-          occurrence: occurrenceKey,
+          occurrence,
         }),
         file: this.#file,
         line,

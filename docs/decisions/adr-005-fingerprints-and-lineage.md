@@ -46,20 +46,50 @@ acceptance key = canonical {
 - **Paths:** `\` → `/`, `.` and `..` resolved, empty segments dropped, case kept (a case rename is a move). Absolute paths and paths that escape the repository fail with `FingerprintError`.
 - **Line endings:** CRLF and CR become LF when the engine reads a source file, a binding dependency, or Git change content. `core.autocrlf` and LF checkouts fingerprint equally.
 
-## State evidence: `source-structure` v3
+## State evidence: `source-structure` v4
 
-| In                                                                                                         | Out                                       |
-| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| normalized path                                                                                            | line and column positions                 |
-| containing-file structure: preorder node types + child counts, leaf text, text between inner-node children | whitespace-only gaps (they enter as `""`) |
-| digest of declared binding dependency contents                                                             | line-ending style                         |
-| detector-reported `evidence`, if any                                                                       |                                           |
-| occurrence key: structural child path (`<nodeType>:<i/j/k>`) or a unique detector key                      |                                           |
+| In                                                                                                   | Out                        |
+| ---------------------------------------------------------------------------------------------------- | -------------------------- |
+| normalized path                                                                                      | line and column positions  |
+| containing-file structure, normalized: preorder node types + child counts, leaf text, literal values | whitespace between nodes   |
+| digest of declared binding dependency contents                                                       | line-ending style          |
+| detector-reported `evidence`, if any                                                                 | the formatter trivia below |
+| occurrence key: path in the normalized structure (`<nodeType>:<i/j/k>`) or a unique detector key     |                            |
 
-- A non-whitespace gap between children enters verbatim. Grammars leave text outside every node, such as the literal parts of a TypeScript template literal type.
-- **Stable:** formatting and line movement with equal node structure.
-- **Invalidates:** a file move, any structure change in the containing file, a dependency change, a reported-evidence change.
+A formatter rewrites tokens tree-sitter keeps as nodes. v4 gives each one spelling:
+
+| Formatter choice                                   | Normalized to                                           |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| trailing comma before `)` `]` `}` `>`              | absent (`[a, , b]` keeps its hole)                      |
+| `;`, and `,` vs `;` between interface members      | absent                                                  |
+| quote style and escapes in a string                | its value; JSX attribute strings raw                    |
+| `"a"` vs `a` as a property name                    | the name                                                |
+| redundant parentheses around an expression or type | the tree they wrap (kept around an accessed `?.` chain) |
+| `(x) =>` vs `x =>`                                 | `x` when the parameter is untyped and has no default    |
+| a union's leading `\|`, nested unions              | one flat member list                                    |
+| number spelling (`1.50`, `0XFF`, `1_000`, `.5`)    | its value (a legacy octal `017` stays as written)       |
+| JSX line breaks and `{" "}`                        | the rendered text, per JSX whitespace rules             |
+| comment layout (JSDoc `*` prefixes, re-wrapping)   | its words; `//`, `/*`, `/**` stay distinct              |
+| `new Foo` vs `new Foo()`                           | no argument list                                        |
+
+- A non-whitespace gap between children enters verbatim. Inside a template, any gap is content and enters verbatim.
+- **Stable:** formatting with oxfmt or Prettier at any print width, quote, semicolon, trailing-comma, or arrow-parenthesis setting, and line movement.
+- **Invalidates:** a file move, a change of an identifier, literal value, operator, or tree shape anywhere in the containing file, a dependency change, a reported-evidence change.
 - Equal occurrences in one file get different structural paths (document order), and removing one changes the file structure. An acceptance cannot transfer to an equal sibling.
+- A change rule's `git-change` evidence stays the detector's: a detector that reports raw lines or file digests changes with formatting. Report normalized evidence to avoid it.
+
+### A v3 decision keeps opening the gate while its evidence is exact
+
+v4 keeps everything v3 kept except formatter trivia, so equal v3 evidence implies equal v4 evidence. The engine computes a finding's v3 fingerprint beside its v4 one:
+
+```mermaid
+flowchart LR
+  R["stored v3 decision"] --> M{"equals the finding's<br/>v3 fingerprint now?"}
+  M -- yes --> A["opens the gate"] --> C["complete check re-keys it to v4<br/>(reason, actor, date kept)"]
+  M -- no --> S["stale: removed by a complete check"]
+```
+
+The first complete check after upgrading moves every matching record, proposal, and imported decision to v4, whatever its merge base: every complete check sees every state finding, and only state records have a legacy version. Change records are never re-keyed; which of them a check may remove stays the merge-base rule below. A reformat before that check changes the v3 fingerprint, so those decisions need a new review: upgrade, run `check --all`, then format.
 
 ## Change evidence: `git-change` v2
 
@@ -84,7 +114,7 @@ acceptance key = canonical {
 
 ## The gate opens only when all four hold
 
-1. The engine supports the acceptance fingerprint and the finding fingerprint: only `source-structure` v3 and `git-change` v2.
+1. The engine supports the acceptance fingerprint and the finding fingerprint: only `source-structure` v4 and `git-change` v2. A `source-structure` v3 acceptance counts only while it equals the v3 fingerprint the engine computes for the finding now.
 2. Every `FindingSource` field is equal, `reviewEpoch` included.
 3. `scheme`, `version`, and `digest` are equal.
 4. Authority suffices: `human` satisfies both policies, `agent` only `agent` policy. Moving a binding to `human` makes agent acceptances insufficient.
@@ -117,7 +147,7 @@ Proposals follow the same rule.
 
 | Gain                                                          | Cost                                                                |
 | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Conservative reuse: formatting and line moves keep decisions. | Any structure change in the containing file needs a new review.     |
+| Conservative reuse: formatting and line moves keep decisions. | Any semantic change in the containing file needs a new review.      |
 | Prior reasoning cuts rework without keeping dead authority.   | Detector authors own evidence semantics as public contract.         |
 |                                                               | Every fingerprint change is a compatibility event in release notes. |
 
@@ -147,5 +177,6 @@ Proposals follow the same rule.
 - 2026-09-20: `source-structure` v3 adds text between child nodes and reads with LF line endings, because v2 gave template literal types with different literal text one fingerprint, and CRLF and LF checkouts different ones. v2 stays readable but needs new review.
 - 2026-09-23: Reformatted. Recorded `reviewEpoch`, path rules, `FingerprintError`, the change lineage fallback, and all-or-nothing import. Decision unchanged.
 - 2026-10-01: A complete check against a merge base other than the default branch's keeps change records and proposals, because it cannot see their findings: a narrower base removed acceptances a later default-base check needed again.
+- 2026-10-01: `source-structure` v4 normalizes formatter trivia, because reformatting 87 real files with oxfmt or Prettier at print width 80 or 120 changed 82 to 86% of v3 state fingerprints, and a quote, semicolon, or trailing-comma setting changed all of them. v4 changed none. The occurrence path follows the normalized tree, so lineage keys survive formatting too. The engine proves v3 → v4 equivalence per finding, as "Reconsider when" anticipated, so v3 decisions are re-keyed instead of reviewed again.
 
 </details>

@@ -198,6 +198,52 @@ describe("acceptance current-state reconciliation", () => {
   });
 });
 
+describe("decisions stored under a legacy fingerprint", () => {
+  const legacy = new Fingerprint({ scheme: "source-structure", version: 3, digest: "legacy-a" });
+  const now = new Fingerprint({ scheme: "source-structure", version: 4, digest: "current-a" });
+  const finding = { source, fingerprint: now, legacyFingerprints: [legacy], lineageKey: "query:current" };
+  const stored = record({ digest: "legacy-a", overrides: { fingerprint: legacy } });
+
+  it("moves a matching record to the current fingerprint and lineage, keeping the decision", () => {
+    const result = reconcileAcceptanceRecords({ existing: [stored], input: { stale: "none", current: [finding] } });
+    expect(result.records).toEqual([
+      new AcceptanceRecord({ ...stored, fingerprint: now, lineageKey: "query:current" }),
+    ]);
+    expect([result.migrated.length, result.removed]).toEqual([1, []]);
+  });
+
+  it("keeps a decision already stored under the current fingerprint and drops the legacy copy", () => {
+    const decided = record({ digest: "current-a", overrides: { fingerprint: now, reason: "Decided on v4." } });
+    const result = reconcileAcceptanceRecords({
+      existing: [stored, decided],
+      input: { stale: "all", current: [finding] },
+    });
+    expect(result.records.map((kept) => kept.reason)).toEqual(["Decided on v4."]);
+  });
+
+  it("revokes a legacy decision the review showed", () => {
+    const result = reconcileAcceptanceRecords({
+      existing: [stored],
+      input: {
+        stale: "none",
+        current: [finding],
+        revoked: [{ ...finding, expectedAcceptedAt: stored.acceptedAt, expectedReason: stored.reason }],
+      },
+    });
+    expect(result.records).toEqual([]);
+  });
+
+  it("keeps an unmatched legacy record in a partial view and removes it from a complete one", () => {
+    const other = { ...finding, legacyFingerprints: [new Fingerprint({ ...legacy, digest: "legacy-b" })] };
+    expect(
+      reconcileAcceptanceRecords({ existing: [stored], input: { stale: "none", current: [other] } }).records,
+    ).toEqual([stored]);
+    expect(
+      reconcileAcceptanceRecords({ existing: [stored], input: { stale: "all", current: [other] } }).removed,
+    ).toEqual([stored]);
+  });
+});
+
 describe("AcceptanceStore", () => {
   it.live("serializes concurrent read-modify-write transactions across service instances", () => {
     const cwd = join(tmpdir(), `agentlint-concurrent-${randomUUID()}`);

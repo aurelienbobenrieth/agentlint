@@ -80,11 +80,12 @@ export class ProposalStore extends Context.Service<
      */
     upsert(record: ProposalRecord): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
     /**
-     * Drop proposals inside the view's stale scope whose exact identity is absent from it.
+     * Drop proposals inside the view's stale scope whose exact identity is absent from it. One recorded under a legacy
+     * fingerprint of a current finding moves to its current fingerprint.
      */
     prune(input: {
       readonly stale: StaleScope;
-      readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>;
+      readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints">>;
     }): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
   }
 >()("agentlint/ProposalStore") {
@@ -144,12 +145,35 @@ export class ProposalStore extends Context.Service<
           const keys = new Set(
             current.map((finding) => findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint })),
           );
-          const live = (records: ReadonlyArray<ProposalRecord>) =>
-            records.filter((record) => keys.has(proposalKey(record)) || !staleScopeCovers({ scope: stale, record }));
-          // The common case has nothing to drop, and then needs neither the lock nor a write.
+          const byLegacyKey = new Map(
+            current.flatMap((finding) =>
+              (finding.legacyFingerprints ?? []).map(
+                (fingerprint) => [findingIdentityKey({ source: finding.source, fingerprint }), finding] as const,
+              ),
+            ),
+          );
+          // A proposal recorded under a legacy fingerprint of a current finding moves to the current fingerprint,
+          // unless the finding already has a proposal there. Any other absent proposal goes only inside the view's
+          // stale scope.
+          const live = (records: ReadonlyArray<ProposalRecord>) => {
+            const held = new Set(records.map((record) => proposalKey(record)).filter((key) => keys.has(key)));
+            return records.flatMap((record) => {
+              const key = proposalKey(record);
+              if (keys.has(key)) return [record];
+              const finding = byLegacyKey.get(key);
+              if (finding === undefined) return staleScopeCovers({ scope: stale, record }) ? [] : [record];
+              const moved = new ProposalRecord({ ...record, fingerprint: finding.fingerprint });
+              return held.has(proposalKey(moved)) ? [] : [moved];
+            });
+          };
+          const unchanged = (records: ReadonlyArray<ProposalRecord>) => {
+            const kept = live(records);
+            return kept.length === records.length && kept.every((record, index) => record === records[index]);
+          };
+          // The common case has nothing to drop or move, and then needs neither the lock nor a write.
           return readRecords().pipe(
             Effect.flatMap((existing) =>
-              live(existing).length === existing.length
+              unchanged(existing)
                 ? Effect.succeed(existing)
                 : locked(readRecords().pipe(Effect.flatMap((fresh) => writeRecords(live(fresh))))),
             ),

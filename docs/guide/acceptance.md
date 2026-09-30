@@ -73,18 +73,21 @@ The caller supplies required reasons and summaries separately.
 | Fingerprint  | scheme + version + evidence digest     |
 | Authority    | sufficient for the binding             |
 
-State fingerprints (version 3) cover the containing file's syntax, the structural occurrence, optional reported evidence, and the contents of explicit [`binding.dependencies`](writing-rules.md#dependencies-make-another-file-part-of-the-justification):
+State fingerprints (version 4) cover the containing file's syntax, the structural occurrence, optional reported evidence, and the contents of explicit [`binding.dependencies`](writing-rules.md#dependencies-make-another-file-part-of-the-justification):
 
-| Edit                                          | Acceptance       |
-| --------------------------------------------- | ---------------- |
-| Whitespace between syntax nodes               | kept             |
-| Literal or comment contents                   | invalidated      |
-| File structure, even outside the matched call | invalidated      |
-| A declared dependency's contents              | invalidated      |
-| A change rule's reported `evidence`           | invalidated      |
-| Unicode source values                         | compared exactly |
+| Edit                                                                                       | Acceptance       |
+| ------------------------------------------------------------------------------------------ | ---------------- |
+| Reformatting: line breaks, trailing commas, semicolons, quote style, redundant parentheses | kept             |
+| Comment layout, number spelling, `"key"` vs `key`, JSX line breaks                         | kept             |
+| Literal values, comment words                                                              | invalidated      |
+| Identifiers, operators, arguments, or statements, even outside the matched call            | invalidated      |
+| A declared dependency's contents                                                           | invalidated      |
+| A change rule's reported `evidence`                                                        | invalidated      |
+| Unicode source values                                                                      | compared exactly |
 
 This is deliberately conservative: edits elsewhere in a busy file may need another review. Unsupported evidence never satisfies a finding.
+
+A decision recorded under version 3 keeps opening the gate while its evidence is exactly what it was, and the first complete check moves it to version 4. After upgrading, run `agentlint check --all` once before reformatting: a reformat first would change the version 3 fingerprint and ask for the decisions again.
 
 ## A review epoch forces fresh review without a clock
 

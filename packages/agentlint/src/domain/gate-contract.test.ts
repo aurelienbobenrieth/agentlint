@@ -27,7 +27,7 @@ const sourceFields = {
   bindingId: "app-queries",
   bindingDigest: "binding-a",
 };
-const fingerprintFields = { scheme: "source-structure", version: 3, digest: "evidence-a" };
+const fingerprintFields = { scheme: "source-structure", version: 4, digest: "evidence-a" };
 
 function finding(overrides: Partial<ConstructorParameters<typeof FindingRecord>[0]> = {}) {
   return new FindingRecord({
@@ -88,7 +88,8 @@ describe("an acceptance opens a gate only for the identical identity", () => {
   it.each([
     ["an unknown scheme", { scheme: "source-text" }],
     ["a retired version", { version: 1 }],
-    ["a future version", { version: 4 }],
+    ["the legacy version on both sides", { version: 3 }],
+    ["a future version", { version: 5 }],
   ] as const)("never trusts %s, even when both sides agree", (_label, change) => {
     const unsupported = new Fingerprint({ ...fingerprintFields, ...change });
     expect(
@@ -293,7 +294,7 @@ describe("evidence fingerprints", () => {
   };
 
   it("emits the supported scheme and version for each lifecycle", () => {
-    expect(fingerprintState(state)).toMatchObject({ scheme: "source-structure", version: 3 });
+    expect(fingerprintState(state)).toMatchObject({ scheme: "source-structure", version: 4 });
     expect(fingerprintChange(change)).toMatchObject({ scheme: "git-change", version: 2 });
   });
 

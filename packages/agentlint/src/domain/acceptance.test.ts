@@ -18,7 +18,7 @@ const source = new FindingSource({
   bindingId: "app-queries",
   bindingDigest: "binding-a",
 });
-const fingerprint = new Fingerprint({ scheme: "source-structure", version: 3, digest: "evidence-a" });
+const fingerprint = new Fingerprint({ scheme: "source-structure", version: 4, digest: "evidence-a" });
 
 const sourceWith = (overrides: Partial<ConstructorParameters<typeof FindingSource>[0]>) =>
   new FindingSource({
@@ -117,9 +117,32 @@ describe("acceptance compatibility", () => {
     expect(authoritySatisfies({ actual: "agent", required: "human" })).toBe(false);
   });
 
+  it("accepts a v3 decision only through the v3 fingerprint the engine computed for the finding", () => {
+    const legacy = new Fingerprint({ scheme: "source-structure", version: 3, digest: "legacy-a" });
+    const recorded = acceptance({ fingerprint: legacy });
+    // A stored v3 fingerprint alone opens nothing, even one equal to the finding's current digest.
+    expect(acceptanceSatisfies({ acceptance: recorded, finding: finding() })).toBe(false);
+    expect(
+      acceptanceSatisfies({
+        acceptance: acceptance({ fingerprint: new Fingerprint({ ...legacy, digest: fingerprint.digest }) }),
+        finding: finding(),
+      }),
+    ).toBe(false);
+    expect(acceptanceSatisfies({ acceptance: recorded, finding: finding({ legacyFingerprints: [legacy] }) })).toBe(
+      true,
+    );
+    const changed = new Fingerprint({ ...legacy, digest: "legacy-b" });
+    expect(acceptanceSatisfies({ acceptance: recorded, finding: finding({ legacyFingerprints: [changed] }) })).toBe(
+      false,
+    );
+    expect(invalidationReasons({ prior: recorded, current: finding({ legacyFingerprints: [changed] }) })).toContain(
+      "The containing file structure, occurrence, or declared dependency evidence changed.",
+    );
+  });
+
   it("keeps unknown schemes and versions unresolved", () => {
     const unknownScheme = new Fingerprint({ scheme: "future-evidence", version: 1, digest: "same" });
-    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 4, digest: "same" });
+    const unknownVersion = new Fingerprint({ scheme: "source-structure", version: 5, digest: "same" });
     expect(
       acceptanceSatisfies({
         acceptance: acceptance({ fingerprint: unknownScheme }),

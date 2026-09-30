@@ -234,12 +234,40 @@ function createFingerprint({
 }
 
 /**
+ * The state scheme version whose evidence is the formatting-insensitive structure.
+ */
+const STATE_VERSION = 4;
+
+/**
+ * The state scheme version before it. The engine still computes it beside the current one, so a decision recorded under
+ * it keeps opening the gate while the evidence it was given is exactly the current evidence.
+ */
+const LEGACY_STATE_VERSION = 3;
+
+/**
  * Fingerprint semantic state evidence. Presentation positions are excluded.
  */
 export function fingerprintState(evidence: StateFingerprintEvidence): Fingerprint {
+  return stateFingerprint({ version: STATE_VERSION, evidence });
+}
+
+/**
+ * The `source-structure` v3 fingerprint of the same finding, from v3's structure and occurrence.
+ */
+export function legacyStateFingerprint(evidence: StateFingerprintEvidence): Fingerprint {
+  return stateFingerprint({ version: LEGACY_STATE_VERSION, evidence });
+}
+
+function stateFingerprint({
+  version,
+  evidence,
+}: {
+  readonly version: number;
+  readonly evidence: StateFingerprintEvidence;
+}): Fingerprint {
   return createFingerprint({
     scheme: "source-structure",
-    version: 3,
+    version,
     evidence: {
       path: normalizeRepositoryPath(evidence.path),
       structure: evidence.structure,
@@ -301,7 +329,7 @@ export function sameFingerprint({ left, right }: { readonly left: Fingerprint; r
  */
 export function isSupportedFingerprint(fingerprint: Fingerprint): boolean {
   return (
-    (fingerprint.scheme === "source-structure" && fingerprint.version === 3) ||
+    (fingerprint.scheme === "source-structure" && fingerprint.version === STATE_VERSION) ||
     (fingerprint.scheme === "git-change" && fingerprint.version === 2)
   );
 }

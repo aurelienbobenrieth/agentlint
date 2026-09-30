@@ -7,9 +7,12 @@ import {
   AcceptanceRecord,
   acceptanceKey,
   acceptanceSatisfies,
+  findStoredAcceptance,
+  legacyKeys,
+  rekeyedAcceptance,
   type AcceptanceImport,
 } from "../../domain/acceptance.js";
-import { findingKey } from "../../domain/finding.js";
+import { findingKey, type FindingRecord } from "../../domain/finding.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { collectFindings } from "../../shared/pipeline/collect-findings.js";
 import { AcceptancesCommand, AcceptancesResult } from "./request.js";
@@ -34,12 +37,17 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
   const collected = yield* collectFindings({ all: true, rules: [], base: command.base, files: [] });
   if (command.action === "import") {
     const snapshot = yield* store.read();
-    const findingsByKey = new Map(collected.findings.map((finding) => [findingKey(finding), finding]));
+    // An artifact written by an earlier version names findings by a legacy fingerprint.
+    const findingsByKey = new Map(
+      collected.findings.flatMap((finding) =>
+        [findingKey(finding), ...legacyKeys(finding)].map((key) => [key, finding] as const),
+      ),
+    );
     const rejectedCount = command.imported.filter((record) => {
       const finding = findingsByKey.get(acceptanceKey(record));
       if (finding === undefined || collected.sources[finding.file] !== record.reviewedSource) return true;
       if (record.type === "revoke") {
-        const existing = snapshot.byKey.get(acceptanceKey(record));
+        const existing = findStoredAcceptance({ acceptances: snapshot, finding });
         return (
           existing === undefined ||
           existing.acceptedAt !== record.expectedAcceptedAt ||
@@ -57,13 +65,26 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
         exitCode: 2,
       });
     }
+    // Every decision is stored under its finding's current fingerprint; the check above found one for each.
+    const findingOf = (record: {
+      readonly source: FindingRecord["source"];
+      readonly fingerprint: FindingRecord["fingerprint"];
+    }) => findingsByKey.get(acceptanceKey(record));
     const result = yield* store.reconcile({
       stale: "none",
       current: collected.findings,
       accepted: command.imported
         .filter((record): record is AcceptanceImport => record.type === "accept")
-        .map(importedAcceptance),
-      revoked: command.imported.filter((record) => record.type === "revoke"),
+        .map((record) => {
+          const accepted = importedAcceptance(record);
+          const finding = findingOf(record);
+          return finding === undefined || findingKey(finding) === acceptanceKey(accepted)
+            ? accepted
+            : rekeyedAcceptance({ record: accepted, finding });
+        }),
+      revoked: command.imported
+        .filter((record) => record.type === "revoke")
+        .map((record) => ({ ...record, fingerprint: findingOf(record)?.fingerprint ?? record.fingerprint })),
     });
     return new AcceptancesResult({
       records: [...result.records],
