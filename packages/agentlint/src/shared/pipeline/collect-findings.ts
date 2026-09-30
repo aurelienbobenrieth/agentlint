@@ -16,7 +16,7 @@ import {
   type StateRule,
   type Visitors,
 } from "../../domain/rule/model.js";
-import { RuleContextImpl } from "../../domain/rule/context/live.js";
+import { fileStructureDigest, RuleContextImpl } from "../../domain/rule/context/live.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git/service.js";
@@ -202,10 +202,11 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       return;
     }
     const runnable: Array<{ ruleId: string; context: RuleContextImpl; visitors: Visitors }> = [];
+    const structureDigest = fileStructureDigest(source);
 
     yield* Effect.gen(function* () {
       for (const entry of applicable) {
-        entry.context.setFile({ absolutePath, file, source });
+        entry.context.setFile({ absolutePath, file, source, structureDigest });
         const enabled = yield* Effect.try({
           try: () =>
             synchronousHook({

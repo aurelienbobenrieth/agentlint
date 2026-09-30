@@ -67,6 +67,15 @@ export function semanticStructure({
   return structure;
 }
 
+/**
+ * The digest of a file's `semanticStructure`, computed once for every rule that reports in the file. All of a file's
+ * nodes share its one root, so the first report's root answers for the others.
+ */
+export function fileStructureDigest(source: string): (root: AgentlintNode) => string {
+  const memo: { digest: string | undefined } = { digest: undefined };
+  return (root) => (memo.digest ??= canonicalDigest(semanticStructure({ root, source })));
+}
+
 function comparePositions({ left, right }: { readonly left: Position; readonly right: Position }): number {
   return left.row - right.row || left.column - right.column;
 }
@@ -121,6 +130,7 @@ export class RuleContextImpl implements RuleContext {
    */
   #root: AgentlintNode | undefined;
   #fileStructure: CanonicalValue | undefined;
+  #structureDigest: ((root: AgentlintNode) => string) | undefined;
   /**
    * The node the walker is handing to visitors, with its child indices from the file root.
    */
@@ -145,10 +155,15 @@ export class RuleContextImpl implements RuleContext {
     absolutePath,
     file,
     source,
+    structureDigest,
   }: {
     readonly absolutePath: string;
     readonly file: string;
     readonly source: string;
+    /**
+     * Shared by the rules walking the same file; see `fileStructureDigest`.
+     */
+    readonly structureDigest?: (root: AgentlintNode) => string;
   }): void {
     this.#absolutePath = absolutePath;
     this.#file = file.replace(/\\/g, "/");
@@ -157,6 +172,7 @@ export class RuleContextImpl implements RuleContext {
     this.#root = undefined;
     this.#visiting = undefined;
     this.#fileStructure = undefined;
+    this.#structureDigest = structureDigest ?? fileStructureDigest(source);
   }
 
   drainFindings(): FindingRecord[] {
@@ -242,7 +258,7 @@ export class RuleContextImpl implements RuleContext {
       const root = { node: this.#root ?? options.node };
       while (root.node.parent) root.node = root.node.parent;
       this.#root = root.node;
-      this.#fileStructure = canonicalDigest(semanticStructure({ root: root.node, source: this.#source }));
+      this.#fileStructure = (this.#structureDigest ?? fileStructureDigest(this.#source))(root.node);
     }
     const occurrenceKey = options.key ?? `${options.node.type}:${position.join("/")}`;
     if (!occurrenceKey.trim()) throw this.#reportError("empty_key", occurrenceKey);
