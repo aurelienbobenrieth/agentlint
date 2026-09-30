@@ -15,8 +15,8 @@ import { compareStrings } from "../../../domain/compare.js";
 import type { ChangeSet, ChangedFile, FileSnapshot } from "../../../domain/rule/model.js";
 import { normalizeLineEndings, textLines } from "../../../domain/source-text.js";
 import { inspectRepositoryEntry, toRepositoryPath } from "../repository/entry/service.js";
-import { GIT_MAX_BUFFER_BYTES, runGitCommand } from "./command.js";
-import { parseGitRawStatus, parseUnifiedHunks, type StatusEntry } from "./parsing.js";
+import { GIT_MAX_BUFFER_BYTES, readGitObjects, runGitCommand, type GitCommandFailure } from "./command.js";
+import { parseGitRawStatus, parseUnifiedHunks, splitPatches, type StatusEntry } from "./parsing.js";
 
 export { parseGitRawStatus, parseUnifiedHunks } from "./parsing.js";
 
@@ -56,6 +56,32 @@ const DEFAULT_BRANCH_CANDIDATES = ["origin/main", "main", "origin/master", "mast
 const GITLINK_MODE = "160000";
 
 const NULL_BLOB = /^0+$/;
+
+/**
+ * Characters of paths passed to one Git process. Windows caps a command line at 32,767 characters.
+ */
+const PATH_ARGUMENTS_PER_PROCESS = 16_000;
+
+/**
+ * Split `paths` into runs whose command line stays under the Windows limit, each run keeping at least one path.
+ */
+const pathChunks = <A>(items: ReadonlyArray<A>, pathOf: (item: A) => string): ReadonlyArray<ReadonlyArray<A>> => {
+  const chunks: A[][] = [];
+  const current: { items: A[]; length: number } = { items: [], length: 0 };
+  for (const item of items) {
+    // Quotes and a separator around each argument.
+    const length = pathOf(item).length + 3;
+    if (current.items.length > 0 && current.length + length > PATH_ARGUMENTS_PER_PROCESS) {
+      chunks.push(current.items);
+      current.items = [];
+      current.length = 0;
+    }
+    current.items.push(item);
+    current.length += length;
+  }
+  if (current.items.length > 0) chunks.push(current.items);
+  return chunks;
+};
 
 const parseNulSeparated = (output: string): ReadonlyArray<string> =>
   output.split("\0").filter((entry) => entry.length > 0);
@@ -108,6 +134,18 @@ const toSnapshot = (side: SideContent | undefined): FileSnapshot | null =>
       ? snapshot(side.content)
       : unloadedSnapshot(side.blob);
 
+const gitError = (operation: string) => (failure: GitCommandFailure) =>
+  new GitError({
+    reason: Match.value(failure.code).pipe(
+      Match.when("ENOENT", () => "executable_missing" as const),
+      Match.when("ERR_CHILD_PROCESS_STDIO_MAXBUFFER", () => "output_too_large" as const),
+      Match.orElse(() => "command" as const),
+    ),
+    operation,
+    detail: failure.detail,
+    exitCode: failure.exitCode,
+  });
+
 export class Git extends Context.Service<
   Git,
   {
@@ -151,21 +189,7 @@ export class Git extends Context.Service<
           args,
           literalPathspecs,
           ...(env.variables ? { variables: env.variables } : {}),
-        }).pipe(
-          Effect.mapError(
-            (failure) =>
-              new GitError({
-                reason: Match.value(failure.code).pipe(
-                  Match.when("ENOENT", () => "executable_missing" as const),
-                  Match.when("ERR_CHILD_PROCESS_STDIO_MAXBUFFER", () => "output_too_large" as const),
-                  Match.orElse(() => "command" as const),
-                ),
-                operation,
-                detail: failure.detail,
-                exitCode: failure.exitCode,
-              }),
-          ),
-        );
+        }).pipe(Effect.mapError(gitError(operation)));
 
       const run = ({
         operation,
@@ -263,28 +287,41 @@ export class Git extends Context.Service<
         );
       };
 
-      const readBaseline = Effect.fn("Git.readBaseline")(function* ({
+      /**
+       * The baseline side of every entry, read through one `cat-file --batch` process. An object too large to load
+       * keeps its identity.
+       */
+      const readBaselines = Effect.fn("Git.readBaselines")(function* ({
         commit,
-        entry,
+        entries,
       }: {
         readonly commit: string;
-        readonly entry: StatusEntry;
+        readonly entries: ReadonlyArray<StatusEntry>;
       }) {
-        const blob = yield* baselineBlob({ commit, entry });
-        if (blob === undefined) return undefined;
-        return yield* runRaw({ operation: "file read", args: ["cat-file", "blob", blob] }).pipe(
-          Effect.map((content): SideContent =>
+        const blobs = yield* Effect.forEach(entries, (entry) => baselineBlob({ commit, entry }), { concurrency: 4 });
+        const ids = [...new Set(blobs.filter((blob) => blob !== undefined))];
+        const objects = yield* readGitObjects({
+          cwd: env.cwd,
+          ids,
+          ...(env.variables ? { variables: env.variables } : {}),
+        }).pipe(Effect.mapError(gitError("file read")));
+        const byId = new Map(ids.map((id, index) => [id, objects[index]]));
+        return yield* Effect.forEach(blobs, (blob) => {
+          if (blob === undefined) return Effect.succeed(undefined);
+          const object = byId.get(blob);
+          if (object === undefined)
+            return Effect.fail(new GitError({ reason: "command", operation: "file read", detail: `${blob} missing` }));
+          if (object._tag === "TooLarge") return Effect.succeed<SideContent>({ _tag: "Unloaded", blob });
+          const content = object.bytes.toString("utf8");
+          return Effect.succeed<SideContent>(
             isBinary(content) ? { _tag: "Unloaded", blob } : { _tag: "Text", content },
-          ),
-          Effect.catchIf(
-            (error) => error.reason === "output_too_large",
-            () => Effect.succeed<SideContent>({ _tag: "Unloaded", blob }),
-          ),
-        );
+          );
+        });
       });
 
       /**
-       * Read the working side without following a link: a symbolic link is its target text, as Git stores it.
+       * Read the working side without following a link: a symbolic link is its target text, as Git stores it. A file
+       * too large or too binary to load is `Unhashed` until `hashWorkingFiles` names its blob.
        */
       const readWorkingFile = Effect.fn("Git.readWorkingFile")(function* ({
         root,
@@ -306,10 +343,7 @@ export class Git extends Context.Service<
           const content =
             Number(info.size) > GIT_MAX_BUFFER_BYTES ? undefined : yield* fs.readFileString(entry.realPath);
           if (content !== undefined && !isBinary(content)) return { _tag: "Text", content } as const;
-          return {
-            _tag: "Unloaded",
-            blob: yield* run({ operation: "file hash", args: ["hash-object", "--", filePath] }),
-          } as const;
+          return { _tag: "Unhashed" } as const;
         }).pipe(
           Effect.mapError((error) =>
             error instanceof GitError
@@ -321,6 +355,92 @@ export class Git extends Context.Service<
                 }),
           ),
         );
+      });
+
+      /**
+       * Blob ids of working files, one `hash-object` process per command-line-sized run of paths.
+       */
+      const hashWorkingFiles = Effect.fn("Git.hashWorkingFiles")(function* (files: ReadonlyArray<string>) {
+        const hashed = yield* Effect.forEach(
+          pathChunks(files, (file) => file),
+          (chunk) =>
+            run({ operation: "file hash", args: ["hash-object", "--", ...chunk] }).pipe(
+              Effect.map((output) => output.split("\n").map((line) => line.trim())),
+            ),
+          { concurrency: 4 },
+        );
+        const blobs = hashed.flat();
+        return new Map(files.map((file, index) => [file, blobs[index] ?? ""]));
+      });
+
+      const diffArguments = ["diff", "--relative", "--no-ext-diff", "--no-textconv", "--unified=3"] as const;
+
+      /**
+       * The hunks of one entry from its own `git diff`, as every entry was diffed before batching. A rename needs both
+       * of its paths in one comparison.
+       */
+      const diffOne = ({ commit, entry }: { readonly commit: string; readonly entry: StatusEntry }) =>
+        runRaw({
+          operation: "diff generation",
+          args: [
+            ...diffArguments,
+            "--find-renames",
+            commit,
+            "--",
+            entry.previousPath ?? entry.path,
+            ...(entry.previousPath ? [entry.path] : []),
+          ],
+        }).pipe(
+          Effect.catchIf(
+            (error) => error.reason === "output_too_large",
+            () => Effect.succeed(""),
+          ),
+          Effect.map((output) => [entry.path, parseUnifiedHunks(output)] as const),
+        );
+
+      /**
+       * Hunks for many entries from one `git diff` per command-line-sized run of paths. Without rename detection and
+       * with one path per entry, each file's patch is the one its own `git diff` prints. A run whose output exceeds the
+       * cap is diffed file by file, so only a file too large to diff loses its hunks.
+       */
+      const diffMany = Effect.fn("Git.diffMany")(function* ({
+        commit,
+        entries,
+      }: {
+        readonly commit: string;
+        readonly entries: ReadonlyArray<StatusEntry>;
+      }) {
+        const results = yield* Effect.forEach(
+          pathChunks(entries, (entry) => entry.path),
+          (chunk) =>
+            runRaw({
+              operation: "diff generation",
+              args: [
+                ...diffArguments,
+                "--no-renames",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                commit,
+                "--",
+                ...chunk.map((entry) => entry.path),
+              ],
+            }).pipe(
+              Effect.map((output) => {
+                const patches = new Map<string, string[]>();
+                for (const { path: file, patch } of splitPatches(output))
+                  patches.set(file, [...(patches.get(file) ?? []), patch]);
+                return chunk.map(
+                  (entry) => [entry.path, parseUnifiedHunks((patches.get(entry.path) ?? []).join(""))] as const,
+                );
+              }),
+              Effect.catchIf(
+                (error) => error.reason === "output_too_large",
+                () => Effect.forEach(chunk, (entry) => diffOne({ commit, entry }), { concurrency: 4 }),
+              ),
+            ),
+          { concurrency: 4 },
+        );
+        return results.flat();
       });
 
       const collectStatus = Effect.fn("Git.collectStatus")(function* (baseCommit: string) {
@@ -375,69 +495,85 @@ export class Git extends Context.Service<
               (entry) => include(entry.path) || (entry.previousPath !== undefined && include(entry.previousPath)),
             )
           : entries;
-        const files = yield* Effect.forEach(
-          selected,
-          (entry) =>
-            Effect.gen(function* () {
-              const before = yield* readBaseline({ commit: baseline.commit, entry });
-              const after =
-                entry.status === "deleted" ? undefined : yield* readWorkingFile({ root, filePath: entry.path });
-              if (after?._tag === "Skipped") return undefined;
-              const loaded = before?._tag !== "Unloaded" && after?._tag !== "Unloaded";
-              // An untracked file has no diff, and an unloaded side has none worth its size.
-              const parsedHunks =
-                untracked.has(entry.path) || !loaded
-                  ? []
-                  : parseUnifiedHunks(
-                      yield* runRaw({
-                        operation: "diff generation",
-                        args: [
-                          "diff",
-                          "--relative",
-                          "--no-ext-diff",
-                          "--no-textconv",
-                          "--unified=3",
-                          "--find-renames",
-                          baseline.commit,
-                          "--",
-                          entry.previousPath ?? entry.path,
-                          ...(entry.previousPath ? [entry.path] : []),
-                        ],
-                      }).pipe(
-                        Effect.catchIf(
-                          (error) => error.reason === "output_too_large",
-                          () => Effect.succeed(""),
-                        ),
-                      ),
-                    );
-              const hunks =
-                parsedHunks.length === 0 && entry.status === "added" && after?._tag === "Text"
-                  ? [
-                      {
-                        oldStart: 0,
-                        oldLines: 0,
-                        newStart: 1,
-                        newLines: textLines(after.content).length,
-                        lines: textLines(after.content).map((content) => ({ kind: "addition" as const, content })),
-                      },
-                    ]
-                  : parsedHunks;
-
-              return {
-                status: entry.status,
-                path: entry.path,
-                ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
-                before: toSnapshot(before),
-                after: toSnapshot(after),
-                hunks: [...hunks],
-              } satisfies ChangedFile;
-            }),
-          { concurrency: 4 },
+        const [baselines, working] = yield* Effect.all(
+          [
+            readBaselines({ commit: baseline.commit, entries: selected }),
+            Effect.forEach(
+              selected,
+              (entry) =>
+                entry.status === "deleted"
+                  ? Effect.succeed(undefined)
+                  : readWorkingFile({ root, filePath: entry.path }),
+              { concurrency: 8 },
+            ),
+          ],
+          { concurrency: 2 },
         );
+        const hashes = yield* hashWorkingFiles(
+          selected.filter((_, index) => working[index]?._tag === "Unhashed").map((entry) => entry.path),
+        );
+        const sides = selected.map((entry, index) => {
+          const side = working[index];
+          const after: SideContent | undefined =
+            side?._tag === "Unhashed" ? { _tag: "Unloaded", blob: hashes.get(entry.path) ?? "" } : side;
+          return { entry, before: baselines[index], after };
+        });
+        // An untracked file has no diff, and an unloaded side has none worth its size.
+        const diffed = sides
+          .filter(
+            ({ entry, before, after }) =>
+              after?._tag !== "Skipped" &&
+              !untracked.has(entry.path) &&
+              before?._tag !== "Unloaded" &&
+              after?._tag !== "Unloaded",
+          )
+          .map(({ entry }) => entry);
+        // A rename, and a path whose own diff also covers changes below it (a file replaced by a directory), keep their
+        // own diff: a shared one could pair them differently.
+        const trackedPaths = entries.filter((entry) => !untracked.has(entry.path)).map((entry) => entry.path);
+        const ownDiff = (entry: StatusEntry) =>
+          entry.previousPath !== undefined || trackedPaths.some((other) => other.startsWith(`${entry.path}/`));
+        const [shared, own] = yield* Effect.all(
+          [
+            diffMany({ commit: baseline.commit, entries: diffed.filter((entry) => !ownDiff(entry)) }),
+            Effect.forEach(diffed.filter(ownDiff), (entry) => diffOne({ commit: baseline.commit, entry }), {
+              concurrency: 4,
+            }),
+          ],
+          { concurrency: 2 },
+        );
+        const hunksByPath = new Map([...shared, ...own]);
+
+        const files = sides.flatMap(({ entry, before, after }): ReadonlyArray<ChangedFile> => {
+          if (after?._tag === "Skipped") return [];
+          const parsedHunks = hunksByPath.get(entry.path) ?? [];
+          const hunks =
+            parsedHunks.length === 0 && entry.status === "added" && after?._tag === "Text"
+              ? [
+                  {
+                    oldStart: 0,
+                    oldLines: 0,
+                    newStart: 1,
+                    newLines: textLines(after.content).length,
+                    lines: textLines(after.content).map((content) => ({ kind: "addition" as const, content })),
+                  },
+                ]
+              : parsedHunks;
+          return [
+            {
+              status: entry.status,
+              path: entry.path,
+              ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
+              before: toSnapshot(before),
+              after: toSnapshot(after),
+              hunks: [...hunks],
+            },
+          ];
+        });
 
         return {
           baseline: { kind: "git" as const, ref: baseline.ref, commit: baseline.commit },
-          files: files.filter((file) => file !== undefined),
+          files,
         };
       });
 
