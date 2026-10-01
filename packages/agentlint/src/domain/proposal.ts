@@ -48,11 +48,13 @@ export function findProposal({
   finding,
 }: {
   readonly records: ReadonlyArray<ProposalRecord>;
-  readonly finding: Pick<FindingRecord, "source" | "fingerprint">;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints">;
 }): ProposalRecord | undefined {
+  // A proposal recorded under a legacy fingerprint of the finding describes the same evidence.
+  const fingerprints = [finding.fingerprint, ...(finding.legacyFingerprints ?? [])];
   return records.find(
     (record) =>
       sameFindingSource({ left: record.source, right: finding.source }) &&
-      sameFingerprint({ left: record.fingerprint, right: finding.fingerprint }),
+      fingerprints.some((fingerprint) => sameFingerprint({ left: record.fingerprint, right: fingerprint })),
   );
 }

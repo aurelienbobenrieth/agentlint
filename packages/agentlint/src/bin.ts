@@ -115,6 +115,11 @@ const check = Command.make(
     if (result.staleCount) {
       yield* status(`${result.staleCount} stale acceptance${result.staleCount === 1 ? "" : "s"} removed.`);
     }
+    if (result.migratedCount) {
+      yield* status(
+        `${result.migratedCount} acceptance${result.migratedCount === 1 ? "" : "s"} moved to the current evidence fingerprint.`,
+      );
+    }
     if (reviewOutput) yield* status(`Review artifact: ${yield* writeReviewArtifact(reviewOutput, result, base)}`);
     yield* setExitCode(result.exitCode);
   }),

@@ -105,12 +105,13 @@ export function invalidationReasons({
         ? "The repository advanced the review epoch."
         : "The binding scope, options, or declared dependencies changed.",
     );
-  if (
-    prior.fingerprint.version !== current.fingerprint.version ||
-    prior.fingerprint.scheme !== current.fingerprint.scheme
-  )
-    reasons.push("The evidence fingerprint scheme changed; a new review is required.");
-  else if (prior.fingerprint.digest !== current.fingerprint.digest)
+  // A decision recorded under a legacy version compares with the finding's fingerprint under that version.
+  const comparable = findingFingerprints(current).find(
+    (fingerprint) =>
+      fingerprint.scheme === prior.fingerprint.scheme && fingerprint.version === prior.fingerprint.version,
+  );
+  if (comparable === undefined) reasons.push("The evidence fingerprint scheme changed; a new review is required.");
+  else if (prior.fingerprint.digest !== comparable.digest)
     reasons.push(
       current.lifecycle === "state"
         ? "The containing file structure, occurrence, or declared dependency evidence changed."
@@ -119,6 +120,48 @@ export function invalidationReasons({
   if (!authoritySatisfies({ actual: prior.authority, required: current.authority }))
     reasons.push("The binding now requires human authority.");
   return reasons;
+}
+
+/**
+ * The fingerprints a decision about `finding` may carry: the current one, then the same evidence under earlier scheme
+ * versions.
+ */
+function findingFingerprints(
+  finding: Pick<FindingRecord, "fingerprint" | "legacyFingerprints">,
+): ReadonlyArray<Fingerprint> {
+  return [finding.fingerprint, ...(finding.legacyFingerprints ?? [])];
+}
+
+/**
+ * Exact identity keys of `finding` under its legacy fingerprints.
+ */
+export function legacyKeys(finding: Pick<FindingRecord, "source" | "legacyFingerprints">): ReadonlyArray<string> {
+  return (finding.legacyFingerprints ?? []).map((fingerprint) =>
+    findingIdentityKey({ source: finding.source, fingerprint }),
+  );
+}
+
+/**
+ * The same decision, keyed by the finding's current fingerprint and lineage. Only for a record whose legacy fingerprint
+ * equals the finding's: equal legacy evidence is equal current evidence.
+ */
+export function rekeyedAcceptance({
+  record,
+  finding,
+}: {
+  readonly record: AcceptanceRecord;
+  readonly finding: Pick<FindingRecord, "fingerprint"> & { readonly lineageKey?: string | undefined };
+}): AcceptanceRecord {
+  return new AcceptanceRecord({
+    schemaVersion: record.schemaVersion,
+    source: record.source,
+    fingerprint: finding.fingerprint,
+    lineageKey: finding.lineageKey ?? record.lineageKey,
+    reason: record.reason,
+    authority: record.authority,
+    actor: record.actor,
+    acceptedAt: record.acceptedAt,
+  });
 }
 
 /**
@@ -149,13 +192,18 @@ export function acceptanceSatisfies({
   finding,
 }: {
   readonly acceptance: AcceptanceRecord;
-  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints" | "authority">;
 }): boolean {
+  // A legacy fingerprint counts only as the engine computed it for this finding; a stored one alone never does.
+  const legacy = (finding.legacyFingerprints ?? []).some((fingerprint) =>
+    sameFingerprint({ left: acceptance.fingerprint, right: fingerprint }),
+  );
   return (
     isSupportedFingerprint(finding.fingerprint) &&
-    isSupportedFingerprint(acceptance.fingerprint) &&
     sameFindingSource({ left: acceptance.source, right: finding.source }) &&
-    sameFingerprint({ left: acceptance.fingerprint, right: finding.fingerprint }) &&
+    ((isSupportedFingerprint(acceptance.fingerprint) &&
+      sameFingerprint({ left: acceptance.fingerprint, right: finding.fingerprint })) ||
+      legacy) &&
     authoritySatisfies({ actual: acceptance.authority, required: finding.authority })
   );
 }
@@ -195,6 +243,22 @@ export function acceptanceSnapshot(records: ReadonlyArray<AcceptanceRecord>): Ac
 }
 
 /**
+ * The decision stored for `finding`, under its current fingerprint or, until a complete check re-keys it, a legacy one.
+ * It may still lack the authority the finding requires.
+ */
+export function findStoredAcceptance({
+  acceptances,
+  finding,
+}: {
+  readonly acceptances: AcceptanceSnapshot;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints">;
+}): AcceptanceRecord | undefined {
+  return [acceptanceKey(finding), ...legacyKeys(finding)]
+    .map((key) => acceptances.byKey.get(key))
+    .find((record) => record !== undefined);
+}
+
+/**
  * Find the acceptance that opens the gate for `finding`, using the exact identity index. Equivalent to scanning
  * `records` with `acceptanceSatisfies`.
  */
@@ -203,9 +267,9 @@ export function lookupAcceptance({
   finding,
 }: {
   readonly acceptances: AcceptanceSnapshot;
-  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "authority">;
+  readonly finding: Pick<FindingRecord, "source" | "fingerprint" | "legacyFingerprints" | "authority">;
 }): AcceptanceRecord | undefined {
-  const record = acceptances.byKey.get(acceptanceKey(finding));
+  const record = findStoredAcceptance({ acceptances, finding });
   return record !== undefined && acceptanceSatisfies({ acceptance: record, finding }) ? record : undefined;
 }
 

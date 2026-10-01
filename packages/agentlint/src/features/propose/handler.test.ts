@@ -139,6 +139,28 @@ describe("proposal store", () => {
     expect((await run(proposals)).map(({ summary }) => summary)).toEqual(["Kept."]);
   });
 
+  it("moves a proposal recorded under a legacy fingerprint to the finding's current one", async () => {
+    await run(writeSource({ source: 'danger("x");' }));
+    const { findings } = await run(check);
+    await run(propose({ selector: "1", summary: "Recorded before the upgrade." }));
+    const finding = EffectArray.getUnsafe(findings, 0);
+    const legacy = EffectArray.getUnsafe(finding.legacyFingerprints ?? [], 0);
+    // Rewrite the stored proposal as an earlier version wrote it.
+    await run(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const content = yield* fs.readFileString(file);
+        yield* fs.writeFileString(
+          file,
+          content.replace(finding.fingerprint.digest, legacy.digest).replace('"version":4', '"version":3'),
+        );
+      }),
+    );
+    expect(findProposal({ records: await run(proposals), finding })?.summary).toBe("Recorded before the upgrade.");
+    await run(Effect.flatMap(ProposalStore, (store) => store.prune({ stale: "all", current: findings })));
+    expect((await run(proposals)).map(({ fingerprint }) => fingerprint)).toEqual([finding.fingerprint]);
+  });
+
   it("reads a missing file as empty and reports the line of a corrupt record", async () => {
     expect(await run(proposals)).toEqual([]);
     await run(

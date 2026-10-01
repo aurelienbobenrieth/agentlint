@@ -34,6 +34,7 @@ export const nextHandler = Effect.fn("nextHandler")(function* (command: NextComm
             accepted: check.accepted,
             lineage: check.lineage,
             staleCount: check.staleCount,
+            migratedCount: check.migratedCount,
             scope: check.scope,
             base: check.base,
             exitCode: check.exitCode,

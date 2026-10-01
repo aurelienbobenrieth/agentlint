@@ -63,14 +63,12 @@ describe("canonical fingerprints", () => {
 
   it("emits and supports only the current state scheme version", () => {
     const current = fingerprintState({ path: "src/query.ts", structure: [], occurrence: "call:0" });
-    expect(current).toMatchObject({ scheme: "source-structure", version: 3 });
+    expect(current).toMatchObject({ scheme: "source-structure", version: 4 });
     expect(isSupportedFingerprint(current)).toBe(true);
-    expect(
-      isSupportedFingerprint(new Fingerprint({ scheme: current.scheme, version: 2, digest: current.digest })),
-    ).toBe(false);
-    expect(
-      isSupportedFingerprint(new Fingerprint({ scheme: current.scheme, version: 4, digest: current.digest })),
-    ).toBe(false);
+    for (const version of [2, 3, 5])
+      expect(isSupportedFingerprint(new Fingerprint({ scheme: current.scheme, version, digest: current.digest }))).toBe(
+        false,
+      );
   });
 
   it("invalidates state fingerprints for paths, captures, and duplicate occurrences", () => {

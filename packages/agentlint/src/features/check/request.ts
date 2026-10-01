@@ -30,6 +30,10 @@ export class CheckResult extends Schema.TaggedClass<CheckResult>()("CheckResult"
   accepted: Schema.Array(FindingRecord),
   lineage: Schema.Array(CheckLineage),
   staleCount: Schema.Number,
+  /**
+   * Decisions a complete check moved from a legacy fingerprint to the finding's current one.
+   */
+  migratedCount: Schema.Number,
   scope: Schema.Literals(["partial", "complete"]),
   base: Schema.UndefinedOr(Schema.String),
   exitCode: Schema.Number,

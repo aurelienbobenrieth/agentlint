@@ -3,7 +3,7 @@
  */
 
 import { Array as A, Effect } from "effect";
-import { findLineage, lookupAcceptance, staleScopeCovers } from "../../domain/acceptance.js";
+import { findLineage, legacyKeys, lookupAcceptance, staleScopeCovers } from "../../domain/acceptance.js";
 import { findingId, findingKey, withSelector, type FindingRecord } from "../../domain/finding.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
@@ -27,6 +27,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
       accepted: [],
       lineage: [],
       staleCount: 0,
+      migratedCount: 0,
       scope: collected.scope,
       base: collected.base,
       exitCode: 2,
@@ -39,15 +40,21 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   const unresolved: FindingRecord[] = [];
   const accepted: FindingRecord[] = [];
   const currentKeys = new Set<string>();
+  const previousKeys = new Set<string>();
   for (const finding of collected.findings) {
     currentKeys.add(findingKey(finding));
+    for (const key of legacyKeys(finding)) previousKeys.add(key);
     if (lookupAcceptance({ acceptances: snapshot, finding })) accepted.push(finding);
     else unresolved.push(finding);
   }
+  // A decision stored under a legacy fingerprint of a current finding is not stale: the reconcile below re-keys it.
   const staleCount = A.filter(
     [...snapshot.byKey],
-    ([key, record]) => !currentKeys.has(key) && staleScopeCovers({ scope: collected.stale, record }),
+    ([key, record]) =>
+      !currentKeys.has(key) && !previousKeys.has(key) && staleScopeCovers({ scope: collected.stale, record }),
   ).length;
+  // Only state findings carry legacy fingerprints, and every scan that may remove records sees all of them.
+  const migratable = collected.stale !== "none" && A.some([...snapshot.byKey.keys()], (key) => previousKeys.has(key));
   const selected = A.map(unresolved, (finding, index) =>
     withSelector({
       finding,
@@ -81,9 +88,10 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     );
   }
 
-  if (staleCount > 0) {
-    yield* store.reconcile({ stale: collected.stale, current: collected.findings });
-  }
+  const reconciled =
+    staleCount > 0 || migratable
+      ? yield* store.reconcile({ stale: collected.stale, current: collected.findings })
+      : undefined;
   // A proposal describes one exact finding. Once a view that could find it no longer does, nobody can decide on it.
   if (collected.stale !== "none") {
     yield* proposals.prune({ stale: collected.stale, current: collected.findings });
@@ -98,6 +106,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     accepted,
     lineage,
     staleCount,
+    migratedCount: reconciled?.migrated.length ?? 0,
     scope: collected.scope,
     base: collected.base,
     exitCode: selected.length > 0 ? 1 : 0,

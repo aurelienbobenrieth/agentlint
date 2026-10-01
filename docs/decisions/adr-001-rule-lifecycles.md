@@ -95,10 +95,10 @@ defineRule({
 
 ## Fingerprints ignore line numbers
 
-| Scheme             | Digests                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `source-structure` | path, semantic structure of the file, declared dependency contents, optional `evidence`, occurrence key |
-| `git-change`       | detector `evidence`, before and after paths, file operation, detector `key`                             |
+| Scheme             | Digests                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `source-structure` | path, formatting-insensitive structure of the file, declared dependency contents, optional `evidence`, occurrence key |
+| `git-change`       | detector `evidence`, before and after paths, file operation, detector `key`                                           |
 
 The occurrence key is the node's structural child path or a unique detector `key`, so two equal conditions in one file differ. See [ADR-005](./adr-005-fingerprints-and-lineage.md).
 
