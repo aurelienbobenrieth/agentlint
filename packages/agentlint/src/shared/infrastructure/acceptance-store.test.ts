@@ -134,7 +134,7 @@ describe("acceptance current-state reconciliation", () => {
     const result = reconcileAcceptanceRecords({
       existing: [outside, visible],
       input: {
-        scope: "partial",
+        stale: "none",
         current: [current(visible)],
       },
     });
@@ -148,12 +148,26 @@ describe("acceptance current-state reconciliation", () => {
     const result = reconcileAcceptanceRecords({
       existing: [stale, visible],
       input: {
-        scope: "complete",
+        stale: "all",
         current: [current(visible)],
       },
     });
     expect(result.records).toEqual([visible]);
     expect(result.removed).toEqual([stale]);
+  });
+
+  it("prunes only stale state records from a complete view against another base", () => {
+    const staleState = record({ digest: "state" });
+    const staleChange = record({
+      digest: "change",
+      overrides: { fingerprint: new Fingerprint({ scheme: "git-change", version: 2, digest: "change" }) },
+    });
+    const result = reconcileAcceptanceRecords({
+      existing: [staleState, staleChange],
+      input: { stale: "state", current: [] },
+    });
+    expect(result.records).toEqual([staleChange]);
+    expect(result.removed).toEqual([staleState]);
   });
 
   it("preserves other identities in the same lineage during partial updates", () => {
@@ -165,7 +179,7 @@ describe("acceptance current-state reconciliation", () => {
     const result = reconcileAcceptanceRecords({
       existing: [prior],
       input: {
-        scope: "partial",
+        stale: "none",
         current: [current(next)],
         accepted: [next],
       },
@@ -178,7 +192,7 @@ describe("acceptance current-state reconciliation", () => {
     expect(() =>
       reconcileAcceptanceRecords({
         existing: [],
-        input: { scope: "partial", current: [], accepted: [record({ digest: "unknown" })] },
+        input: { stale: "none", current: [], accepted: [record({ digest: "unknown" })] },
       }),
     ).toThrow("must identify a finding");
   });
@@ -193,7 +207,7 @@ describe("AcceptanceStore", () => {
         (index) => {
           const accepted = record({ digest: String(index) });
           return Effect.flatMap(AcceptanceStore, (store) =>
-            store.reconcile({ scope: "partial", current: [current(accepted)], accepted: [accepted] }),
+            store.reconcile({ stale: "none", current: [current(accepted)], accepted: [accepted] }),
           ).pipe(Effect.provide(testLayer(cwd)));
         },
         { concurrency: "unbounded" },
@@ -212,7 +226,7 @@ describe("AcceptanceStore", () => {
       reconcileAcceptanceRecords({
         existing: [replaced],
         input: {
-          scope: "partial",
+          stale: "none",
           current: [current(previous)],
           revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
         },
@@ -222,7 +236,7 @@ describe("AcceptanceStore", () => {
       reconcileAcceptanceRecords({
         existing: [previous],
         input: {
-          scope: "partial",
+          stale: "none",
           current: [current(previous)],
           revoked: [{ ...current(previous), expectedAcceptedAt: previous.acceptedAt, expectedReason: previous.reason }],
         },

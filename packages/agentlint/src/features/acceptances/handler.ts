@@ -58,7 +58,7 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
       });
     }
     const result = yield* store.reconcile({
-      scope: "partial",
+      stale: "none",
       current: collected.findings,
       accepted: command.imported
         .filter((record): record is AcceptanceImport => record.type === "accept")
@@ -73,7 +73,7 @@ export const acceptancesHandler = Effect.fn("acceptancesHandler")(function* (com
       exitCode: 0,
     });
   }
-  const result = yield* store.reconcile({ scope: "complete", current: collected.findings });
+  const result = yield* store.reconcile({ stale: collected.stale, current: collected.findings });
   return new AcceptancesResult({
     records: [...result.records],
     removedCount: result.removed.length,

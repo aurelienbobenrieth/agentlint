@@ -132,7 +132,9 @@ describe("proposal store", () => {
     await run(propose({ selector: "1", summary: "Kept." }));
     await run(propose({ selector: "2", summary: "Dropped." }));
 
-    const kept = await run(Effect.flatMap(ProposalStore, (store) => store.prune(findings.slice(0, 1))));
+    const kept = await run(
+      Effect.flatMap(ProposalStore, (store) => store.prune({ stale: "all", current: findings.slice(0, 1) })),
+    );
     expect(kept.map(({ summary }) => summary)).toEqual(["Kept."]);
     expect((await run(proposals)).map(({ summary }) => summary)).toEqual(["Kept."]);
   });

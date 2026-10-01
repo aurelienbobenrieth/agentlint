@@ -15,7 +15,9 @@ import {
   AcceptanceRecord,
   acceptanceKey,
   acceptanceSnapshot,
+  staleScopeCovers,
   type AcceptanceSnapshot,
+  type StaleScope,
 } from "../../domain/acceptance.js";
 import { randomUUID } from "node:crypto";
 import { compareStrings } from "../../domain/compare.js";
@@ -37,7 +39,10 @@ export class AcceptanceStoreError extends Schema.TaggedError<AcceptanceStoreErro
 }
 
 export interface ReconcileInput {
-  readonly scope: "partial" | "complete";
+  /**
+   * The absent records this view may remove.
+   */
+  readonly stale: StaleScope;
   readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>;
   readonly accepted?: ReadonlyArray<AcceptanceRecord>;
   readonly revoked?: ReadonlyArray<
@@ -152,8 +157,9 @@ export function serializeAcceptances(records: ReadonlyArray<AcceptanceRecord>): 
 /**
  * Apply new acceptances and check cleanup rules without performing I/O.
  *
- * A new record replaces only the same exact identity. A partial view never removes other records. A complete view
- * removes records whose exact identities are absent.
+ * A new record replaces only the same exact identity. Other records go only when absent from the view and inside its
+ * stale scope: never for a partial view, state records for a complete one against another base, all records for a
+ * complete one against the default branch.
  */
 export function reconcileAcceptanceRecords({
   existing,
@@ -204,9 +210,9 @@ export function reconcileAcceptanceRecords({
   );
   state.records = state.records.filter((record) => !revoked.has(keyOf(record)));
 
-  if (input.scope === "complete") {
-    state.records = state.records.filter((record) => currentKeys.has(keyOf(record)));
-  }
+  state.records = state.records.filter(
+    (record) => currentKeys.has(keyOf(record)) || !staleScopeCovers({ scope: input.stale, record }),
+  );
 
   const keptKeys = new Set(state.records.map(keyOf));
   const removed = existing.filter((record) => !keptKeys.has(keyOf(record)));

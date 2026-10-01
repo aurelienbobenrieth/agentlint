@@ -59,7 +59,7 @@ describe("review identity and authoring regressions", () => {
         reconcileAcceptanceRecords({
           existing,
           input: {
-            scope: "partial",
+            stale: "none",
             current: [finding],
             accepted: [accept(finding)],
           },

@@ -75,7 +75,7 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
     actor,
     acceptedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
   });
-  yield* store.reconcile({ scope: "partial", current: [finding], accepted: [record] });
+  yield* store.reconcile({ stale: "none", current: [finding], accepted: [record] });
   return new AcceptResult({
     message: `Accepted ${finding.ruleId} at ${finding.file}:${finding.line}.`,
     exitCode: 0,

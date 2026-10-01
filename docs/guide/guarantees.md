@@ -16,6 +16,7 @@
 | Explicit directory | Expands recursively                                                                                          |
 | Scan fails on      | Missing explicit path, failed read, incomplete or unsupported syntax, path outside the repo, invalid binding |
 | Partial scan       | Never qualifies for complete stale cleanup                                                                   |
+| Other merge base   | A complete scan against a base other than the default branch's keeps every change record and proposal        |
 
 ## Storage writes are locked and atomic
 
