@@ -1,12 +1,13 @@
-import { Layer, ManagedRuntime, Schema } from "effect";
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { featureTestLayer, featureTestRule } from "../../__fixtures__/feature-test-services.js";
+import { defineRule } from "../../domain/rule/model.js";
 import { encodeJson } from "../../shared/infrastructure/json.js";
-import { ReviewActionResult, ReviewStatePayload, type ReviewFinishResult } from "./contract.js";
+import { ReviewActionResult, ReviewProgress, ReviewStatePayload, type ReviewFinishResult } from "./contract.js";
 import { makeReviewListener, type ReviewListener, type ReviewListenerConfig } from "./server.js";
 
 const sandbox = join(tmpdir(), "agentlint-v02-review-http-test");
@@ -17,6 +18,7 @@ const TestLayer = featureTestLayer({ cwd, rules: [rule], actor: "human:test" });
 
 const decodeState = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewStatePayload));
 const decodeResult = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewActionResult));
+const decodeProgress = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewProgress));
 
 interface Reply {
   readonly status: number;
@@ -99,10 +101,26 @@ function send({
   });
 }
 
+/**
+ * What the page does with the link's token: post it from its own origin.
+ */
+const exchange = ({
+  token = required(fixture.listener).bootstrapToken,
+  headers = {},
+}: { readonly token?: string; readonly headers?: Record<string, string> } = {}): Promise<Reply> =>
+  send({
+    method: "POST",
+    path: "/api/session",
+    options: {
+      body: encodeJson({ token }),
+      headers: { origin: `http://127.0.0.1:${fixture.port}`, "content-type": "application/json", ...headers },
+    },
+  });
+
 async function signIn(): Promise<string> {
-  const reply = await send({ method: "GET", path: `/?token=${required(fixture.listener).bootstrapToken}` });
+  const reply = await exchange();
   const cookie = reply.headers["set-cookie"]?.[0]?.split(";")[0];
-  if (reply.status !== 302 || !cookie) throw new Error(`Sign-in failed with ${reply.status}`);
+  if (reply.status !== 200 || !cookie) throw new Error(`Sign-in failed with ${reply.status}`);
   return cookie;
 }
 
@@ -131,9 +149,11 @@ const post = ({
     },
   });
 
+const state = async (cookie: string) =>
+  decodeState((await send({ method: "GET", path: "/api/state", options: { headers: { cookie } } })).body);
+
 async function firstFindingId(cookie: string): Promise<string> {
-  const state = decodeState((await send({ method: "GET", path: "/api/state", options: { headers: { cookie } } })).body);
-  const id = state.findings[0]?.id;
+  const id = (await state(cookie)).findings[0]?.id;
   if (!id) throw new Error("Expected a finding");
   return id;
 }
@@ -161,38 +181,56 @@ afterEach(async () => {
 });
 
 describe("review session bootstrap", () => {
-  it("trades the link once for a per-port cookie that outlives it", async () => {
+  it("serves the link without spending it, and trades it once for a per-port cookie", async () => {
     await mount();
-    const first = await send({ method: "GET", path: `/?token=${required(fixture.listener).bootstrapToken}` });
-    expect(first.status).toBe(302);
-    expect(first.headers.location).toBe("/");
+    const token = required(fixture.listener).bootstrapToken;
+    // A prefetch, a link preview, or the link opened twice only loads the page.
+    const visits = [
+      await send({ method: "GET", path: `/?token=${token}` }),
+      await send({ method: "GET", path: `/?token=${token}` }),
+    ];
+    expect(
+      visits.map((page) => [page.status, page.body, page.headers["set-cookie"], page.headers["referrer-policy"]]),
+    ).toEqual([
+      [200, "SHELL", undefined, "no-referrer"],
+      [200, "SHELL", undefined, "no-referrer"],
+    ]);
+
+    const first = await exchange();
+    expect(first.status).toBe(200);
     const setCookie = first.headers["set-cookie"]?.[0] ?? "";
     expect(setCookie).toMatch(
       new RegExp(`^agentlint_review_${fixture.port}=[0-9a-f]{64}; HttpOnly; SameSite=Strict; Path=/$`),
     );
-    expect(setCookie).not.toContain(required(fixture.listener).bootstrapToken);
+    expect(setCookie).not.toContain(token);
     const cookie = setCookie.split(";")[0] ?? "";
 
-    const replay = await send({ method: "GET", path: `/?token=${required(fixture.listener).bootstrapToken}` });
+    // Another browser, without the cookie, is refused and gets no session.
+    const replay = await exchange();
     expect(replay.status).toBe(403);
-    expect(replay.headers["content-type"]).toContain("text/plain");
-    expect(replay.body).toContain("agentlint review again");
+    expect(decodeResult(replay.body).message).toContain("already opened in another browser");
     expect(replay.headers["set-cookie"]).toBeUndefined();
+    expect((await send({ method: "GET", path: "/api/state" })).status).toBe(403);
 
-    // Reloading, or going back to the spent link, keeps the reviewer signed in.
-    const revisit = await send({
-      method: "GET",
-      path: `/?token=${required(fixture.listener).bootstrapToken}`,
-      options: { headers: { cookie } },
-    });
-    expect(revisit.status).toBe(302);
-    expect(revisit.headers["set-cookie"]).toBeUndefined();
+    // The browser that holds the cookie can reload, or open the link again from another page.
+    const reopened = await exchange({ headers: { cookie } });
+    expect([reopened.status, reopened.headers["set-cookie"]]).toEqual([200, undefined]);
     expect((await send({ method: "GET", path: "/api/state", options: { headers: { cookie } } })).status).toBe(200);
   });
 
-  it("does not spend the link on a wrong token, and never accepts the link token as a cookie", async () => {
+  it("does not spend the link on a wrong token or a foreign origin, and never accepts it as a cookie", async () => {
     await mount();
-    expect((await send({ method: "GET", path: `/?token=${"0".repeat(64)}` })).status).toBe(403);
+    expect((await exchange({ token: "0".repeat(64) })).status).toBe(403);
+    expect((await exchange({ headers: { origin: "https://attacker.example" } })).status).toBe(403);
+    const withoutOrigin = await send({
+      method: "POST",
+      path: "/api/session",
+      options: {
+        body: encodeJson({ token: required(fixture.listener).bootstrapToken }),
+        headers: { "content-type": "application/json" },
+      },
+    });
+    expect(withoutOrigin.status).toBe(403);
     const asCookie = `agentlint_review_${fixture.port}=${required(fixture.listener).bootstrapToken}`;
     expect((await send({ method: "GET", path: "/api/state", options: { headers: { cookie: asCookie } } })).status).toBe(
       403,
@@ -207,6 +245,7 @@ describe("review request validation", () => {
     const origin = `http://127.0.0.1:${fixture.port}`;
     const json = { origin, "content-type": "application/json" };
     expect((await send({ method: "GET", path: "/api/state" })).status).toBe(403);
+    expect((await send({ method: "GET", path: "/api/progress" })).status).toBe(403);
     expect((await send({ method: "POST", path: "/api/action", options: { headers: json, body: "{}" } })).status).toBe(
       403,
     );
@@ -384,5 +423,77 @@ describe("review session finish", () => {
     expect(fixture.lockfilesAtFinish).toEqual([]);
     const late = await post({ path: "/api/action", cookie, body: encodeJson({ type: "withdraw", findingId }) });
     expect([late.status, decodeResult(late.body).message]).toEqual([409, "The review is finishing."]);
+  });
+});
+
+describe("review scan reuse", () => {
+  const scans = { count: 0 };
+  const counter = defineRule({
+    lifecycle: "state",
+    standard: { id: "test/scans", revision: 1, title: "Scans are counted", guidance: "Count scans." },
+    detector: {
+      id: "test/scan-counter",
+      version: 1,
+      createOnce: () => {
+        scans.count += 1;
+        return {};
+      },
+    },
+    binding: { id: "test/scans", authority: "agent", include: ["src/**/*.ts"] },
+  });
+
+  const describable = {
+    listFiles: () => Effect.succeed(["src/demo.ts", ".agentlint/acceptances.jsonl"]),
+    revision: () => Effect.succeed("head base"),
+  };
+  const remount = async (git: Parameters<typeof featureTestLayer>[0]["git"] = describable) => {
+    await required(fixture.runtime).dispose();
+    scans.count = 0;
+    fixture.runtime = ManagedRuntime.make(featureTestLayer({ cwd, rules: [rule, counter], actor: "human:test", git }));
+    await mount();
+  };
+
+  it("answers reloads and decisions from one scan until a file a rule can see changes", async () => {
+    await remount();
+    const cookie = await signIn();
+    const first = await state(cookie);
+    expect([first.findings.length, scans.count]).toEqual([1, 1]);
+    expect(await state(cookie)).toEqual({ ...first, generatedAt: expect.any(String) });
+    expect(scans.count).toBe(1);
+    expect(
+      decodeProgress((await send({ method: "GET", path: "/api/progress", options: { headers: { cookie } } })).body),
+    ).toEqual({ phase: "ready", files: 1, analyzed: 1 });
+
+    // Recording a decision writes the acceptance store, which no rule reads: the scan stands.
+    const findingId = first.findings[0]?.id ?? "";
+    const accepted = await post({
+      path: "/api/action",
+      cookie,
+      body: encodeJson({ type: "accept", findingId, reason: "Reviewed." }),
+    });
+    expect(accepted.status).toBe(200);
+    expect((await state(cookie)).findings.map((finding) => finding.status)).toEqual(["accepted"]);
+    expect(scans.count).toBe(1);
+
+    writeFileSync(join(cwd, "src", "demo.ts"), 'export const result = danger("x");\ndanger("y");\n');
+    expect((await state(cookie)).findings.length).toBe(2);
+    expect(scans.count).toBe(2);
+  });
+
+  it("shares one scan between requests that arrive while it runs", async () => {
+    await remount();
+    const cookie = await signIn();
+    required(fixture.listener).prepare();
+    const [left, right] = await Promise.all([state(cookie), state(cookie)]);
+    expect(left.findings).toEqual(right.findings);
+    expect(scans.count).toBe(1);
+  });
+
+  it("scans again for every request when Git cannot describe the repository", async () => {
+    await remount({});
+    const cookie = await signIn();
+    await state(cookie);
+    await state(cookie);
+    expect(scans.count).toBe(2);
   });
 });

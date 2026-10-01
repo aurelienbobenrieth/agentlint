@@ -52,7 +52,7 @@ packages/agentlint/src/features/review/contract.ts    Effect Schemas, imports on
 ```
 
 - All external data is decoded with Effect Schema. Invalid input shows the failure screen and never creates an acceptance.
-- The loader prefers the embedded global (detached artifact), then `/api/state`.
+- The loader prefers the embedded global (detached artifact). Otherwise it trades the link token through `POST /api/session`, then loads `/api/state`, polling `/api/progress` to show the scan's progress while it waits.
 
 ## Testing
 

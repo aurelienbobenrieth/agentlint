@@ -16,6 +16,23 @@ describe("canonical fingerprints", () => {
     expect(canonicalStringify({ b: 2, a: 1 })).toBe('{"a":1,"b":2}');
   });
 
+  it("keeps the exact encoding every stored fingerprint was digested from", () => {
+    // Written by hand from the JSON grammar: persisted acceptances depend on these bytes.
+    expect(
+      canonicalStringify({
+        z: [-0, 1e21, 0.1, -3, true, false, null],
+        é: 'tab\there "quoted" back\\slash \u0001   \ud800 😀',
+        a: { y: [], x: {} },
+      }),
+    ).toBe(
+      '{"a":{"x":{},"y":[]},"z":[0,1e+21,0.1,-3,true,false,null],"é":"tab\\there \\"quoted\\" back\\\\slash \\u0001   \\ud800 😀"}',
+    );
+    // sha256 of the literal text `["",0,"program"]`.
+    expect(canonicalDigest(["", 0, "program"])).toBe(
+      "4c8d1d693b342a674b4601a64acb9e9a1f704ce6f7911e4ce26ec4b1b8ed9cd1",
+    );
+  });
+
   it("rejects values outside canonical JSON", () => {
     expect(() => canonicalStringify({ value: Number.NaN })).toThrow("numbers must be finite");
     expect(() => Reflect.apply(canonicalStringify, undefined, [{ value: undefined }])).toThrow(

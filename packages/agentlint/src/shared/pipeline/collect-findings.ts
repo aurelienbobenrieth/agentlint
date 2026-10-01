@@ -17,7 +17,7 @@ import {
   type StateRule,
   type Visitors,
 } from "../../domain/rule/model.js";
-import { RuleContextImpl } from "../../domain/rule/context/live.js";
+import { fileStructureDigest, RuleContextImpl } from "../../domain/rule/context/live.js";
 import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git/service.js";
@@ -30,6 +30,7 @@ import {
   resolveFiles,
 } from "./file-resolver.js";
 import { grammarForExtension } from "./language-map.js";
+import { ScanProgress } from "./scan-progress.js";
 import { compileMatches, disposeMatches, runMatches, type RunnableMatches } from "./pattern-match.js";
 import { visitorKeys, walkFile } from "./tree-walker.js";
 import { filterRules, scopeMatcher, sortFindings, type ScopeMatcher } from "./finding/rules.js";
@@ -204,10 +205,11 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       return;
     }
     const runnable: Array<{ ruleId: string; context: RuleContextImpl; visitors: Visitors }> = [];
+    const structureDigest = fileStructureDigest(source);
 
     yield* Effect.gen(function* () {
       for (const entry of applicable) {
-        entry.context.setFile({ absolutePath, file, source });
+        entry.context.setFile({ absolutePath, file, source, structureDigest });
         const enabled = yield* Effect.try({
           try: () =>
             synchronousHook({
@@ -257,19 +259,23 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     }).pipe(Effect.ensuring(Effect.sync(() => tree.delete())));
   });
 
+  const progress = yield* ScanProgress;
   yield* Effect.gen(function* () {
     const walked: { last: readonly [file: string, source: string] | undefined } = { last: undefined };
-    for (const file of files) {
+    const analyzed = A.flatMap(files, (file) => {
       const grammar = grammarForExtension(path.extname(file).slice(1));
-      if (!grammar) continue;
+      return grammar && A.some(entries, (entry) => entry.inScope(file)) ? [{ file, grammar }] : [];
+    });
+    progress.analyzing(analyzed.length);
+    for (const { file, grammar } of analyzed) {
       const absolutePath = fixtureSources ? file : path.resolve(env.cwd, file);
-      if (!A.some(entries, (entry) => entry.inScope(file))) continue;
       const source = yield* readSource({ file, label: "file" });
       capture?.scanned.add(file);
       const reportedBefore = reportedCount();
       yield* walkOne({ file, absolutePath, source, grammar });
       if (reportedCount() > reportedBefore) capture?.sources.set(file, source);
       walked.last = [file, source];
+      progress.analyzed();
     }
     if (unparseable.length > 0)
       return yield* new UnparseableFilesError({
@@ -363,6 +369,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     const scoped = changeRules.map((rule) => [rule, scopeMatcher(rule)] as const);
     const selected = (file: string) => !ignoreMatcher?.(file) && (!explicitMatcher || explicitMatcher(file));
     // Git reads and diffs only what some change rule can see: an ignored file is never loaded.
+    (yield* ScanProgress).comparing();
     const change = yield* git.changeSet({
       ...(requestedBase ? { baseRef: requestedBase } : {}),
       include: (file) => selected(file) && scoped.some(([, inScope]) => inScope(file)),

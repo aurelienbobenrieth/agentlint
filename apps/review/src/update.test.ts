@@ -753,7 +753,7 @@ const loaded = ({
   readonly saved: ReturnType<typeof decodeSavedReview>;
 }) =>
   update({
-    model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
+    model: { ...model("review"), screen: Screen.Loading({ progress: null }), selectedFindingId: null },
     message: Message.LoadedState({
       state: payload,
       saved: saved.saved,
@@ -827,7 +827,7 @@ describe("loaded state", () => {
 describe("unavailable browser storage", () => {
   it("opens the review without saved drafts and warns the reviewer", () => {
     const result = update({
-      model: { ...model("review"), screen: Screen.Loading(), selectedFindingId: null },
+      model: { ...model("review"), screen: Screen.Loading({ progress: null }), selectedFindingId: null },
       message: Message.LoadedState({
         state: state("review"),
         saved: null,
@@ -999,5 +999,27 @@ describe("help dialog", () => {
     const again = update({ model: closed.model, message: Message.ClosedHelp() });
     expect(again.model.helpOpen).toBe(false);
     expect(again.commands ?? []).toEqual([]);
+  });
+});
+
+describe("scan progress", () => {
+  const loading = { ...model("review"), screen: Screen.Loading({ progress: null }) };
+  const analyzing = { phase: "analyzing", files: 438, analyzed: 120 } as const;
+
+  it("shows each answer and keeps asking while the review loads", () => {
+    const first = update({ model: loading, message: Message.ReceivedProgress({ progress: analyzing }) });
+    expect(first.model.screen).toEqual(Screen.Loading({ progress: analyzing }));
+    expect(first.commands?.map((command) => command.name)).toEqual(["PollProgress"]);
+    // A failed poll keeps the last answer on screen.
+    const failed = update({ model: first.model, message: Message.ReceivedProgress({ progress: null }) });
+    expect(failed.model.screen).toEqual(Screen.Loading({ progress: analyzing }));
+    expect(failed.commands?.map((command) => command.name)).toEqual(["PollProgress"]);
+  });
+
+  it("stops asking once the review is on screen", () => {
+    const onScreen = { ...model("review"), screen: Screen.Reviewing({ state: state("review") }) };
+    const result = update({ model: onScreen, message: Message.ReceivedProgress({ progress: analyzing }) });
+    expect(result.model).toBe(onScreen);
+    expect(result.commands ?? []).toEqual([]);
   });
 });

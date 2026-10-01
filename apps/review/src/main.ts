@@ -1,6 +1,6 @@
 import { Runtime, Subscription } from "foldkit";
 
-import { LoadReview } from "./features/session/command";
+import { hasEmbeddedState, LoadReview, PollProgress } from "./features/session/command";
 import { sidebarResize } from "./features/shell/subscription";
 import { keyboard } from "./features/shortcuts/subscription";
 import { Message } from "./message";
@@ -10,7 +10,7 @@ import { view } from "./view";
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: {
-    screen: Screen.Loading(),
+    screen: Screen.Loading({ progress: null }),
     view: "queue",
     facets: { statuses: [], authorities: [], lifecycles: [], ruleIds: [] },
     groupBy: "file",
@@ -40,7 +40,7 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     persistFailed: false,
     saveVersion: 0,
   },
-  commands: [LoadReview()],
+  commands: hasEmbeddedState() ? [LoadReview()] : [LoadReview(), PollProgress()],
 });
 
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({

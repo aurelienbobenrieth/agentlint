@@ -67,3 +67,79 @@ export function parseUnifiedHunks(output: string): ReadonlyArray<ChangeHunk> {
   if (state.current) hunks.push(state.current);
   return hunks;
 }
+
+const C_ESCAPES: Readonly<Record<string, number>> = {
+  a: 0x07,
+  b: 0x08,
+  t: 0x09,
+  n: 0x0a,
+  v: 0x0b,
+  f: 0x0c,
+  r: 0x0d,
+  '"': 0x22,
+  "\\": 0x5c,
+};
+
+/**
+ * Undo Git's C-style path quoting: `"` delimiters, backslash escapes, and octal bytes (`core.quotePath` writes
+ * non-ASCII bytes that way). Answers the unquoted text and the rest of the input after the closing quote.
+ */
+function unquoteCStyle(input: string): { readonly value: string; readonly rest: string } | undefined {
+  if (!input.startsWith('"')) return undefined;
+  const bytes: number[] = [];
+  let index = 1;
+  while (index < input.length) {
+    const character = input[index] ?? "";
+    if (character === '"') {
+      return { value: Buffer.from(bytes).toString("utf8"), rest: input.slice(index + 1) };
+    }
+    if (character !== "\\") {
+      bytes.push(...Buffer.from(character, "utf8"));
+      index += 1;
+      continue;
+    }
+    const next = input[index + 1] ?? "";
+    const octal = /^[0-3][0-7]{2}/.exec(input.slice(index + 1, index + 4))?.[0];
+    if (octal) {
+      bytes.push(Number.parseInt(octal, 8));
+      index += 4;
+      continue;
+    }
+    const escaped = C_ESCAPES[next];
+    if (escaped === undefined) return undefined;
+    bytes.push(escaped);
+    index += 2;
+  }
+  return undefined;
+}
+
+/**
+ * The path of a `diff --git a/<path> b/<path>` header when both sides name the same path, as they always do without
+ * rename or copy detection. Both names are quoted, or neither is.
+ */
+function patchHeaderPath(header: string): string | undefined {
+  const names = header.slice("diff --git ".length);
+  const quoted = unquoteCStyle(names);
+  if (quoted) return quoted.value.startsWith("a/") ? quoted.value.slice(2) : undefined;
+  // `a/<path> b/<path>`: the two halves have the same length.
+  const length = (names.length - "a/ b/".length) / 2;
+  if (!Number.isInteger(length) || length < 1 || !names.startsWith("a/")) return undefined;
+  const path = names.slice(2, 2 + length);
+  return names === `a/${path} b/${path}` ? path : undefined;
+}
+
+/**
+ * Split the output of one `git diff --no-renames --src-prefix=a/ --dst-prefix=b/` run into its per-file patches, in
+ * output order. A path can own two patches (a type change is a deletion and an addition).
+ */
+export function splitPatches(output: string): ReadonlyArray<{ readonly path: string; readonly patch: string }> {
+  const patches: Array<{ path: string; patch: string }> = [];
+  // Content lines carry a one-character marker, so only a header starts a line with `diff --git `.
+  const starts = [...output.matchAll(/^diff --git [^\n]*$/gm)];
+  for (const [position, match] of starts.entries()) {
+    const path = patchHeaderPath(match[0].replace(/\r$/, ""));
+    const end = starts[position + 1]?.index ?? output.length;
+    if (path !== undefined) patches.push({ path, patch: output.slice(match.index, end) });
+  }
+  return patches;
+}

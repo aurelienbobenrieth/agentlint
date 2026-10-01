@@ -195,6 +195,24 @@ export const ReviewStatePayload = Schema.Struct({
 });
 export type ReviewStatePayload = Schema.Schema.Type<typeof ReviewStatePayload>;
 
+/**
+ * How far the server got computing the review state. `analyzed` counts up to `files` while state rules run; `comparing`
+ * reads the change set; `ready` means `/api/state` answers from a finished scan.
+ */
+export const ReviewProgress = Schema.Struct({
+  phase: Schema.Literals(["preparing", "analyzing", "comparing", "ready"]),
+  files: Schema.Number,
+  analyzed: Schema.Number,
+});
+export type ReviewProgress = Schema.Schema.Type<typeof ReviewProgress>;
+
+/**
+ * Trades the one-time link token for the session cookie. Sent by the page, never by following the link, so a prefetch
+ * or link preview cannot spend it.
+ */
+export const ReviewSessionRequest = Schema.Struct({ token: Schema.String });
+export type ReviewSessionRequest = Schema.Schema.Type<typeof ReviewSessionRequest>;
+
 export const ReviewOpenRequest = Schema.Struct({
   findingId: Schema.String,
   application: EditorApplicationId,

@@ -27,15 +27,17 @@ const failure = ({ operation, cause }: { readonly operation: string; readonly ca
 export const fetchReview = ({
   url,
   init,
+  timeoutMs = 30_000,
 }: {
   readonly url: string;
   readonly init?: RequestInit;
+  readonly timeoutMs?: number;
 }): Effect.Effect<Response, BrowserRequestError> =>
   Effect.tryPromise({
     try: (signal) =>
       fetch(url, {
         ...init,
-        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000), ...(init?.signal ? [init.signal] : [])]),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs), ...(init?.signal ? [init.signal] : [])]),
       }),
     catch: (cause) =>
       new BrowserRequestError({

@@ -10,13 +10,17 @@ import { Array as A, Result, Schema } from "effect";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
-const encodeString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.String));
-const encodeNumber = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Number));
+/**
+ * `JSON.stringify` of a string or a finite number, which is what the Schema JSON encoder calls. A file's structure is
+ * thousands of strings, so the encoder is not worth its per-value validation here.
+ */
+const encodeString = (value: string): string => JSON.stringify(value);
+const encodeNumber = (value: number): string => JSON.stringify(value);
 const isString = Schema.is(Schema.String);
 const isBoolean = Schema.is(Schema.Boolean);
 const isNumber = Schema.is(Schema.Number);
-const isCanonicalObject = (value: CanonicalValue): value is CanonicalObject =>
-  Schema.is(Schema.Record(Schema.String, Schema.Unknown))(value);
+const isRecord = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
+const isCanonicalObject = (value: CanonicalValue): value is CanonicalObject => isRecord(value);
 
 /**
  * JSON data accepted by the canonical fingerprint encoder.
@@ -107,7 +111,7 @@ function encode({ value, ancestors }: { readonly value: unknown; readonly ancest
     const nextAncestors = new Set(ancestors).add(value);
     return `[${Array.from(value, (entry) => encode({ value: entry, ancestors: nextAncestors })).join(",")}]`;
   }
-  if (!Schema.is(Schema.Record(Schema.String, Schema.Unknown))(value)) {
+  if (!isRecord(value)) {
     throw new FingerprintError({
       reason: "invalid_value",
       detail: "the value is not canonical JSON data",

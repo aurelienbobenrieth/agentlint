@@ -38,16 +38,19 @@ export function sendJson({
   response,
   status,
   payload,
+  headers = {},
 }: {
   readonly response: ServerResponse;
   readonly status: number;
   readonly payload: unknown;
+  readonly headers?: Readonly<Record<string, string>>;
 }): void {
   response.writeHead(status, {
     "cache-control": "no-store",
     "content-type": "application/json; charset=utf-8",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
+    ...headers,
   });
   response.end(encodeJson(payload));
 }
