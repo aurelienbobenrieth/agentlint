@@ -3,7 +3,7 @@
  */
 
 import { Array as A, Effect } from "effect";
-import { findLineage, lookupAcceptance } from "../../domain/acceptance.js";
+import { findLineage, lookupAcceptance, staleScopeCovers } from "../../domain/acceptance.js";
 import { findingId, findingKey, withSelector, type FindingRecord } from "../../domain/finding.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { ProposalStore } from "../../shared/infrastructure/proposal-store.js";
@@ -44,8 +44,10 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     if (lookupAcceptance({ acceptances: snapshot, finding })) accepted.push(finding);
     else unresolved.push(finding);
   }
-  const staleCount =
-    collected.scope === "complete" ? A.filter([...snapshot.byKey.keys()], (key) => !currentKeys.has(key)).length : 0;
+  const staleCount = A.filter(
+    [...snapshot.byKey],
+    ([key, record]) => !currentKeys.has(key) && staleScopeCovers({ scope: collected.stale, record }),
+  ).length;
   const selected = A.map(unresolved, (finding, index) =>
     withSelector({
       finding,
@@ -79,12 +81,12 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     );
   }
 
-  if (collected.scope === "complete" && staleCount > 0) {
-    yield* store.reconcile({ scope: "complete", current: collected.findings });
+  if (staleCount > 0) {
+    yield* store.reconcile({ stale: collected.stale, current: collected.findings });
   }
-  // A proposal describes one exact finding. Once a complete view no longer contains it, nobody can decide on it.
-  if (collected.scope === "complete") {
-    yield* proposals.prune(collected.findings);
+  // A proposal describes one exact finding. Once a view that could find it no longer does, nobody can decide on it.
+  if (collected.stale !== "none") {
+    yield* proposals.prune({ stale: collected.stale, current: collected.findings });
   }
 
   return new CheckResult({

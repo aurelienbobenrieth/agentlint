@@ -5,6 +5,7 @@
 import { Array as A, Effect, FileSystem, Path, Schema } from "effect";
 import { DetectionError, synchronousHook, UnknownBindingError, UnparseableFilesError } from "./detection-error.js";
 import { Env } from "../../config/env.js";
+import { StaleScope } from "../../domain/acceptance.js";
 import { compareStrings } from "../../domain/compare.js";
 import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
 import { FindingRecord } from "../../domain/finding.js";
@@ -61,6 +62,7 @@ const CollectResult = Schema.Struct({
   noMatchingRules: Schema.Boolean,
   availableRules: Schema.Array(Schema.String),
   scope: Schema.Literals(["partial", "complete"]),
+  stale: StaleScope,
   base: Schema.UndefinedOr(Schema.String),
 });
 type CollectResult = Schema.Schema.Type<typeof CollectResult>;
@@ -322,6 +324,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       noMatchingRules: true,
       availableRules,
       scope,
+      stale: "none" as const,
       base: requestedBase,
     };
   }
@@ -351,7 +354,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     findings.push(...(yield* collectStateFindings(stateRules, files, undefined, capture)));
   }
 
-  const resultState = { selectedBase: requestedBase };
+  const resultState = { selectedBase: requestedBase, seesEveryChange: true };
   if (changeRules.length > 0) {
     const explicitMatcher = options.files.length
       ? yield* Effect.try({
@@ -372,6 +375,12 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       include: (file) => selected(file) && scoped.some(([, inScope]) => inScope(file)),
     });
     resultState.selectedBase = change.baseline.ref;
+    // A change finding exists only against a merge base, and only the default branch's decides which change records
+    // are stale. Another merge base, or a default branch Git cannot resolve, proves nothing about them.
+    if (scope === "complete" && requestedBase !== undefined) {
+      const defaultBaseline = yield* git.baseline().pipe(Effect.orElseSucceed(() => undefined));
+      resultState.seesEveryChange = defaultBaseline !== undefined && defaultBaseline.commit === change.baseline.commit;
+    }
 
     for (const [rule, inScope] of scoped) {
       const filteredChange = {
@@ -387,6 +396,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     }
   }
 
+  const stale: StaleScope = scope === "partial" ? "none" : resultState.seesEveryChange ? "all" : "state";
   return {
     findings: sortFindings(findings),
     scannedFiles: [...capture.scanned].toSorted((left, right) => compareStrings({ left, right })),
@@ -401,6 +411,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       .map((rule) => rule.binding.id)
       .toSorted((left, right) => compareStrings({ left, right })),
     scope,
+    stale,
     base: resultState.selectedBase,
   };
 });

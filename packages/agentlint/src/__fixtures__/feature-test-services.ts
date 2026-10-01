@@ -48,6 +48,7 @@ export const featureTestLayer = ({
       Git,
       Git.of({
         detectDefaultBranch: () => Effect.succeed("main"),
+        baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
         changedFiles: () => Effect.succeed([]),
         changeSet: () => Effect.succeed({ baseline: { kind: "git", ref: "main" }, files: [] }),
         ...git,

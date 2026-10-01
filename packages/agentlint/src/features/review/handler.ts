@@ -348,7 +348,7 @@ export const applyReviewAction = Effect.fn("applyReviewAction")(function* (
     if (!served) return !(yield* store.read()).byKey.has(action.findingId);
     const revoked = yield* store
       .reconcile({
-        scope: "partial",
+        stale: "none",
         current: [finding],
         revoked: [
           {

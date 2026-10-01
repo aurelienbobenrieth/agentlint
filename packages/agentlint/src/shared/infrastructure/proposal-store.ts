@@ -11,6 +11,7 @@
 import { Context, Effect, FileSystem, Layer, Path, Result, Schema, type PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
 import { Env } from "../../config/env.js";
+import { staleScopeCovers, type StaleScope } from "../../domain/acceptance.js";
 import { compareStrings } from "../../domain/compare.js";
 import type { FindingRecord } from "../../domain/finding.js";
 import { findingIdentityKey } from "../../domain/fingerprint.js";
@@ -79,11 +80,12 @@ export class ProposalStore extends Context.Service<
      */
     upsert(record: ProposalRecord): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
     /**
-     * Drop proposals whose exact identity is absent from a complete finding view.
+     * Drop proposals inside the view's stale scope whose exact identity is absent from it.
      */
-    prune(
-      current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>,
-    ): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
+    prune(input: {
+      readonly stale: StaleScope;
+      readonly current: ReadonlyArray<Pick<FindingRecord, "source" | "fingerprint">>;
+    }): Effect.Effect<ReadonlyArray<ProposalRecord>, ProposalStoreError>;
   }
 >()("agentlint/ProposalStore") {
   static readonly layer: Layer.Layer<ProposalStore, never, FileSystem.FileSystem | Path.Path | Env> = Layer.effect(
@@ -138,12 +140,12 @@ export class ProposalStore extends Context.Service<
               ),
             ),
           ),
-        prune: (current) => {
+        prune: ({ stale, current }) => {
           const keys = new Set(
             current.map((finding) => findingIdentityKey({ source: finding.source, fingerprint: finding.fingerprint })),
           );
           const live = (records: ReadonlyArray<ProposalRecord>) =>
-            records.filter((record) => keys.has(proposalKey(record)));
+            records.filter((record) => keys.has(proposalKey(record)) || !staleScopeCovers({ scope: stale, record }));
           // The common case has nothing to drop, and then needs neither the lock nor a write.
           return readRecords().pipe(
             Effect.flatMap((existing) =>

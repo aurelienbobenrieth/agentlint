@@ -12,6 +12,7 @@ import {
   Fingerprint,
   FindingSource,
   findingIdentityKey,
+  isChangeFingerprint,
   isSupportedFingerprint,
   sameFingerprint,
   sameFindingSource,
@@ -157,6 +158,28 @@ export function acceptanceSatisfies({
     sameFingerprint({ left: acceptance.fingerprint, right: finding.fingerprint }) &&
     authoritySatisfies({ actual: acceptance.authority, required: finding.authority })
   );
+}
+
+/**
+ * The stored records a check saw every candidate finding for, and so may remove when none matches. Only a view that
+ * could have found a record's finding proves it gone.
+ *
+ * - `all`: a complete scan whose change rules ran against the default branch's merge base.
+ * - `state`: a complete scan against another merge base. It sees every state finding, but change findings only relative
+ *   to that base, so every change record is outside it.
+ * - `none`: a partial scan.
+ */
+export const StaleScope = Schema.Literals(["none", "state", "all"]);
+export type StaleScope = Schema.Schema.Type<typeof StaleScope>;
+
+export function staleScopeCovers({
+  scope,
+  record,
+}: {
+  readonly scope: StaleScope;
+  readonly record: { readonly fingerprint: Fingerprint };
+}): boolean {
+  return scope === "all" || (scope === "state" && !isChangeFingerprint(record.fingerprint));
 }
 
 /**
