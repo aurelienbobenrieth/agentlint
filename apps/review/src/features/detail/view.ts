@@ -289,67 +289,96 @@ const actorRow = ({
   );
 
 /**
- * What the reviewer is asked to do, from who may decide and where the finding stands.
+ * The decision in a few words. Who may decide is already the authority badge.
  */
-const yourCall = ({
-  finding,
+const askHeading = ({
   mode,
   status,
 }: {
-  readonly finding: ReviewFindingPayload;
   readonly mode: ReviewStatePayload["mode"];
   readonly status: FindingStatus;
 }): string =>
   mode === "calibration"
-    ? "Label whether this rule should flag this code."
+    ? "Label it if this rule should flag this code"
     : status === "accepted"
-      ? "Accepted. Request changes to reopen it."
+      ? "Accepted · request changes to reopen"
       : status === "changes_requested"
-        ? "Sent back to the agent. Accept if the change is no longer needed."
-        : finding.authority === "human"
-          ? "Only a human can accept. Accept if the standard still holds; otherwise request changes."
-          : "An agent may accept this with a reason. Accept, or request changes.";
+        ? "Sent back · accept only if no change is needed"
+        : "Accept if";
 
 /**
- * The three answers a reviewer needs before reading code: why it was flagged, what they decide, what the agent says.
+ * What to verify before deciding: the rule's checklist, or its standard when it has none.
  */
-const glance = ({
+const ask = ({
   finding,
   state,
   status,
-  hidden,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
   readonly state: ReviewStatePayload;
   readonly status: FindingStatus;
-  readonly hidden: boolean;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
-  const proposal = hidden ? null : finding.proposal;
-  const row = (term: string, content: ReadonlyArray<Html | string>): ReadonlyArray<Html> => [
-    h.dt([h.Class("glance__term")], [term]),
-    h.dd([h.Class("glance__value")], content),
-  ];
-  return h.dl(
-    [h.Class("glance")],
+  const criteria = finding.guidance.checks.length > 0 ? finding.guidance.checks : [finding.guidance.standard];
+  return h.section(
+    [h.Class(`ask ask--${status}`)],
     [
-      ...row("Flagged", [finding.message]),
-      ...row("Your call", [yourCall({ finding, mode: state.mode, status })]),
-      ...(proposal === null
+      h.h2([h.Class("ask__heading")], [askHeading({ mode: state.mode, status })]),
+      h.ul(
+        [h.Class("ask__criteria")],
+        criteria.map((criterion) => h.li([], [criterion])),
+      ),
+    ],
+  );
+};
+
+/**
+ * One row per summary line. A leading `Label:` becomes the row's label, so `Changed:`, `Holds:`, `Check:` line up.
+ */
+const proposalLines = (summary: string): ReadonlyArray<{ readonly label: string | null; readonly text: string }> =>
+  summary
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const labelled = /^([A-Z][A-Za-z ]{0,15}):\s+(.+)$/u.exec(line);
+      return labelled ? { label: labelled[1] ?? null, text: labelled[2] ?? line } : { label: null, text: line };
+    });
+
+const proposalBlock = ({
+  finding,
+  state,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly h: HtmlBuilder<Message>;
+}): Html | null => {
+  const proposal = finding.proposal;
+  if (proposal === null) return null;
+  return h.section(
+    [h.Class("proposal")],
+    [
+      h.div(
+        [h.Class("proposal__head")],
+        [actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h })],
+      ),
+      h.dl(
+        [h.Class("proposal__lines")],
+        proposalLines(proposal.summary).flatMap(({ label, text }) => [
+          h.dt([h.Class("proposal__label")], [label ?? ""]),
+          h.dd([h.Class("proposal__text")], [text]),
+        ]),
+      ),
+      ...(proposal.diff === null
         ? []
-        : row("Agent says", [
-            h.p([h.Class("glance__proposal")], [proposal.summary]),
-            actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h }),
-            ...(proposal.diff === null
-              ? []
-              : [
-                  h.details(
-                    [h.Class("glance__diff")],
-                    [h.summary([], ["Proposed diff"]), diffBlock({ diff: proposal.diff, file: finding.file, h })],
-                  ),
-                ]),
-          ])),
+        : [
+            h.details(
+              [h.Class("proposal__diff")],
+              [h.summary([], ["Proposed diff"]), diffBlock({ diff: proposal.diff, file: finding.file, h })],
+            ),
+          ]),
     ],
   );
 };
@@ -422,7 +451,9 @@ const guidance = ({
   readonly model: Model;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
+  // The checklist, or the standard when there is none, already leads the finding as "Accept if".
   const { standard, checks, examples, references } = finding.guidance;
+  if (checks.length === 0 && examples.length === 0 && references.length === 0) return h.span([], []);
   return h.details(
     [
       h.Class("guidance"),
@@ -442,16 +473,7 @@ const guidance = ({
       h.div(
         [h.Class("guidance__body")],
         [
-          h.p([h.Class("guidance__standard")], [standard]),
-          ...(checks.length === 0
-            ? []
-            : [
-                h.h4([], ["Checklist"]),
-                h.ul(
-                  [h.Class("checklist")],
-                  checks.map((check) => h.li([], [check])),
-                ),
-              ]),
+          ...(checks.length === 0 ? [] : [h.p([h.Class("guidance__standard")], [standard])]),
           ...(examples.length === 0
             ? []
             : [
@@ -696,7 +718,9 @@ export const detail = ({
                   // Keyed and focusable: keyboard navigation focuses the heading, and a fresh element per finding
                   // makes a screen reader announce it even when two findings share a rule title.
                   h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
-                  glance({ finding, state, status, hidden, h }),
+                  h.p([h.Class("detail__lead")], [finding.message]),
+                  ask({ finding, state, status, h }),
+                  ...(hidden ? [] : [proposalBlock({ finding, state, h })].filter((block) => block !== null)),
                 ],
               ),
               codePanel(

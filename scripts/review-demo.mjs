@@ -52,14 +52,12 @@ write(
 
 const guarantees = {
   "ops/staff-access-fails-closed": {
-    files: ["apps/ops/src/server/"],
-    statement:
-      "Staff access fails closed: a request without a valid Access token for the stage's team and audience gets no page and no data; a missing or unknown role is a viewer, never an operator.",
+    files: ["apps/ops/", "packages/contracts/ops-rpc/"],
+    statement: "staff access fails closed",
   },
   "jobs/at-least-once-lifecycle": {
     files: ["packages/jobs/"],
-    statement:
-      "Every accepted job runs at least once: it leaves queued or running only through an attempt's outcome, a retry, the sweep of a lost lease, or a staff action.",
+    statement: "every accepted job runs at least once",
   },
 };
 
@@ -72,7 +70,7 @@ const namedGuarantees = defineRule({
     guidance: {
       standard:
         "A change to a surface that holds one of the repository's named guarantees keeps that guarantee, and a human checked it.",
-      checks: ["The guarantee still holds on every path the change touches.", "A test covers the refusal path."],
+      checks: ["The named guarantee still holds on every path this change touches.", "A test covers the refusal path."],
     },
   },
   detector: {
@@ -83,13 +81,15 @@ const namedGuarantees = defineRule({
         const touched = context.change.files.filter((file) =>
           guarantee.files.some((prefix) => file.path.startsWith(prefix)),
         );
-        const [primary, ...related] = touched;
+        // A new file is usually why the guarantee is at stake; the other touched files are context.
+        const primary = touched.find((file) => file.status === "added") ?? touched[0];
         if (primary === undefined) continue;
+        const related = touched.filter((file) => file !== primary);
         const firstHunk = primary.status === "added" ? undefined : primary.hunks[0];
         context.report({
           key: id,
           file: primary.path,
-          message: \`Protected invariant \\\`\${id}\\\` is affected: \${guarantee.statement}\`,
+          message: \`Touches \\\`\${id}\\\`: \${guarantee.statement}.\`,
           evidence: touched.map((file) => file.path),
           relatedFiles: related.map((file) => file.path),
           ...(firstHunk ? { startLine: firstHunk.newStart, endLine: firstHunk.newStart + firstHunk.newLines - 1 } : {}),
@@ -113,7 +113,7 @@ const boundedReads = defineRule({
     version: 1,
     match: { pattern: "$DB.findMany($$$ARGS)", where: { notHas: "take: $_" }, message: "$DB.findMany has no explicit bound." },
   },
-  binding: { id: "data/bounded-reads", authority: "agent", include: ["apps/**/*.ts"] },
+  binding: { id: "data/bounded-reads", authority: "agent", include: ["apps/ops/src/reports/**/*.ts"] },
 });
 
 export default defineConfig({ base: "main", rules: [namedGuarantees, boundedReads] });
@@ -156,6 +156,11 @@ export const transitions: Record<JobState, ReadonlyArray<JobState>> = {
 `,
 );
 write("apps/ops/src/reports/audit.ts", `export const recentAudits = (db) => db.audit.findMany({ take: 50 });\n`);
+write(
+  "apps/ops/src/routes/staff.ts",
+  `import { staffAccess } from "../server/staff-access";\n\nexport const staffRoute = { path: "/staff", guard: staffAccess };\n`,
+);
+write("packages/contracts/ops-rpc/src/staff.ts", `export interface StaffHeaders {\n  readonly email: string;\n}\n`);
 
 git("init", "--quiet", "--initial-branch=main");
 git("config", "user.email", "demo@example.com");
@@ -186,7 +191,8 @@ export const remoteAccessSigningKeys = (team: string): AccessSigningKeys => ({
 );
 write(
   "apps/ops/src/server/staff-access.ts",
-  `import type { AccessSigningKeys } from "./access-signing-keys";
+  `import { jwtVerify } from "jose";
+import type { AccessSigningKeys } from "./access-signing-keys";
 import type { StaffIdentity } from "./staff-identity";
 
 export const staffAccess = async (
@@ -198,6 +204,11 @@ export const staffAccess = async (
   const identity = await verify(token, keys).catch(() => undefined);
   if (identity === undefined) return { allowed: false } as const;
   return { allowed: true, role: identity.role ?? "viewer" } as const;
+};
+
+export const verifyAccessToken = async (token: string, keys: AccessSigningKeys): Promise<StaffIdentity> => {
+  const { payload } = await jwtVerify(token, keys.getKey);
+  return { email: String(payload["email"]) };
 };
 `,
 );
@@ -228,6 +239,34 @@ write(
   "apps/ops/src/reports/audit.ts",
   `export const recentAudits = (db) => db.audit.findMany({ where: { recent: true } });\n`,
 );
+write(
+  "apps/ops/src/routes/staff.ts",
+  `import { remoteAccessSigningKeys } from "../server/access-signing-keys";
+import { staffAccess, verifyAccessToken } from "../server/staff-access";
+
+const keys = remoteAccessSigningKeys("acme");
+
+export const staffRoute = {
+  path: "/staff",
+  guard: (token: string | undefined) => staffAccess(token, keys, verifyAccessToken),
+};
+`,
+);
+write(
+  "packages/contracts/ops-rpc/src/staff.ts",
+  `export interface StaffHeaders {\n  readonly email: string;\n  readonly role: "viewer" | "operator";\n}\n`,
+);
+write(
+  "apps/ops/test/staff-access.test.ts",
+  `import { expect, it } from "vitest";
+import { staffAccess } from "../src/server/staff-access";
+
+it("refuses a token no key verifies", async () => {
+  const keys = { getKey: async () => undefined };
+  expect(await staffAccess("forged", keys, async () => undefined)).toEqual({ allowed: false });
+});
+`,
+);
 
 // `check` exits 1 while findings are unresolved, which is the point here.
 const { stdout } = spawnSync(process.execPath, [bin, "check", "--all", "--format", "jsonl"], {
@@ -248,7 +287,11 @@ agentlint(
   "propose",
   selectorFor("apps/ops/src/server/access-signing-keys.ts"),
   "--summary",
-  "New file: loads Access signing keys from the team's JWKS URL (10 min cache, 3 s timeout). Fails closed: a token no key verifies is refused in staff-access.ts:10. Check the JWKS URL is the stage's own team.",
+  [
+    "Changed: new access-signing-keys.ts loads the team's JWKS (10 min cache, 3 s timeout).",
+    "Holds: a token no key verifies is refused at staff-access.ts:12; staff-access.test.ts covers it.",
+    "Check: the JWKS URL uses the stage's own team.",
+  ].join("\n"),
 );
 write(
   "cancel.diff",
@@ -266,7 +309,11 @@ agentlint(
   "propose",
   selectorFor("packages/jobs/src/job-store/service.ts"),
   "--summary",
-  "Adds a cancelled state that staff can set on a queued or running job. Still at least once: cancel is a staff action, which the guarantee allows. Decide whether a cancelled job may be requeued; the diff allows it.",
+  [
+    "Changed: adds a cancelled state staff can set on a queued or running job.",
+    "Holds: cancel is a staff action, which the guarantee allows.",
+    "Check: whether a cancelled job may be requeued; the proposed diff allows it.",
+  ].join("\n"),
   "--diff-file",
   "cancel.diff",
 );
