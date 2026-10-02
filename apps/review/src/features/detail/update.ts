@@ -35,6 +35,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
         }),
     });
   },
+  SelectedFile: ({ findingId, file }) => ({ model: modifyFields(model, { viewedFile: () => ({ findingId, file }) }) }),
   SelectedCodeView: ({ codeView }) =>
     persistChange({ model, change: (current) => modifyFields(current, { codeView: () => codeView }) }),
   ToggledGuidance: () =>

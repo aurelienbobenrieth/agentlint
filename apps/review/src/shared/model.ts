@@ -129,6 +129,10 @@ export const Model = S.Struct({
   query: S.String,
   selectedFindingId: S.NullOr(S.String),
   /**
+   * The related file shown in place of the finding's own. Applies only while that finding stays selected.
+   */
+  viewedFile: S.NullOr(S.Struct({ findingId: S.String, file: S.String })),
+  /**
    * False for a moment after the selection moved without the reviewer navigating (a decision removed the selected
    * finding). Decision shortcuts wait for it so a double tap cannot decide the next finding.
    */

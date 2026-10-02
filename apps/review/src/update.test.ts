@@ -15,7 +15,8 @@ import { deriveReview, effectiveFindingStatus } from "./shared/selectors";
 import { update } from "./update";
 
 const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
-  version: 3,
+  version: 4,
+  changes: {},
   sources: { "src/query.ts": "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n" },
   coverage: { scope: "complete", files: ["src/query.ts"], rules: ["data/bounded-query"] },
   mode,
@@ -94,6 +95,7 @@ const model = (mode: "calibration" | "review"): Model => ({
   independentReview: false,
   independentNotes: {},
   revealedFindings: [],
+  viewedFile: null,
   toastsPaused: false,
   modKey: "Ctrl",
   toasts: [],

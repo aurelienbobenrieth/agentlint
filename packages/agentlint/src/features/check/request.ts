@@ -5,6 +5,7 @@
 import { Schema } from "effect";
 import { AcceptanceRecord } from "../../domain/acceptance.js";
 import { FindingRecord } from "../../domain/finding.js";
+import { ChangedFileDiff } from "../../domain/rule/model.js";
 
 export class CheckCommand extends Schema.TaggedClass<CheckCommand>()("CheckCommand", {
   all: Schema.Boolean,
@@ -24,6 +25,7 @@ export type CheckLineage = Schema.Schema.Type<typeof CheckLineage>;
 export class CheckResult extends Schema.TaggedClass<CheckResult>()("CheckResult", {
   findings: Schema.Array(FindingRecord),
   sources: Schema.Record(Schema.String, Schema.String),
+  changes: Schema.Record(Schema.String, ChangedFileDiff),
   scannedFiles: Schema.Array(Schema.String),
   acceptances: Schema.Array(AcceptanceRecord),
   unresolved: Schema.Array(FindingRecord),

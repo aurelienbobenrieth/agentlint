@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 const state = {
-  version: 3,
+  version: 4,
+  changes: {},
   sources: {
     "src/query.ts": "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n",
     "policy/query-bounds.md": "Production queries use a limit, cursor, or documented finite boundary.\n",
@@ -67,15 +68,11 @@ test("loads a review, supports keyboard help, and remains contained on mobile", 
 
   await expect(page.getByRole("heading", { name: "Bound database queries" })).toBeVisible();
   await expect(page.getByRole("main").getByText("Review this unbounded query.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Related review context" })).toBeVisible();
-  await expect(page.locator(".related-context details")).toHaveCount(2);
-  const fileIcons = page.locator(".related-context summary > .icon");
-  await expect(fileIcons).toHaveCount(2);
-  await expect(fileIcons.first()).toHaveCSS("rotate", "none");
-  await page.getByText("policy/query-bounds.md", { exact: true }).click();
+  const files = page.getByRole("complementary", { name: "Files to review together" });
+  await expect(files.getByRole("button")).toHaveCount(3);
+  await files.getByRole("button", { name: "query-bounds.md" }).click();
   await expect(page.getByText("Production queries use a limit, cursor, or documented finite boundary.")).toBeVisible();
-  await expect(fileIcons.first()).toHaveCSS("rotate", "none");
-  await page.getByText("src/query-contract.ts", { exact: true }).click();
+  await files.getByRole("button", { name: "query-contract.ts" }).click();
   await expect(page.getByText("export const maximumPageSize = 100;")).toBeVisible();
 
   await page.keyboard.press("?");

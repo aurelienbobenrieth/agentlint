@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import { fileTree } from "./files";
+
+describe("fileTree", () => {
+  it("folds single-directory chains and lists directories before files", () => {
+    expect(
+      fileTree([
+        "packages/contracts/ops-rpc/src/staff.ts",
+        "apps/ops/src/server/staff-access.ts",
+        "apps/ops/src/server/access-signing-keys.ts",
+        "README.md",
+      ]),
+    ).toEqual([
+      {
+        kind: "directory",
+        name: "apps/ops/src/server",
+        children: [
+          { kind: "file", name: "access-signing-keys.ts", path: "apps/ops/src/server/access-signing-keys.ts" },
+          { kind: "file", name: "staff-access.ts", path: "apps/ops/src/server/staff-access.ts" },
+        ],
+      },
+      {
+        kind: "directory",
+        name: "packages/contracts/ops-rpc/src",
+        children: [{ kind: "file", name: "staff.ts", path: "packages/contracts/ops-rpc/src/staff.ts" }],
+      },
+      { kind: "file", name: "README.md", path: "README.md" },
+    ]);
+  });
+
+  it("keeps a directory that holds files as its own row", () => {
+    expect(fileTree(["src/a.ts", "src/lib/b.ts"])).toEqual([
+      {
+        kind: "directory",
+        name: "src",
+        children: [
+          { kind: "directory", name: "lib", children: [{ kind: "file", name: "b.ts", path: "src/lib/b.ts" }] },
+          { kind: "file", name: "a.ts", path: "src/a.ts" },
+        ],
+      },
+    ]);
+  });
+});

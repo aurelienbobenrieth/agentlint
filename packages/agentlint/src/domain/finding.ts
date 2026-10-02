@@ -54,6 +54,10 @@ export class FindingRecord extends Schema.Class<FindingRecord>("FindingRecord")(
   column: Schema.Number,
   endLine: Schema.Number,
   endColumn: Schema.Number,
+  /**
+   * The detector named a file but no lines; `line` and `endLine` are then 1 only so a location prints.
+   */
+  wholeFile: Schema.optional(Schema.Literal(true)),
   message: Schema.String,
   sourceSnippet: Schema.String,
   relatedFiles: Schema.optional(Schema.Array(Schema.String)),
@@ -97,6 +101,7 @@ export function withSelector({
     column: finding.column,
     endLine: finding.endLine,
     endColumn: finding.endColumn,
+    wholeFile: finding.wholeFile,
     message: finding.message,
     sourceSnippet: finding.sourceSnippet,
     relatedFiles: finding.relatedFiles,

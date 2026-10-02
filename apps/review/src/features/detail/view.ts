@@ -1,44 +1,96 @@
 import { independentHidden } from "./selectors";
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
-import type { EditorApplication, ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
+import type {
+  EditorApplication,
+  FindingStatus,
+  ReviewChange,
+  ReviewFindingPayload,
+  ReviewStatePayload,
+} from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
 import type { CodeView, Model } from "../../shared/model";
 import { type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, iconButton, kbd, tip } from "../../shared/ui/controls";
 import { appIcon, icon } from "../../shared/ui/icons";
-import { actorKind, actorLabel, relativeTime, safeExternalHref } from "../../shared/ui/labels";
+import { actorKind, actorLabel, lifecycleLabel, relativeTime, safeExternalHref } from "../../shared/ui/labels";
 import { decisionForm } from "../decision/view";
+import { fileTree, type FileTreeNode } from "./files";
 import { highlightedLine, highlightedLines } from "./syntax";
+
+type CodeLine = {
+  readonly number: number | null;
+  readonly kind: "context" | "addition" | "deletion" | "gap";
+  readonly markup: string;
+};
+
+/**
+ * The rows of a change, numbered by the new file. A deleted line keeps its old number, shown dimmed.
+ */
+const changeLines = ({ change, file }: { readonly change: ReviewChange; readonly file: string }): CodeLine[] =>
+  change.hunks.flatMap((hunk, index) => {
+    const numbers = { old: hunk.oldStart, new: hunk.newStart };
+    const gap: CodeLine[] =
+      index > 0 || hunk.newStart > 1 ? [{ number: null, kind: "gap", markup: `⋯ line ${hunk.newStart}` }] : [];
+    return [
+      ...gap,
+      ...hunk.lines.map((line): CodeLine => {
+        const number = line.kind === "deletion" ? numbers.old++ : numbers.new++;
+        if (line.kind === "context") numbers.old++;
+        return {
+          number,
+          kind: line.kind,
+          markup: highlightedLine({ source: line.content.length === 0 ? " " : line.content, file }),
+        };
+      }),
+    ];
+  });
 
 const renderCodePanel = ({
   finding,
+  file,
   source,
+  change,
   codeView,
   canOpen,
   preferred,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
+  readonly file: string;
   readonly source: string;
+  readonly change: ReviewChange | undefined;
   readonly codeView: CodeView;
   readonly canOpen: boolean;
   readonly preferred: EditorApplication | undefined;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
-  const allLines = highlightedLines({ source, file: finding.file });
-  const start = Math.max(1, finding.code.focus.startLine);
-  const end = Math.max(start, finding.code.focus.endLine);
-  const first = codeView === "full" ? 1 : Math.max(1, start - 3);
-  const last = codeView === "full" ? allLines.length : Math.min(allLines.length, end + 3);
-  const lines = allLines.slice(first - 1, last);
+  const allLines = highlightedLines({ source, file });
+  const focus = file === finding.file ? finding.code.focus : null;
+  const start = focus === null ? 0 : Math.max(1, focus.startLine);
+  const end = focus === null ? -1 : Math.max(start, focus.endLine);
+  const hasChange = change !== undefined && change.hunks.length > 0;
+  // "focused" reads as the narrow view: the change when there is one, else the lines around the finding.
+  const narrow = codeView === "focused" && (hasChange || focus !== null);
+  const lines: ReadonlyArray<CodeLine> =
+    narrow && hasChange
+      ? changeLines({ change, file })
+      : (() => {
+          const first = narrow ? Math.max(1, start - 3) : 1;
+          const last = narrow ? Math.min(allLines.length, end + 3) : allLines.length;
+          return allLines
+            .slice(first - 1, last)
+            .map((markup, index): CodeLine => ({ number: first + index, kind: "context", markup }));
+        })();
+  const location = focus === null ? file : `${file}:${focus.startLine}`;
+  const label = [icon({ name: "file", h }), h.span([], [location])];
   return h.section(
     [h.Class("code")],
     [
       h.div(
         [h.Class("code__bar")],
         [
-          canOpen
+          canOpen && file === finding.file
             ? h.button(
                 [
                   h.Type("button"),
@@ -48,36 +100,45 @@ const renderCodePanel = ({
                     : [h.OnClick(Message.ClickedOpenFinding({ findingId: finding.id }))]),
                   h.Title(preferred === undefined ? "Open in…" : `Open in ${preferred.label}`),
                 ],
-                [
-                  icon({ name: "file", h }),
-                  h.span([], [`${finding.file}:${finding.line}`]),
-                  icon({ name: "external", h }),
-                ],
+                [...label, icon({ name: "external", h })],
               )
-            : h.span(
-                [h.Class("code__file")],
-                [icon({ name: "file", h }), h.span([], [`${finding.file}:${finding.line}`])],
-              ),
-          h.button(
-            [
-              h.Type("button"),
-              h.Class("code__toggle"),
-              h.OnClick(Message.SelectedCodeView({ codeView: codeView === "full" ? "focused" : "full" })),
-            ],
-            [codeView === "full" ? "Focus" : `Full file · ${allLines.length} lines`],
-          ),
+            : h.span([h.Class("code__file")], label),
+          ...(change === undefined
+            ? []
+            : [h.span([h.Class(`code__status code__status--${change.status}`)], [change.status])]),
+          h.span([h.Class("code__spacer")], []),
+          ...(hasChange || focus !== null
+            ? [
+                h.button(
+                  [
+                    h.Type("button"),
+                    h.Class("code__toggle"),
+                    h.OnClick(Message.SelectedCodeView({ codeView: narrow ? "full" : "focused" })),
+                  ],
+                  [narrow ? `Full file · ${allLines.length} lines` : hasChange ? "Changes only" : "Focus"],
+                ),
+              ]
+            : [h.span([h.Class("code__hint")], [`Whole file · ${allLines.length} lines`])]),
         ],
       ),
       h.keyed("pre")(
-        finding.id,
+        `${finding.id}:${file}`,
         [h.Class("code__lines")],
-        lines.map((markup, index) => {
-          const number = first + index;
-          const focused = number >= start && number <= end;
-          return h.code(
-            [h.Class(`line${focused ? " line--focus" : ""}`)],
-            [h.span([h.Class("line__n")], [String(number)]), h.span([h.Class("line__c"), h.InnerHTML(markup)], [])],
-          );
+        lines.map((line) => {
+          const focused =
+            line.kind !== "deletion" && line.number !== null && line.number >= start && line.number <= end;
+          return line.kind === "gap"
+            ? h.code(
+                [h.Class("line line--gap")],
+                [h.span([h.Class("line__n")], []), h.span([h.Class("line__c")], [line.markup])],
+              )
+            : h.code(
+                [h.Class(`line line--${line.kind}${focused ? " line--focus" : ""}`)],
+                [
+                  h.span([h.Class("line__n")], [line.number === null ? "" : String(line.number)]),
+                  h.span([h.Class("line__c"), h.InnerHTML(line.markup)], []),
+                ],
+              );
         }),
       ),
     ],
@@ -85,55 +146,86 @@ const renderCodePanel = ({
 };
 
 /**
- * One slot per finding: the panel only re-renders when that finding, the code view, or the editor changes.
+ * One slot per finding: the panel only re-renders when that finding, the viewed file, the code view, or the editor
+ * changes.
  */
 const codePanel = createKeyedLazy();
 
-const relatedContext = ({
+const fileRows = ({
+  nodes,
   finding,
+  viewed,
+  state,
+  h,
+}: {
+  readonly nodes: ReadonlyArray<FileTreeNode>;
+  readonly finding: ReviewFindingPayload;
+  readonly viewed: string;
+  readonly state: ReviewStatePayload;
+  readonly h: HtmlBuilder<Message>;
+}): Html =>
+  h.ul(
+    [h.Class("files__list")],
+    nodes.map((node) => {
+      if (node.kind === "directory") {
+        return h.li(
+          [h.Class("files__dir")],
+          [
+            h.span([h.Class("files__dirname"), h.Title(node.name)], [node.name]),
+            fileRows({ nodes: node.children, finding, viewed, state, h }),
+          ],
+        );
+      }
+      const status = state.changes[node.path]?.status;
+      const available = state.sources[node.path] !== undefined;
+      return h.li(
+        [],
+        [
+          h.button(
+            [
+              h.Type("button"),
+              h.Class(`files__file${node.path === viewed ? " files__file--active" : ""}`),
+              h.Title(node.path),
+              h.Disabled(!available),
+              ...(node.path === viewed ? [h.AriaCurrent("true")] : []),
+              ...(available ? [h.OnClick(Message.SelectedFile({ findingId: finding.id, file: node.path }))] : []),
+            ],
+            [
+              h.span([h.Class("files__name")], [node.name]),
+              ...(node.path === finding.file ? [h.span([h.Class("files__flag"), h.Title("Flagged file")], [])] : []),
+              ...(status === undefined
+                ? []
+                : [
+                    h.span(
+                      [h.Class(`files__status files__status--${status}`), h.Title(status)],
+                      [status.charAt(0).toUpperCase()],
+                    ),
+                  ]),
+            ],
+          ),
+        ],
+      );
+    }),
+  );
+
+const filesRail = ({
+  finding,
+  viewed,
   state,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
+  readonly viewed: string;
   readonly state: ReviewStatePayload;
   readonly h: HtmlBuilder<Message>;
-}): Html | null => {
-  const files = finding.relatedFiles.filter((file) => file !== finding.file && state.sources[file] !== undefined);
-  if (files.length === 0) return null;
-  return h.section(
-    [h.Class("related-context")],
+}): Html =>
+  h.aside(
+    [h.Class("files"), h.AriaLabel("Files to review together")],
     [
-      h.h2([], ["Related review context"]),
-      ...files.map((file) =>
-        h.details(
-          [h.Class("guidance")],
-          [
-            h.summary(
-              [h.Class("guidance__summary")],
-              [
-                h.span([h.Class("guidance__chevron")], [icon({ name: "chevron", h })]),
-                icon({ name: "file", h }),
-                h.code([], [file]),
-              ],
-            ),
-            h.pre(
-              [h.Class("code__lines")],
-              highlightedLines({ source: state.sources[file] ?? "", file }).map((markup, index) =>
-                h.code(
-                  [h.Class("line")],
-                  [
-                    h.span([h.Class("line__n")], [String(index + 1)]),
-                    h.span([h.Class("line__c"), h.InnerHTML(markup)], []),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      h.h2([h.Class("files__title")], [`Review together · ${finding.relatedFiles.length}`]),
+      fileRows({ nodes: fileTree(finding.relatedFiles), finding, viewed, state, h }),
     ],
   );
-};
 
 const diffBlock = ({
   diff,
@@ -196,29 +288,68 @@ const actorRow = ({
     ],
   );
 
-const proposalCard = ({
+/**
+ * What the reviewer is asked to do, from who may decide and where the finding stands.
+ */
+const yourCall = ({
+  finding,
+  mode,
+  status,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly mode: ReviewStatePayload["mode"];
+  readonly status: FindingStatus;
+}): string =>
+  mode === "calibration"
+    ? "Label whether this rule should flag this code."
+    : status === "accepted"
+      ? "Accepted. Request changes to reopen it."
+      : status === "changes_requested"
+        ? "Sent back to the agent. Accept if the change is no longer needed."
+        : finding.authority === "human"
+          ? "Only a human can accept. Accept if the standard still holds; otherwise request changes."
+          : "An agent may accept this with a reason. Accept, or request changes.";
+
+/**
+ * The three answers a reviewer needs before reading code: why it was flagged, what they decide, what the agent says.
+ */
+const glance = ({
   finding,
   state,
+  status,
+  hidden,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
   readonly state: ReviewStatePayload;
+  readonly status: FindingStatus;
+  readonly hidden: boolean;
   readonly h: HtmlBuilder<Message>;
-}): Html | null => {
-  const proposal = finding.proposal;
-  if (proposal === null) return null;
-  return h.section(
-    [h.Class("card card--proposal")],
+}): Html => {
+  const proposal = hidden ? null : finding.proposal;
+  const row = (term: string, content: ReadonlyArray<Html | string>): ReadonlyArray<Html> => [
+    h.dt([h.Class("glance__term")], [term]),
+    h.dd([h.Class("glance__value")], content),
+  ];
+  return h.dl(
+    [h.Class("glance")],
     [
-      h.div(
-        [h.Class("card__head")],
-        [
-          h.span([h.Class("card__title")], ["Agent proposal"]),
-          actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h }),
-        ],
-      ),
-      h.p([h.Class("card__text")], [proposal.summary]),
-      ...(proposal.diff === null ? [] : [diffBlock({ diff: proposal.diff, file: finding.file, h })]),
+      ...row("Flagged", [finding.message]),
+      ...row("Your call", [yourCall({ finding, mode: state.mode, status })]),
+      ...(proposal === null
+        ? []
+        : row("Agent says", [
+            h.p([h.Class("glance__proposal")], [proposal.summary]),
+            actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h }),
+            ...(proposal.diff === null
+              ? []
+              : [
+                  h.details(
+                    [h.Class("glance__diff")],
+                    [h.summary([], ["Proposed diff"]), diffBlock({ diff: proposal.diff, file: finding.file, h })],
+                  ),
+                ]),
+          ])),
     ],
   );
 };
@@ -291,9 +422,7 @@ const guidance = ({
   readonly model: Model;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
-  const { checks, examples, references } = finding.guidance;
-  const hasBody = checks.length > 0 || examples.length > 0 || references.length > 0;
-  if (!hasBody) return h.span([], []);
+  const { standard, checks, examples, references } = finding.guidance;
   return h.details(
     [
       h.Class("guidance"),
@@ -313,6 +442,7 @@ const guidance = ({
       h.div(
         [h.Class("guidance__body")],
         [
+          h.p([h.Class("guidance__standard")], [standard]),
           ...(checks.length === 0
             ? []
             : [
@@ -531,73 +661,93 @@ export const detail = ({
   const canOpen = finding.editor !== null && state.applications.length > 0;
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
   const hidden = independentHidden({ model, findingId: finding.id });
-  const proposal = hidden ? null : proposalCard({ finding, state, h });
-  const related = relatedContext({ finding, state, h });
+  const viewed =
+    model.viewedFile?.findingId === finding.id && finding.relatedFiles.includes(model.viewedFile.file)
+      ? model.viewedFile.file
+      : finding.file;
+  const withFiles = finding.relatedFiles.length > 1;
   const acceptance =
     !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard({ finding, state, h }) : null;
   return h.main(
-    [h.Class("detail")],
+    [h.Class(`detail${withFiles ? " detail--with-files" : ""}`)],
     [
       detailBar({ state, finding, model, derived, h }),
-      h.header(
-        [h.Class("detail__head")],
+      h.div(
+        [h.Class("detail__body")],
         [
           h.div(
-            [h.Class("detail__badges")],
+            [h.Class("detail__content")],
             [
-              ...(finding.authority === "human"
-                ? [h.span([h.Class("badge badge--human")], [icon({ name: "user", h }), "Human decision"])]
-                : []),
-              h.span(
-                [h.Class("badge")],
-                [finding.lifecycle === "change" ? "Introduced by this change" : "Current code"],
+              h.header(
+                [h.Class("detail__head")],
+                [
+                  h.div(
+                    [h.Class("detail__badges")],
+                    [
+                      ...(finding.authority === "human"
+                        ? [h.span([h.Class("badge badge--human")], [icon({ name: "user", h }), "Human decision"])]
+                        : []),
+                      h.span([h.Class("badge")], [lifecycleLabel(finding.lifecycle)]),
+                      ...(status === "changes_requested"
+                        ? [h.span([h.Class("badge badge--danger")], ["Changes requested"])]
+                        : []),
+                    ],
+                  ),
+                  // Keyed and focusable: keyboard navigation focuses the heading, and a fresh element per finding
+                  // makes a screen reader announce it even when two findings share a rule title.
+                  h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
+                  glance({ finding, state, status, hidden, h }),
+                ],
               ),
-              ...(status === "changes_requested"
-                ? [h.span([h.Class("badge badge--danger")], ["Changes requested"])]
+              codePanel(
+                finding.id,
+                (
+                  panelFinding: ReviewFindingPayload,
+                  file: string,
+                  source: string,
+                  change: ReviewChange | undefined,
+                  codeView: CodeView,
+                  panelCanOpen: boolean,
+                  panelPreferred: EditorApplication | undefined,
+                  builder: HtmlBuilder<Message>,
+                ) =>
+                  renderCodePanel({
+                    finding: panelFinding,
+                    file,
+                    source,
+                    change,
+                    codeView,
+                    canOpen: panelCanOpen,
+                    preferred: panelPreferred,
+                    h: builder,
+                  }),
+                [
+                  finding,
+                  viewed,
+                  state.sources[viewed] ?? "",
+                  state.changes[viewed],
+                  model.codeView,
+                  canOpen,
+                  preferred,
+                  h,
+                ],
+              ),
+              ...(acceptance === null ? [] : [acceptance]),
+              ...(hidden || finding.lineageReason === null
+                ? []
+                : [
+                    lineageCard({ reason: finding.lineageReason, invalidationReasons: finding.invalidationReasons, h }),
+                  ]),
+              ...(model.independentReview && !hidden
+                ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
                 : []),
+              decisionForm({ state, finding, model, derived, h }),
+              guidance({ finding, model, h }),
             ],
           ),
-          // Keyed and focusable: keyboard navigation focuses the heading, and a fresh element per finding
-          // makes a screen reader announce it even when two findings share a rule title.
-          h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
-          h.p([h.Class("detail__lead")], [finding.message]),
-          h.p([h.Class("detail__standard")], [finding.guidance.standard]),
-          ...(finding.relatedFiles.length > 1
-            ? [h.p([h.Class("related-files")], ["Review together: ", finding.relatedFiles.join(", ")])]
-            : []),
+          ...(withFiles ? [filesRail({ finding, viewed, state, h })] : []),
         ],
       ),
-      codePanel(
-        finding.id,
-        (
-          panelFinding: ReviewFindingPayload,
-          source: string,
-          codeView: CodeView,
-          panelCanOpen: boolean,
-          panelPreferred: EditorApplication | undefined,
-          builder: HtmlBuilder<Message>,
-        ) =>
-          renderCodePanel({
-            finding: panelFinding,
-            source,
-            codeView,
-            canOpen: panelCanOpen,
-            preferred: panelPreferred,
-            h: builder,
-          }),
-        [finding, state.sources[finding.file] ?? "", model.codeView, canOpen, preferred, h],
-      ),
-      ...(related === null ? [] : [related]),
-      ...(proposal === null ? [] : [proposal]),
-      ...(acceptance === null ? [] : [acceptance]),
-      ...(hidden || finding.lineageReason === null
-        ? []
-        : [lineageCard({ reason: finding.lineageReason, invalidationReasons: finding.invalidationReasons, h })]),
-      ...(model.independentReview && !hidden
-        ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
-        : []),
-      decisionForm({ state, finding, model, derived, h }),
-      guidance({ finding, model, h }),
     ],
   );
 };

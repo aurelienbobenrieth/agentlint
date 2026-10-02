@@ -1,4 +1,4 @@
-import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
+import type { ReviewChange, ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Array as A } from "effect";
 import type { Model } from "../../shared/model";
 import { draftFor, effectiveFindingStatus } from "../../shared/selectors";
@@ -18,20 +18,30 @@ const fenced = ({ content, language = "" }: { readonly content: string; readonly
 };
 
 const focusedSource = ({
-  finding,
+  focus,
   source,
 }: {
-  readonly finding: ReviewFindingPayload;
+  readonly focus: NonNullable<ReviewFindingPayload["code"]["focus"]>;
   readonly source: string;
 }): string => {
   const lines = source.split("\n");
-  const start = Math.max(0, finding.code.focus.startLine - 4);
-  const end = Math.min(lines.length, finding.code.focus.endLine + 3);
+  const start = Math.max(0, focus.startLine - 4);
+  const end = Math.min(lines.length, focus.endLine + 3);
   return lines
     .slice(start, end)
     .map((line, index) => `${String(start + index + 1).padStart(4, " ")} | ${line}`)
     .join("\n");
 };
+
+const unifiedDiff = (change: ReviewChange): string =>
+  change.hunks
+    .flatMap((hunk) => [
+      `@@ -${hunk.oldStart} +${hunk.newStart} @@`,
+      ...hunk.lines.map(
+        (line) => `${line.kind === "addition" ? "+" : line.kind === "deletion" ? "-" : " "}${line.content}`,
+      ),
+    ])
+    .join("\n");
 
 /**
  * Complete, paste-ready evidence for discussing one finding with another agent.
@@ -44,6 +54,7 @@ export const findingContext = ({
   readonly model: Model;
 }): string => {
   const source = model.screen._tag === "Reviewing" ? (model.screen.state.sources[finding.file] ?? "") : "";
+  const change = model.screen._tag === "Reviewing" ? model.screen.state.changes[finding.file] : undefined;
   const draft = draftFor({ model, findingId: finding.id });
   const hidden = independentHidden({ model, findingId: finding.id });
   const status =
@@ -119,10 +130,17 @@ export const findingContext = ({
       ? ["", "### Review checklist", "", ...finding.guidance.checks.map((check) => `- ${check}`)]
       : []),
     "",
-    "## Focused code context",
-    "",
-    fenced({ content: focusedSource({ finding, source }), language }),
-    "",
+    ...(finding.code.focus === null
+      ? []
+      : [
+          "## Focused code context",
+          "",
+          fenced({ content: focusedSource({ focus: finding.code.focus, source }), language }),
+          "",
+        ]),
+    ...(change === undefined || change.hunks.length === 0
+      ? []
+      : [`## Change (${change.status})`, "", fenced({ content: unifiedDiff(change), language: "diff" }), ""]),
     "## Complete file",
     "",
     fenced({ content: source, language }),

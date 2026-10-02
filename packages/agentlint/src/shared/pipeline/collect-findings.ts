@@ -11,6 +11,7 @@ import { ChangeRuleContextImpl } from "../../domain/rule/change/context.js";
 import { FindingRecord } from "../../domain/finding.js";
 import {
   ruleMatches,
+  ChangedFileDiff,
   type ChangeRule,
   type ChangeSet,
   type RuleMatch,
@@ -58,6 +59,10 @@ export const detectChange = ({ rule, change }: { readonly rule: ChangeRule; read
 const CollectResult = Schema.Struct({
   findings: Schema.Array(FindingRecord),
   sources: Schema.Record(Schema.String, Schema.String),
+  /**
+   * The diff of every changed file a finding names, keyed by path. Empty without change rules.
+   */
+  changes: Schema.Record(Schema.String, ChangedFileDiff),
   scannedFiles: Schema.Array(Schema.String),
   noMatchingRules: Schema.Boolean,
   availableRules: Schema.Array(Schema.String),
@@ -320,6 +325,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
     return {
       findings: [],
       sources: {},
+      changes: {},
       scannedFiles: [],
       noMatchingRules: true,
       availableRules,
@@ -333,6 +339,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   const changeRules = activeRules.filter((rule): rule is ChangeRule => rule.lifecycle === "change");
   const findings: FindingRecord[] = [];
   const capture: ScanCapture = { scanned: new Set(), sources: new Map() };
+  const diffs = new Map<string, ChangedFileDiff>();
   const changedPaths = yield* Effect.cached(git.changedFiles(requestedBase));
 
   if (stateRules.length > 0) {
@@ -391,20 +398,27 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       for (const file of filteredChange.files) {
         capture.scanned.add(file.path);
         capture.sources.set(file.path, file.after?.content ?? file.before?.content ?? "");
+        diffs.set(file.path, {
+          status: file.status,
+          ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+          hunks: file.hunks,
+        });
       }
       findings.push(...(yield* detectChange({ rule, change: filteredChange })));
     }
   }
 
   const stale: StaleScope = scope === "partial" ? "none" : resultState.seesEveryChange ? "all" : "state";
+  const named = [...new Set(findings.flatMap((finding) => [finding.file, ...(finding.relatedFiles ?? [])]))];
   return {
     findings: sortFindings(findings),
     scannedFiles: [...capture.scanned].toSorted((left, right) => compareStrings({ left, right })),
-    sources: Object.fromEntries(
-      A.map([...new Set(findings.flatMap((finding) => [finding.file, ...(finding.relatedFiles ?? [])]))], (file) => [
-        file,
-        capture.sources.get(file) ?? "",
-      ]),
+    sources: Object.fromEntries(A.map(named, (file) => [file, capture.sources.get(file) ?? ""])),
+    changes: Object.fromEntries(
+      A.flatMap(named, (file) => {
+        const diff = diffs.get(file);
+        return diff ? [[file, diff] as const] : [];
+      }),
     ),
     noMatchingRules: false,
     availableRules: activeRules

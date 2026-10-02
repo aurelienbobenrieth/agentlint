@@ -12,7 +12,7 @@
 
 `agentlint review` serves the packaged FoldKit SPA on loopback with a session token.
 
-- **Queue**: everything that still needs a decision, grouped by file, with any agent proposal (summary + diff) beside the code.
+- **Queue**: everything that still needs a decision, grouped by file. Each finding opens with why it was flagged, what you decide, and the agent's proposal, then the code: the diff for a change finding. Files to review together sit in a side tree.
 - **Decisions**: what's already accepted, by whom and when, so a human can audit agent acceptances and request a correction.
 - **Request changes** needs no text. It revokes a compatible acceptance and closes its gate.
 - **Accept** needs a reason, unless an agent proposal exists; then the proposal is the reason.
