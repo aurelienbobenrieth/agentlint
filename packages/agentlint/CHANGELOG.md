@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Patch Changes
+
+- [#63](https://github.com/aurelienbobenrieth/agentlint/pull/63) [`b0406a2`](https://github.com/aurelienbobenrieth/agentlint/commit/b0406a23a718d570789356bd67de435f22bd6e7f) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Upgrade Effect and its Node platform packages to the stable `4.0.0` release. Consumers that pin `@effect/platform-node-shared` alongside agentlint should move that pin to `4.0.0`.
+
 ## 0.5.0
 
 ### Minor Changes
