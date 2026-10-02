@@ -3,7 +3,7 @@
  */
 
 import { Option } from "effect";
-import { Argument, Flag } from "effect/unstable/cli";
+import { Argument, Flag } from "effect/cli";
 import { ruleIds } from "./flags.js";
 
 const optionalString = ({

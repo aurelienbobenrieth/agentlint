@@ -108,7 +108,7 @@ const encodeDecision = S.encodeResult(S.fromJsonString(DetachedDecision));
 const encodeDecisions = (
   decisions: ReadonlyArray<{ readonly findingId: string; readonly decision: DetachedDecision }>,
 ): { readonly lines: ReadonlyArray<string>; readonly rejected: ReadonlyArray<string> } => {
-  const [rejected, lines] = A.partition(decisions, ({ findingId, decision }) =>
+  const [lines, rejected] = A.partition(decisions, ({ findingId, decision }) =>
     Result.mapError(encodeDecision(decision), () => findingId),
   );
   return { lines, rejected };
