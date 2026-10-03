@@ -48,6 +48,7 @@ export const Shortcut = S.Literals([
   "decisions",
   "sidebar",
   "guidance",
+  "folders",
   "help",
   "dismiss_toast",
   "escape",

@@ -55,3 +55,24 @@ export const fileTree = (paths: ReadonlyArray<string>): ReadonlyArray<FileTreeNo
   }
   return freeze(root, "");
 };
+
+/**
+ * Every directory path in the tree, parents before children.
+ */
+export const directoryPaths = (nodes: ReadonlyArray<FileTreeNode>): ReadonlyArray<string> =>
+  nodes.flatMap((node) => (node.kind === "directory" ? [node.path, ...directoryPaths(node.children)] : []));
+
+/**
+ * Collapse every directory of this tree, or expand them all when every one is already collapsed. Directories of other
+ * trees keep their state.
+ */
+export const toggleAllDirectories = ({
+  collapsed,
+  paths,
+}: {
+  readonly collapsed: ReadonlyArray<string>;
+  readonly paths: ReadonlyArray<string>;
+}): ReadonlyArray<string> =>
+  paths.every((path) => collapsed.includes(path))
+    ? collapsed.filter((path) => !paths.includes(path))
+    : [...new Set([...collapsed, ...paths])];

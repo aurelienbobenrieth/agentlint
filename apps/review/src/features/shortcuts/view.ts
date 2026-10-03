@@ -54,6 +54,7 @@ export const helpDialog = ({ model, h }: { readonly model: Model; readonly h: Ht
                   ["Search", ["/"]],
                   ["Filters", ["F"]],
                   ["Toggle list", ["["]],
+                  ["Collapse or expand folders", ["Z"]],
                 ],
               }),
               group({

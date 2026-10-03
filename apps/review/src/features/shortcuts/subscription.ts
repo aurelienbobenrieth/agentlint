@@ -42,6 +42,7 @@ export const shortcutFor = (event: {
     "2": "decisions",
     "[": "sidebar",
     g: "guidance",
+    z: "folders",
     "?": "help",
     x: "dismiss_toast",
   };

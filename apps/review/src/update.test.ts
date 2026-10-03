@@ -371,6 +371,7 @@ describe("review stories", () => {
     expect(shortcutFor({ ...plain, key: "ArrowUp" })).toBe("previous");
     expect(shortcutFor({ ...plain, key: "a" })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "?" })).toBe("help");
+    expect(shortcutFor({ ...plain, key: "z" })).toBe("folders");
     expect(shortcutFor({ ...plain, key: "a", editable: true })).toBeNull();
     expect(shortcutFor({ ...plain, key: "Enter", ctrlKey: true, editable: true })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "Enter", metaKey: true, shiftKey: true, editable: true })).toBe(

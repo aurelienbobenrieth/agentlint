@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileTree } from "./files";
+import { directoryPaths, fileTree, toggleAllDirectories } from "./files";
 
 describe("fileTree", () => {
   it("folds single-directory chains and lists directories before files", () => {
@@ -47,5 +47,20 @@ describe("fileTree", () => {
         ],
       },
     ]);
+  });
+
+  it("lists every directory path, parents first", () => {
+    expect(directoryPaths(fileTree(["src/a.ts", "src/lib/b.ts", "docs/guide/c.md"]))).toEqual([
+      "docs/guide",
+      "src",
+      "src/lib",
+    ]);
+  });
+
+  it("collapses every directory, then expands them all, leaving other trees alone", () => {
+    const paths = ["src", "src/lib"];
+    const collapsed = toggleAllDirectories({ collapsed: ["other", "src"], paths });
+    expect(collapsed).toEqual(["other", "src", "src/lib"]);
+    expect(toggleAllDirectories({ collapsed, paths })).toEqual(["other"]);
   });
 });

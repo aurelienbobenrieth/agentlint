@@ -14,7 +14,7 @@ import { button, iconButton, kbd, tip } from "../../shared/ui/controls";
 import { appIcon, icon } from "../../shared/ui/icons";
 import { actorKind, actorLabel, lifecycleLabel, relativeTime, safeExternalHref } from "../../shared/ui/labels";
 import { decisionForm } from "../decision/view";
-import { fileTree, type FileTreeNode } from "./files";
+import { directoryPaths, fileTree, type FileTreeNode } from "./files";
 import { highlightedLine, highlightedLines } from "./syntax";
 
 type CodeLine = {
@@ -234,33 +234,52 @@ const filesRail = ({
   readonly model: Model;
   readonly state: ReviewStatePayload;
   readonly h: HtmlBuilder<Message>;
-}): Html =>
-  h.aside(
+}): Html => {
+  const tree = fileTree(finding.relatedFiles);
+  const directories = directoryPaths(tree);
+  const allCollapsed = directories.every((path) => model.collapsedDirectories.includes(path));
+  return h.aside(
     [h.Class("files"), h.AriaLabel("Files to review together")],
     [
-      h.h2(
-        [h.Class("files__title")],
+      h.div(
+        [h.Class("files__head")],
         [
-          h.button(
+          h.h2(
+            [h.Class("files__title")],
             [
-              h.Type("button"),
-              h.Class(`files__toggle${model.filesCollapsed ? "" : " files__toggle--open"}`),
-              h.AriaExpanded(!model.filesCollapsed),
-              h.OnClick(Message.ToggledFiles()),
-            ],
-            [
-              h.span([h.Class("files__chevron")], [icon({ name: "chevron", h })]),
-              h.span([], ["Review together"]),
-              h.span([h.Class("files__count")], [String(finding.relatedFiles.length)]),
+              h.button(
+                [
+                  h.Type("button"),
+                  h.Class(`files__toggle${model.filesCollapsed ? "" : " files__toggle--open"}`),
+                  h.AriaExpanded(!model.filesCollapsed),
+                  h.OnClick(Message.ToggledFiles()),
+                ],
+                [
+                  h.span([h.Class("files__chevron")], [icon({ name: "chevron", h })]),
+                  h.span([], ["Review together"]),
+                  h.span([h.Class("files__count")], [String(finding.relatedFiles.length)]),
+                ],
+              ),
             ],
           ),
+          ...(directories.length === 0
+            ? []
+            : [
+                iconButton({
+                  label: allCollapsed ? "Expand all folders" : "Collapse all folders",
+                  attributes: [h.OnClick(Message.ToggledAllFileDirectories()), h.Class("icon-btn files__fold")],
+                  name: allCollapsed ? "expand" : "collapse",
+                  h,
+                  keys: ["Z"],
+                }),
+              ]),
         ],
       ),
       ...(model.filesCollapsed
         ? []
         : [
             fileRows({
-              nodes: fileTree(finding.relatedFiles),
+              nodes: tree,
               finding,
               viewed,
               collapsed: model.collapsedDirectories,
@@ -270,6 +289,7 @@ const filesRail = ({
           ]),
     ],
   );
+};
 
 const diffBlock = ({
   diff,

@@ -7,6 +7,8 @@ export type IconName =
   | "arrow"
   | "check"
   | "chevron"
+  | "collapse"
+  | "expand"
   | "copy"
   | "external"
   | "file"
@@ -25,6 +27,8 @@ const iconPaths: Record<IconName, ReadonlyArray<AbsoluteSvgPath>> = {
   arrow: ["M5 12h14", "M13 6l6 6-6 6"],
   check: ["M5 12l4 4L19 6"],
   chevron: ["M8 10l4 4 4-4"],
+  collapse: ["M8 4l4 4 4-4", "M8 20l4-4 4 4"],
+  expand: ["M8 8l4-4 4 4", "M8 16l4 4 4-4"],
   copy: ["M8 8h11v11H8z", "M5 16H4V5h11v1"],
   external: ["M14 4h6v6", "M20 4l-9 9", "M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"],
   file: ["M6 3h8l4 4v14H6z", "M14 3v5h5"],

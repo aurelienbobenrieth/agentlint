@@ -8,6 +8,7 @@ export const fields = {
   SelectedFile: { findingId: S.String, file: S.String },
   ToggledFileDirectory: { path: S.String },
   ToggledFiles: {},
+  ToggledAllFileDirectories: {},
   ToggledGuidance: {},
   ToggledIndependentReview: {},
   UpdatedIndependentNote: { findingId: S.String, value: S.String },
