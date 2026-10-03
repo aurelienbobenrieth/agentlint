@@ -408,7 +408,7 @@ const proposalLines = (summary: string): ReadonlyArray<{ readonly label: string 
     });
 
 /**
- * The agent's proposal: who and when in the side column, its labelled lines beside them.
+ * The agent's proposal: who and when on one line, then its labelled lines.
  */
 const proposalRow = ({
   finding,
@@ -426,7 +426,7 @@ const proposalRow = ({
     [
       h.div(
         [h.Class("brief__aside")],
-        // The row is the proposal, so the side column needs only who and when.
+        // The row is the proposal, so its heading needs only who and when.
         [actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "", h })],
       ),
       h.div(
@@ -454,8 +454,7 @@ const proposalRow = ({
 };
 
 /**
- * One card a reviewer reads before the code. Every row shares one side column, so the eye runs down the labels and the
- * content lines up beside them.
+ * One card a reviewer reads before the code: what to check, then what the agent says, each under a one-line heading.
  */
 const brief = ({
   finding,

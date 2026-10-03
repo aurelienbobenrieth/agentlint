@@ -920,9 +920,6 @@ pre {
 }
 
 .brief__row {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 0 16px;
   padding: 10px 14px;
 }
 
@@ -931,9 +928,8 @@ pre {
 }
 
 .brief__aside {
-  margin: 0;
+  margin: 0 0 4px;
   min-width: 0;
-  padding-top: 1px;
 }
 
 .brief__label {
@@ -984,26 +980,9 @@ pre {
   height: 9px;
 }
 
-/* The side column of a proposal names the agent: its mark and name, then when, on two lines. */
+/* A proposal's heading names the agent on one line: its mark, its name, when. */
 .brief__aside .actor {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 6px;
-  white-space: normal;
-}
-
-.brief__aside .actor__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   line-height: 20px;
-}
-
-.brief__aside .actor__verb {
-  grid-column: 2;
-  font-size: 11.5px;
-  line-height: 16px;
 }
 
 .proposal__lines {
@@ -1041,13 +1020,6 @@ pre {
   border-radius: var(--r-2);
   box-shadow: inset 0 0 0 1px var(--line);
   border-top: 0;
-}
-
-@media (max-width: 640px) {
-  .brief__row {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 4px;
-  }
 }
 
 /* Files to review together */

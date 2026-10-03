@@ -50,54 +50,58 @@ write(
   ".agentlint/config.ts",
   `import { defineConfig, defineRule } from "@aurelienbbn/agentlint";
 
-const guarantees = {
-  "ops/staff-access-fails-closed": {
-    files: ["apps/ops/", "packages/contracts/ops-rpc/"],
-    statement: "staff access fails closed",
-  },
-  "jobs/at-least-once-lifecycle": {
-    files: ["packages/jobs/"],
-    statement: "every accepted job runs at least once",
-  },
-};
-
-const namedGuarantees = defineRule({
-  lifecycle: "change",
-  standard: {
-    id: "repo/named-guarantees",
-    revision: 1,
-    title: "Named guarantees change only by a human decision",
-    guidance: {
-      standard:
-        "A change to a surface that holds one of the repository's named guarantees keeps that guarantee, and a human checked it.",
-      checks: ["The named guarantee still holds on every path this change touches.", "A test covers the refusal path."],
-    },
-  },
-  detector: {
-    id: "repo/guarantee-surface",
-    version: 1,
-    detect: ({ context }) => {
-      for (const [id, guarantee] of Object.entries(guarantees)) {
-        const touched = context.change.files.filter((file) =>
-          guarantee.files.some((prefix) => file.path.startsWith(prefix)),
-        );
+/**
+ * One rule per guarantee, so its title, message and checks say what the guarantee is instead of pointing at it.
+ */
+const guaranteeRule = ({ id, title, area, standard, checks, files }) =>
+  defineRule({
+    lifecycle: "change",
+    standard: { id, revision: 1, title, guidance: { standard, checks } },
+    detector: {
+      id: id + "/surface",
+      version: 1,
+      detect: ({ context }) => {
+        const touched = context.change.files.filter((file) => files.some((prefix) => file.path.startsWith(prefix)));
         // A new file is usually why the guarantee is at stake; the other touched files are context.
         const primary = touched.find((file) => file.status === "added") ?? touched[0];
-        if (primary === undefined) continue;
-        const related = touched.filter((file) => file !== primary);
+        if (primary === undefined) return;
         const firstHunk = primary.status === "added" ? undefined : primary.hunks[0];
         context.report({
           key: id,
           file: primary.path,
-          message: \`Touches \\\`\${id}\\\`: \${guarantee.statement}.\`,
+          message: "This change touches " + area + ".",
           evidence: touched.map((file) => file.path),
-          relatedFiles: related.map((file) => file.path),
+          relatedFiles: touched.filter((file) => file !== primary).map((file) => file.path),
           ...(firstHunk ? { startLine: firstHunk.newStart, endLine: firstHunk.newStart + firstHunk.newLines - 1 } : {}),
         });
-      }
+      },
     },
-  },
-  binding: { id: "repo/named-guarantees", authority: "human", include: ["apps/**", "packages/**"] },
+    binding: { id, authority: "human", include: files.map((prefix) => prefix + "**") },
+  });
+
+const staffAccess = guaranteeRule({
+  id: "ops/staff-access-fails-closed",
+  title: "Staff access fails closed",
+  area: "the staff access gate",
+  standard: "Without a valid Access token for the stage's team, a request gets no page and no data.",
+  checks: [
+    "A request with a missing, expired or forged token is refused.",
+    "A token from another team or audience is refused.",
+    "An unknown role is treated as a viewer, never an operator.",
+  ],
+  files: ["apps/ops/", "packages/contracts/ops-rpc/"],
+});
+
+const jobLifecycle = guaranteeRule({
+  id: "jobs/at-least-once",
+  title: "Every accepted job runs at least once",
+  area: "the job lifecycle",
+  standard: "A job leaves queued or running only through an attempt's outcome, a retry, a lost-lease sweep, or a staff action.",
+  checks: [
+    "No new transition drops a queued or running job without one of those four causes.",
+    "A refused transition leaves the job exactly as it was.",
+  ],
+  files: ["packages/jobs/"],
 });
 
 const boundedReads = defineRule({
@@ -116,7 +120,7 @@ const boundedReads = defineRule({
   binding: { id: "data/bounded-reads", authority: "agent", include: ["apps/ops/src/reports/**/*.ts"] },
 });
 
-export default defineConfig({ base: "main", rules: [namedGuarantees, boundedReads] });
+export default defineConfig({ base: "main", rules: [staffAccess, jobLifecycle, boundedReads] });
 `,
 );
 
@@ -311,7 +315,7 @@ agentlint(
   "--summary",
   [
     "Changed: adds a cancelled state staff can set on a queued or running job.",
-    "Holds: cancel is a staff action, which the guarantee allows.",
+    "Holds: cancelling is a staff action, one of the four allowed ways out of queued or running.",
     "Check: whether a cancelled job may be requeued; the proposed diff allows it.",
   ].join("\n"),
   "--diff-file",
