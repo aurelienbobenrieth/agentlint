@@ -3,7 +3,6 @@ import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html";
 
 import type {
   EditorApplication,
-  FindingStatus,
   ReviewChange,
   ReviewFindingPayload,
   ReviewStatePayload,
@@ -155,12 +154,14 @@ const fileRows = ({
   nodes,
   finding,
   viewed,
+  collapsed,
   state,
   h,
 }: {
   readonly nodes: ReadonlyArray<FileTreeNode>;
   readonly finding: ReviewFindingPayload;
   readonly viewed: string;
+  readonly collapsed: ReadonlyArray<string>;
   readonly state: ReviewStatePayload;
   readonly h: HtmlBuilder<Message>;
 }): Html =>
@@ -168,11 +169,24 @@ const fileRows = ({
     [h.Class("files__list")],
     nodes.map((node) => {
       if (node.kind === "directory") {
+        const open = !collapsed.includes(node.path);
         return h.li(
           [h.Class("files__dir")],
           [
-            h.span([h.Class("files__dirname"), h.Title(node.name)], [node.name]),
-            fileRows({ nodes: node.children, finding, viewed, state, h }),
+            h.button(
+              [
+                h.Type("button"),
+                h.Class(`files__dirname${open ? " files__dirname--open" : ""}`),
+                h.Title(node.path),
+                h.AriaExpanded(open),
+                h.OnClick(Message.ToggledFileDirectory({ path: node.path })),
+              ],
+              [
+                h.span([h.Class("files__chevron")], [icon({ name: "chevron", h })]),
+                h.span([h.Class("files__dirlabel")], [node.name]),
+              ],
+            ),
+            ...(open ? [fileRows({ nodes: node.children, finding, viewed, collapsed, state, h })] : []),
           ],
         );
       }
@@ -211,19 +225,49 @@ const fileRows = ({
 const filesRail = ({
   finding,
   viewed,
+  model,
   state,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
   readonly viewed: string;
+  readonly model: Model;
   readonly state: ReviewStatePayload;
   readonly h: HtmlBuilder<Message>;
 }): Html =>
   h.aside(
     [h.Class("files"), h.AriaLabel("Files to review together")],
     [
-      h.h2([h.Class("files__title")], [`Review together · ${finding.relatedFiles.length}`]),
-      fileRows({ nodes: fileTree(finding.relatedFiles), finding, viewed, state, h }),
+      h.h2(
+        [h.Class("files__title")],
+        [
+          h.button(
+            [
+              h.Type("button"),
+              h.Class(`files__toggle${model.filesCollapsed ? "" : " files__toggle--open"}`),
+              h.AriaExpanded(!model.filesCollapsed),
+              h.OnClick(Message.ToggledFiles()),
+            ],
+            [
+              h.span([h.Class("files__chevron")], [icon({ name: "chevron", h })]),
+              h.span([], ["Review together"]),
+              h.span([h.Class("files__count")], [String(finding.relatedFiles.length)]),
+            ],
+          ),
+        ],
+      ),
+      ...(model.filesCollapsed
+        ? []
+        : [
+            fileRows({
+              nodes: fileTree(finding.relatedFiles),
+              finding,
+              viewed,
+              collapsed: model.collapsedDirectories,
+              state,
+              h,
+            }),
+          ]),
     ],
   );
 
@@ -289,47 +333,51 @@ const actorRow = ({
   );
 
 /**
- * The decision in a few words. Who may decide is already the authority badge.
+ * What to verify before deciding: the rule's checklist, or its standard when it has none. Who may decide is the
+ * authority badge, and where the finding stands is the decision row, so neither repeats here.
  */
-const askHeading = ({
-  mode,
-  status,
-}: {
-  readonly mode: ReviewStatePayload["mode"];
-  readonly status: FindingStatus;
-}): string =>
-  mode === "calibration"
-    ? "Label it if this rule should flag this code"
-    : status === "accepted"
-      ? "Accepted · request changes to reopen"
-      : status === "changes_requested"
-        ? "Sent back · accept only if no change is needed"
-        : "Accept if";
-
-/**
- * What to verify before deciding: the rule's checklist, or its standard when it has none.
- */
-const ask = ({
+const criteriaSection = ({
   finding,
   state,
-  status,
   h,
 }: {
   readonly finding: ReviewFindingPayload;
   readonly state: ReviewStatePayload;
-  readonly status: FindingStatus;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
   const criteria = finding.guidance.checks.length > 0 ? finding.guidance.checks : [finding.guidance.standard];
-  return h.section(
-    [h.Class(`ask ask--${status}`)],
+  return h.div(
+    [h.Class("brief__section")],
     [
-      h.h2([h.Class("ask__heading")], [askHeading({ mode: state.mode, status })]),
+      h.h2([h.Class("brief__label")], [state.mode === "calibration" ? "Applies if" : "Accept if"]),
       h.ul(
-        [h.Class("ask__criteria")],
-        criteria.map((criterion) => h.li([], [criterion])),
+        [h.Class("brief__criteria")],
+        criteria.map((criterion) =>
+          h.li([], [h.span([h.Class("brief__tick")], [icon({ name: "check", h })]), h.span([], [criterion])]),
+        ),
       ),
     ],
+  );
+};
+
+/**
+ * One card a reviewer reads before the code: what to verify, then what the agent says.
+ */
+const brief = ({
+  finding,
+  state,
+  hidden,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly hidden: boolean;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const proposal = hidden ? null : proposalBlock({ finding, state, h });
+  return h.section(
+    [h.Class("brief")],
+    [criteriaSection({ finding, state, h }), ...(proposal === null ? [] : [proposal])],
   );
 };
 
@@ -357,11 +405,11 @@ const proposalBlock = ({
 }): Html | null => {
   const proposal = finding.proposal;
   if (proposal === null) return null;
-  return h.section(
-    [h.Class("proposal")],
+  return h.div(
+    [h.Class("brief__section proposal")],
     [
       h.div(
-        [h.Class("proposal__head")],
+        [h.Class("brief__label proposal__head")],
         [actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h })],
       ),
       h.dl(
@@ -719,8 +767,7 @@ export const detail = ({
                   // makes a screen reader announce it even when two findings share a rule title.
                   h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
                   h.p([h.Class("detail__lead")], [finding.message]),
-                  ask({ finding, state, status, h }),
-                  ...(hidden ? [] : [proposalBlock({ finding, state, h })].filter((block) => block !== null)),
+                  brief({ finding, state, hidden, h }),
                 ],
               ),
               codePanel(
@@ -769,7 +816,7 @@ export const detail = ({
               guidance({ finding, model, h }),
             ],
           ),
-          ...(withFiles ? [filesRail({ finding, viewed, state, h })] : []),
+          ...(withFiles ? [filesRail({ finding, viewed, model, state, h })] : []),
         ],
       ),
     ],

@@ -96,6 +96,8 @@ const model = (mode: "calibration" | "review"): Model => ({
   independentNotes: {},
   revealedFindings: [],
   viewedFile: null,
+  collapsedDirectories: [],
+  filesCollapsed: false,
   toastsPaused: false,
   modKey: "Ctrl",
   toasts: [],

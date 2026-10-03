@@ -69,7 +69,10 @@ test("loads a review, supports keyboard help, and remains contained on mobile", 
   await expect(page.getByRole("heading", { name: "Bound database queries" })).toBeVisible();
   await expect(page.getByRole("main").getByText("Review this unbounded query.", { exact: true })).toBeVisible();
   const files = page.getByRole("complementary", { name: "Files to review together" });
-  await expect(files.getByRole("button")).toHaveCount(3);
+  await expect(files.getByRole("button", { name: "query.ts Flagged file" })).toBeVisible();
+  await files.getByRole("button", { name: "policy", exact: true }).click();
+  await expect(files.getByRole("button", { name: "query-bounds.md" })).toHaveCount(0);
+  await files.getByRole("button", { name: "policy", exact: true }).click();
   await files.getByRole("button", { name: "query-bounds.md" }).click();
   await expect(page.getByText("Production queries use a limit, cursor, or documented finite boundary.")).toBeVisible();
   await files.getByRole("button", { name: "query-contract.ts" }).click();

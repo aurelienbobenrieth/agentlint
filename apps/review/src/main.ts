@@ -34,6 +34,8 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     independentNotes: {},
     revealedFindings: [],
     viewedFile: null,
+    collapsedDirectories: [],
+    filesCollapsed: false,
     toastsPaused: false,
     modKey: typeof navigator !== "undefined" && /Mac|iPhone|iPad/u.test(navigator.platform) ? "⌘" : "Ctrl",
     toasts: [],

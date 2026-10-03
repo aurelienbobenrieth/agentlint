@@ -14,6 +14,7 @@ describe("fileTree", () => {
       {
         kind: "directory",
         name: "apps/ops/src/server",
+        path: "apps/ops/src/server",
         children: [
           { kind: "file", name: "access-signing-keys.ts", path: "apps/ops/src/server/access-signing-keys.ts" },
           { kind: "file", name: "staff-access.ts", path: "apps/ops/src/server/staff-access.ts" },
@@ -22,19 +23,26 @@ describe("fileTree", () => {
       {
         kind: "directory",
         name: "packages/contracts/ops-rpc/src",
+        path: "packages/contracts/ops-rpc/src",
         children: [{ kind: "file", name: "staff.ts", path: "packages/contracts/ops-rpc/src/staff.ts" }],
       },
       { kind: "file", name: "README.md", path: "README.md" },
     ]);
   });
 
-  it("keeps a directory that holds files as its own row", () => {
+  it("keeps a directory that holds files as its own row, keyed by its full path", () => {
     expect(fileTree(["src/a.ts", "src/lib/b.ts"])).toEqual([
       {
         kind: "directory",
         name: "src",
+        path: "src",
         children: [
-          { kind: "directory", name: "lib", children: [{ kind: "file", name: "b.ts", path: "src/lib/b.ts" }] },
+          {
+            kind: "directory",
+            name: "lib",
+            path: "src/lib",
+            children: [{ kind: "file", name: "b.ts", path: "src/lib/b.ts" }],
+          },
           { kind: "file", name: "a.ts", path: "src/a.ts" },
         ],
       },

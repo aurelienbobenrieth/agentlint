@@ -36,6 +36,13 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     });
   },
   SelectedFile: ({ findingId, file }) => ({ model: modifyFields(model, { viewedFile: () => ({ findingId, file }) }) }),
+  ToggledFileDirectory: ({ path }) => ({
+    model: modifyFields(model, {
+      collapsedDirectories: (paths) =>
+        paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path],
+    }),
+  }),
+  ToggledFiles: () => ({ model: modifyFields(model, { filesCollapsed: (collapsed) => !collapsed }) }),
   SelectedCodeView: ({ codeView }) =>
     persistChange({ model, change: (current) => modifyFields(current, { codeView: () => codeView }) }),
   ToggledGuidance: () =>

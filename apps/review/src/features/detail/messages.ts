@@ -6,6 +6,8 @@ import { CodeView } from "../../shared/model";
 export const fields = {
   SelectedCodeView: { codeView: CodeView },
   SelectedFile: { findingId: S.String, file: S.String },
+  ToggledFileDirectory: { path: S.String },
+  ToggledFiles: {},
   ToggledGuidance: {},
   ToggledIndependentReview: {},
   UpdatedIndependentNote: { findingId: S.String, value: S.String },

@@ -1,9 +1,15 @@
 /**
  * A directory holds its subdirectories, then its files, each sorted by name. A directory with a single subdirectory and
- * no files is folded into it (`src/server`), so a deep path costs one row.
+ * no files is folded into it (`src/server`), so a deep path costs one row. A directory's `path` is its full path, the
+ * key a reviewer collapses it by.
  */
 export type FileTreeNode =
-  | { readonly kind: "directory"; readonly name: string; readonly children: ReadonlyArray<FileTreeNode> }
+  | {
+      readonly kind: "directory";
+      readonly name: string;
+      readonly path: string;
+      readonly children: ReadonlyArray<FileTreeNode>;
+    }
   | { readonly kind: "file"; readonly name: string; readonly path: string };
 
 interface MutableDirectory {
@@ -15,7 +21,7 @@ const emptyDirectory = (): MutableDirectory => ({ directories: new Map(), files:
 
 const byName = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
 
-const freeze = (directory: MutableDirectory): ReadonlyArray<FileTreeNode> => [
+const freeze = (directory: MutableDirectory, prefix: string): ReadonlyArray<FileTreeNode> => [
   ...[...directory.directories]
     .toSorted(([left], [right]) => byName(left, right))
     .map(([name, child]): FileTreeNode => {
@@ -25,7 +31,8 @@ const freeze = (directory: MutableDirectory): ReadonlyArray<FileTreeNode> => [
         folded.name = `${folded.name}/${nextName}`;
         folded.child = next;
       }
-      return { kind: "directory", name: folded.name, children: freeze(folded.child) };
+      const path = `${prefix}${folded.name}`;
+      return { kind: "directory", name: folded.name, path, children: freeze(folded.child, `${path}/`) };
     }),
   ...[...directory.files]
     .toSorted(([left], [right]) => byName(left, right))
@@ -46,5 +53,5 @@ export const fileTree = (paths: ReadonlyArray<string>): ReadonlyArray<FileTreeNo
     }, root);
     parent.files.set(name, path);
   }
-  return freeze(root);
+  return freeze(root, "");
 };

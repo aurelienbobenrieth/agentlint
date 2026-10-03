@@ -133,6 +133,11 @@ export const Model = S.Struct({
    */
   viewedFile: S.NullOr(S.Struct({ findingId: S.String, file: S.String })),
   /**
+   * Folded directories of the files rail, by full path. Shared across findings so a folded area stays folded.
+   */
+  collapsedDirectories: S.Array(S.String),
+  filesCollapsed: S.Boolean,
+  /**
    * False for a moment after the selection moved without the reviewer navigating (a decision removed the selected
    * finding). Decision shortcuts wait for it so a double tap cannot decide the next finding.
    */
