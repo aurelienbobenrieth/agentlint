@@ -9,7 +9,7 @@ import { findingContext } from "./features/detail/selectors";
 import { decodeSavedReview } from "./features/session/command";
 import { shortcutFor } from "./features/shortcuts/subscription";
 import { Message } from "./message";
-import { emptyDraft, persistedReview, Screen, type Model } from "./shared/model";
+import { emptyDraft, FILES_DEFAULT, persistedReview, Screen, type Model } from "./shared/model";
 import { encodeJson } from "./shared/json";
 import { deriveReview, effectiveFindingStatus } from "./shared/selectors";
 import { update } from "./update";
@@ -97,7 +97,9 @@ const model = (mode: "calibration" | "review"): Model => ({
   revealedFindings: [],
   viewedFile: null,
   collapsedDirectories: [],
-  filesCollapsed: false,
+  filesOpen: true,
+  filesWidth: FILES_DEFAULT,
+  resizingFiles: false,
   toastsPaused: false,
   modKey: "Ctrl",
   toasts: [],
@@ -371,7 +373,10 @@ describe("review stories", () => {
     expect(shortcutFor({ ...plain, key: "ArrowUp" })).toBe("previous");
     expect(shortcutFor({ ...plain, key: "a" })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "?" })).toBe("help");
-    expect(shortcutFor({ ...plain, key: "z" })).toBe("folders");
+    expect(shortcutFor({ ...plain, key: "]" })).toBe("files");
+    expect(shortcutFor({ ...plain, key: "ArrowLeft", metaKey: true })).toBe("collapse_folders");
+    expect(shortcutFor({ ...plain, key: "ArrowRight", ctrlKey: true })).toBe("expand_folders");
+    expect(shortcutFor({ ...plain, key: "ArrowLeft", ctrlKey: true, editable: true })).toBeNull();
     expect(shortcutFor({ ...plain, key: "a", editable: true })).toBeNull();
     expect(shortcutFor({ ...plain, key: "Enter", ctrlKey: true, editable: true })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "Enter", metaKey: true, shiftKey: true, editable: true })).toBe(

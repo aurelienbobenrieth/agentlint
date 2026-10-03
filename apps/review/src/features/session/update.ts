@@ -81,6 +81,8 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       guidanceOpen: () => saved?.guidanceOpen ?? model.guidanceOpen,
       sidebarOpen: () => saved?.sidebarOpen ?? model.sidebarOpen,
       sidebarWidth: () => saved?.sidebarWidth ?? model.sidebarWidth,
+      filesOpen: () => saved?.filesOpen ?? model.filesOpen,
+      filesWidth: () => saved?.filesWidth ?? model.filesWidth,
       preferredApplication: () => saved?.preferredApplication ?? model.preferredApplication,
       query: () => saved?.query ?? model.query,
       selectedFindingId: () => saved?.selectedFindingId ?? null,

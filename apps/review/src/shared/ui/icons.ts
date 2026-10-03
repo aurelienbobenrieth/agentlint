@@ -15,6 +15,7 @@ export type IconName =
   | "filter"
   | "folder"
   | "panel"
+  | "panelRight"
   | "search"
   | "keyboard"
   | "sparkle"
@@ -35,6 +36,7 @@ const iconPaths: Record<IconName, ReadonlyArray<AbsoluteSvgPath>> = {
   filter: ["M4 6h16", "M7 12h10", "M10 18h4"],
   folder: ["M3 6h7l2 2h9v11H3z"],
   panel: ["M4 4h16v16H4z", "M9 4v16"],
+  panelRight: ["M4 4h16v16H4z", "M15 4v16"],
   search: ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16", "M21 21l-4.3-4.3"],
   keyboard: ["M3 7h18v11H3z", "M7 11h.01", "M11 11h.01", "M15 11h.01", "M8 15h8"],
   sparkle: [

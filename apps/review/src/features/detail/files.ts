@@ -63,16 +63,15 @@ export const directoryPaths = (nodes: ReadonlyArray<FileTreeNode>): ReadonlyArra
   nodes.flatMap((node) => (node.kind === "directory" ? [node.path, ...directoryPaths(node.children)] : []));
 
 /**
- * Collapse every directory of this tree, or expand them all when every one is already collapsed. Directories of other
- * trees keep their state.
+ * Fold or unfold every directory of this tree. Directories of other trees keep their state.
  */
-export const toggleAllDirectories = ({
+export const setAllDirectories = ({
   collapsed,
   paths,
+  fold,
 }: {
   readonly collapsed: ReadonlyArray<string>;
   readonly paths: ReadonlyArray<string>;
+  readonly fold: boolean;
 }): ReadonlyArray<string> =>
-  paths.every((path) => collapsed.includes(path))
-    ? collapsed.filter((path) => !paths.includes(path))
-    : [...new Set([...collapsed, ...paths])];
+  fold ? [...new Set([...collapsed, ...paths])] : collapsed.filter((path) => !paths.includes(path));

@@ -48,7 +48,9 @@ export const Shortcut = S.Literals([
   "decisions",
   "sidebar",
   "guidance",
-  "folders",
+  "files",
+  "collapse_folders",
+  "expand_folders",
   "help",
   "dismiss_toast",
   "escape",
@@ -109,6 +111,11 @@ export const PersistedReview = S.Struct({
   guidanceOpen: S.Boolean,
   sidebarOpen: S.Boolean,
   sidebarWidth: S.Number,
+  /**
+   * Added after version 4 shipped, so a version 4 save without them still restores its drafts.
+   */
+  filesOpen: S.optional(S.Boolean),
+  filesWidth: S.optional(S.Number),
   preferredApplication: S.NullOr(EditorApplicationId),
   query: S.String,
   selectedFindingId: S.NullOr(S.String),
@@ -137,7 +144,9 @@ export const Model = S.Struct({
    * Folded directories of the files rail, by full path. Shared across findings so a folded area stays folded.
    */
   collapsedDirectories: S.Array(S.String),
-  filesCollapsed: S.Boolean,
+  filesOpen: S.Boolean,
+  filesWidth: S.Number,
+  resizingFiles: S.Boolean,
   /**
    * False for a moment after the selection moved without the reviewer navigating (a decision removed the selected
    * finding). Decision shortcuts wait for it so a double tap cannot decide the next finding.
@@ -182,6 +191,11 @@ export type Model = typeof Model.Type;
 
 export const emptyFacets = (): Facets => ({ statuses: [], authorities: [], lifecycles: [], ruleIds: [] });
 
+export const FILES_MIN = 200;
+export const FILES_MAX = 480;
+export const FILES_DEFAULT = 260;
+export const clampFilesWidth = (width: number): number => Math.min(FILES_MAX, Math.max(FILES_MIN, Math.round(width)));
+
 export const SIDEBAR_MIN = 240;
 export const SIDEBAR_MAX = 520;
 export const SIDEBAR_DEFAULT = 300;
@@ -206,6 +220,8 @@ export const persistedReview = (model: Model): PersistedReview => ({
   guidanceOpen: model.guidanceOpen,
   sidebarOpen: model.sidebarOpen,
   sidebarWidth: model.sidebarWidth,
+  filesOpen: model.filesOpen,
+  filesWidth: model.filesWidth,
   preferredApplication: model.preferredApplication,
   query: model.query,
   selectedFindingId: model.selectedFindingId,

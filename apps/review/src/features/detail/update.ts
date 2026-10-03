@@ -6,7 +6,7 @@ import { appendCommands, type Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";
 import { enqueueToast } from "../toasts/update";
 import { CopyText, OpenEditor } from "./command";
-import { directoryPaths, fileTree, toggleAllDirectories } from "./files";
+import { directoryPaths, fileTree, setAllDirectories } from "./files";
 import type { fields } from "./messages";
 import { findingContext } from "./selectors";
 
@@ -43,8 +43,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
         paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path],
     }),
   }),
-  ToggledFiles: () => ({ model: modifyFields(model, { filesCollapsed: (collapsed) => !collapsed }) }),
-  ToggledAllFileDirectories: () => {
+  SetAllFileDirectories: ({ collapsed: fold }) => {
     if (model.screen._tag !== "Reviewing") return { model };
     // The finding on screen, including the first-row fallback, so the shortcut folds the tree the reviewer sees.
     const selected = deriveReview({ state: model.screen.state, model }).selected;
@@ -52,8 +51,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     const paths = directoryPaths(fileTree(selected.relatedFiles));
     return {
       model: modifyFields(model, {
-        collapsedDirectories: (collapsed) => toggleAllDirectories({ collapsed, paths }),
-        filesCollapsed: () => false,
+        collapsedDirectories: (collapsed) => setAllDirectories({ collapsed, paths, fold }),
       }),
     };
   },

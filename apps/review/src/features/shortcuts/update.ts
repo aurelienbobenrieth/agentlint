@@ -91,8 +91,12 @@ const pressedShortcut = ({
       return update({ model, message: Message.ToggledSidebar() });
     case "guidance":
       return update({ model, message: Message.ToggledGuidance() });
-    case "folders":
-      return update({ model, message: Message.ToggledAllFileDirectories() });
+    case "files":
+      return update({ model, message: Message.ToggledFiles() });
+    case "collapse_folders":
+      return update({ model, message: Message.SetAllFileDirectories({ collapsed: true }) });
+    case "expand_folders":
+      return update({ model, message: Message.SetAllFileDirectories({ collapsed: false }) });
     case "dismiss_toast": {
       const latest = model.toasts.findLast((toast) => toast.phase === "visible");
       return latest === undefined ? { model } : dismissToast({ model, id: latest.id });

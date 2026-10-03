@@ -11,6 +11,7 @@ import { Message } from "../../message";
 import type { CodeView, Model } from "../../shared/model";
 import { type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, iconButton, kbd, tip } from "../../shared/ui/controls";
+import { agentLabel, agentMarkFor, agentMarkIcon } from "../../shared/ui/agents";
 import { appIcon, icon } from "../../shared/ui/icons";
 import { actorKind, actorLabel, lifecycleLabel, relativeTime, safeExternalHref } from "../../shared/ui/labels";
 import { decisionForm } from "../decision/view";
@@ -222,19 +223,36 @@ const fileRows = ({
     }),
   );
 
-const filesRail = ({
-  finding,
-  viewed,
-  model,
+/**
+ * The file a finding shows in its code panel: a related file the reviewer picked, or the finding's own.
+ */
+const viewedFileOf = ({ model, finding }: { readonly model: Model; readonly finding: ReviewFindingPayload }): string =>
+  model.viewedFile?.findingId === finding.id && finding.relatedFiles.includes(model.viewedFile.file)
+    ? model.viewedFile.file
+    : finding.file;
+
+/**
+ * True when the finding names files beyond its own, so the files pane has something to show.
+ */
+const hasRelatedFiles = (finding: ReviewFindingPayload | undefined): finding is ReviewFindingPayload =>
+  finding !== undefined && finding.relatedFiles.length > 1;
+
+/**
+ * The right-docked tree of the files to review with the selected finding.
+ */
+export const filesPane = ({
   state,
+  model,
+  derived,
   h,
 }: {
-  readonly finding: ReviewFindingPayload;
-  readonly viewed: string;
-  readonly model: Model;
   readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
   readonly h: HtmlBuilder<Message>;
-}): Html => {
+}): Html | null => {
+  const finding = derived.selected;
+  if (!hasRelatedFiles(finding)) return null;
   const tree = fileTree(finding.relatedFiles);
   const directories = directoryPaths(tree);
   const allCollapsed = directories.every((path) => model.collapsedDirectories.includes(path));
@@ -246,47 +264,37 @@ const filesRail = ({
         [
           h.h2(
             [h.Class("files__title")],
-            [
-              h.button(
-                [
-                  h.Type("button"),
-                  h.Class(`files__toggle${model.filesCollapsed ? "" : " files__toggle--open"}`),
-                  h.AriaExpanded(!model.filesCollapsed),
-                  h.OnClick(Message.ToggledFiles()),
-                ],
-                [
-                  h.span([h.Class("files__chevron")], [icon({ name: "chevron", h })]),
-                  h.span([], ["Review together"]),
-                  h.span([h.Class("files__count")], [String(finding.relatedFiles.length)]),
-                ],
-              ),
-            ],
+            [h.span([], ["Review together"]), h.span([h.Class("files__count")], [String(finding.relatedFiles.length)])],
           ),
           ...(directories.length === 0
             ? []
             : [
                 iconButton({
                   label: allCollapsed ? "Expand all folders" : "Collapse all folders",
-                  attributes: [h.OnClick(Message.ToggledAllFileDirectories()), h.Class("icon-btn files__fold")],
+                  attributes: [
+                    h.OnClick(Message.SetAllFileDirectories({ collapsed: !allCollapsed })),
+                    h.Class("icon-btn files__fold"),
+                  ],
                   name: allCollapsed ? "expand" : "collapse",
                   h,
-                  keys: ["Z"],
+                  keys: [model.modKey, allCollapsed ? "→" : "←"],
                 }),
               ]),
         ],
       ),
-      ...(model.filesCollapsed
-        ? []
-        : [
-            fileRows({
-              nodes: tree,
-              finding,
-              viewed,
-              collapsed: model.collapsedDirectories,
-              state,
-              h,
-            }),
-          ]),
+      h.div(
+        [h.Class("files__scroll")],
+        [
+          fileRows({
+            nodes: tree,
+            finding,
+            viewed: viewedFileOf({ model, finding }),
+            collapsed: model.collapsedDirectories,
+            state,
+            h,
+          }),
+        ],
+      ),
     ],
   );
 };
@@ -339,24 +347,30 @@ const actorRow = ({
   readonly nowIso: string;
   readonly verb: string;
   readonly h: HtmlBuilder<Message>;
-}): Html =>
-  h.span(
-    [h.Class("actor")],
+}): Html => {
+  const name = actorLabel(actor);
+  const mark = agentMarkFor(name);
+  return h.span(
+    [h.Class("actor"), h.Title(actor)],
     [
-      icon({ name: actorKind(actor) === "agent" ? "sparkle" : "user", h }),
-      h.span([h.Class("actor__name")], [actorLabel(actor)]),
+      mark === null ? icon({ name: actorKind(actor) === "agent" ? "sparkle" : "user", h }) : agentMarkIcon({ mark, h }),
+      h.span([h.Class("actor__name")], [mark === null ? name : agentLabel(mark)]),
       h.span(
         [h.Class("actor__verb")],
-        [`${verb} `, h.time([h.Datetime(at), h.Title(at)], [relativeTime({ iso: at, nowIso })])],
+        [
+          ...(verb === "" ? [] : [`${verb} `]),
+          h.time([h.Datetime(at), h.Title(at)], [relativeTime({ iso: at, nowIso })]),
+        ],
       ),
     ],
   );
+};
 
 /**
  * What to verify before deciding: the rule's checklist, or its standard when it has none. Who may decide is the
  * authority badge, and where the finding stands is the decision row, so neither repeats here.
  */
-const criteriaSection = ({
+const criteriaRow = ({
   finding,
   state,
   h,
@@ -367,37 +381,16 @@ const criteriaSection = ({
 }): Html => {
   const criteria = finding.guidance.checks.length > 0 ? finding.guidance.checks : [finding.guidance.standard];
   return h.div(
-    [h.Class("brief__section")],
+    [h.Class("brief__row")],
     [
-      h.h2([h.Class("brief__label")], [state.mode === "calibration" ? "Applies if" : "Accept if"]),
+      h.h2([h.Class("brief__aside brief__label")], [state.mode === "calibration" ? "Applies if" : "Accept if"]),
       h.ul(
-        [h.Class("brief__criteria")],
+        [h.Class("brief__body brief__criteria")],
         criteria.map((criterion) =>
           h.li([], [h.span([h.Class("brief__tick")], [icon({ name: "check", h })]), h.span([], [criterion])]),
         ),
       ),
     ],
-  );
-};
-
-/**
- * One card a reviewer reads before the code: what to verify, then what the agent says.
- */
-const brief = ({
-  finding,
-  state,
-  hidden,
-  h,
-}: {
-  readonly finding: ReviewFindingPayload;
-  readonly state: ReviewStatePayload;
-  readonly hidden: boolean;
-  readonly h: HtmlBuilder<Message>;
-}): Html => {
-  const proposal = hidden ? null : proposalBlock({ finding, state, h });
-  return h.section(
-    [h.Class("brief")],
-    [criteriaSection({ finding, state, h }), ...(proposal === null ? [] : [proposal])],
   );
 };
 
@@ -414,7 +407,10 @@ const proposalLines = (summary: string): ReadonlyArray<{ readonly label: string 
       return labelled ? { label: labelled[1] ?? null, text: labelled[2] ?? line } : { label: null, text: line };
     });
 
-const proposalBlock = ({
+/**
+ * The agent's proposal: who and when in the side column, its labelled lines beside them.
+ */
+const proposalRow = ({
   finding,
   state,
   h,
@@ -426,29 +422,54 @@ const proposalBlock = ({
   const proposal = finding.proposal;
   if (proposal === null) return null;
   return h.div(
-    [h.Class("brief__section proposal")],
+    [h.Class("brief__row")],
     [
       h.div(
-        [h.Class("brief__label proposal__head")],
-        [actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "proposed", h })],
+        [h.Class("brief__aside")],
+        // The row is the proposal, so the side column needs only who and when.
+        [actorRow({ actor: proposal.actor, at: proposal.at, nowIso: state.generatedAt, verb: "", h })],
       ),
-      h.dl(
-        [h.Class("proposal__lines")],
-        proposalLines(proposal.summary).flatMap(({ label, text }) => [
-          h.dt([h.Class("proposal__label")], [label ?? ""]),
-          h.dd([h.Class("proposal__text")], [text]),
-        ]),
+      h.div(
+        [h.Class("brief__body")],
+        [
+          h.dl(
+            [h.Class("proposal__lines")],
+            proposalLines(proposal.summary).flatMap(({ label, text }) => [
+              h.dt([h.Class("proposal__label")], [label ?? ""]),
+              h.dd([h.Class("proposal__text")], [text]),
+            ]),
+          ),
+          ...(proposal.diff === null
+            ? []
+            : [
+                h.details(
+                  [h.Class("proposal__diff")],
+                  [h.summary([], ["Proposed diff"]), diffBlock({ diff: proposal.diff, file: finding.file, h })],
+                ),
+              ]),
+        ],
       ),
-      ...(proposal.diff === null
-        ? []
-        : [
-            h.details(
-              [h.Class("proposal__diff")],
-              [h.summary([], ["Proposed diff"]), diffBlock({ diff: proposal.diff, file: finding.file, h })],
-            ),
-          ]),
     ],
   );
+};
+
+/**
+ * One card a reviewer reads before the code. Every row shares one side column, so the eye runs down the labels and the
+ * content lines up beside them.
+ */
+const brief = ({
+  finding,
+  state,
+  hidden,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly hidden: boolean;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const proposal = hidden ? null : proposalRow({ finding, state, h });
+  return h.section([h.Class("brief")], [criteriaRow({ finding, state, h }), ...(proposal === null ? [] : [proposal])]);
 };
 
 const acceptanceCard = ({
@@ -674,6 +695,21 @@ const detailBar = ({
         ],
       ),
       h.span([h.Class("detail__spacer")], []),
+      ...(hasRelatedFiles(finding)
+        ? [
+            iconButton({
+              label: model.filesOpen ? "Hide files" : "Show files",
+              attributes: [
+                h.OnClick(Message.ToggledFiles()),
+                h.AriaPressed(model.filesOpen ? "true" : "false"),
+                h.Class(`icon-btn${model.filesOpen ? " icon-btn--active" : ""}`),
+              ],
+              name: "panelRight",
+              h,
+              keys: ["]"],
+            }),
+          ]
+        : []),
       ...(canOpen
         ? [
             h.div(
@@ -751,15 +787,11 @@ export const detail = ({
   const canOpen = finding.editor !== null && state.applications.length > 0;
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
   const hidden = independentHidden({ model, findingId: finding.id });
-  const viewed =
-    model.viewedFile?.findingId === finding.id && finding.relatedFiles.includes(model.viewedFile.file)
-      ? model.viewedFile.file
-      : finding.file;
-  const withFiles = finding.relatedFiles.length > 1;
+  const viewed = viewedFileOf({ model, finding });
   const acceptance =
     !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard({ finding, state, h }) : null;
   return h.main(
-    [h.Class(`detail${withFiles ? " detail--with-files" : ""}`)],
+    [h.Class("detail")],
     [
       detailBar({ state, finding, model, derived, h }),
       h.div(
@@ -836,7 +868,6 @@ export const detail = ({
               guidance({ finding, model, h }),
             ],
           ),
-          ...(withFiles ? [filesRail({ finding, viewed, model, state, h })] : []),
         ],
       ),
     ],
