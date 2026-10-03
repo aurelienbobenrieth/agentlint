@@ -26,6 +26,9 @@ export const shortcutFor = (event: {
     if (mod && event.key === "Enter") return event.shiftKey ? "request_changes" : "accept";
     return null;
   }
+  // Zed's project panel: collapse and expand every folder.
+  if (mod && !event.altKey && event.key === "ArrowLeft") return "collapse_folders";
+  if (mod && !event.altKey && event.key === "ArrowRight") return "expand_folders";
   if (mod || event.altKey) return null;
   const shortcuts: Readonly<Record<string, Shortcut>> = {
     j: "next",
@@ -42,6 +45,7 @@ export const shortcutFor = (event: {
     "2": "decisions",
     "[": "sidebar",
     g: "guidance",
+    "]": "files",
     "?": "help",
     x: "dismiss_toast",
   };

@@ -91,6 +91,7 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
         column: 1,
         endLine,
         endColumn: 1,
+        ...(options.startLine === undefined ? { wholeFile: true as const } : {}),
         message: options.message,
         sourceSnippet: excerpt.length > 160 ? `${excerpt.slice(0, 157)}...` : excerpt,
         relatedFiles,

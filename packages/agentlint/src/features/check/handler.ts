@@ -21,6 +21,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
     return new CheckResult({
       findings: [],
       sources: {},
+      changes: {},
       scannedFiles: [],
       acceptances: [],
       unresolved: [],
@@ -100,6 +101,7 @@ export const checkHandler = Effect.fn("checkHandler")(function* (command: CheckC
   return new CheckResult({
     findings: [...collected.findings],
     sources: collected.sources,
+    changes: collected.changes,
     scannedFiles: [...collected.scannedFiles],
     acceptances: [...snapshot.records],
     unresolved: selected,

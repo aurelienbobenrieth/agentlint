@@ -46,7 +46,7 @@ export const writeReviewArtifact = Effect.fn("writeReviewArtifact")(function* (
     transport: "detached",
     source: path.basename(absolute),
   });
-  const artifact: ReviewArtifact = { version: 3, state };
+  const artifact: ReviewArtifact = { version: 4, state };
   yield* fs.makeDirectory(path.dirname(absolute), { recursive: true });
   yield* fs.writeFileString(absolute, `${encodePrettyJson(artifact)}\n`);
   return absolute;

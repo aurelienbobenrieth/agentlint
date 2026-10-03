@@ -68,6 +68,24 @@ export const ReviewProposal = Schema.Struct({
 export type ReviewProposal = Schema.Schema.Type<typeof ReviewProposal>;
 
 /**
+ * One changed file between the review base and the working tree. Line numbers are one-based.
+ */
+export const ReviewChange = Schema.Struct({
+  status: Schema.Literals(["added", "modified", "deleted", "renamed"]),
+  previousPath: Schema.NullOr(Schema.String),
+  hunks: Schema.Array(
+    Schema.Struct({
+      oldStart: Schema.Number,
+      newStart: Schema.Number,
+      lines: Schema.Array(
+        Schema.Struct({ kind: Schema.Literals(["context", "addition", "deletion"]), content: Schema.String }),
+      ),
+    }),
+  ),
+});
+export type ReviewChange = Schema.Schema.Type<typeof ReviewChange>;
+
+/**
  * Wire form of `FindingSource` from the domain.
  */
 export const ReviewFindingSource = Schema.Struct({
@@ -120,14 +138,17 @@ export const ReviewFindingPayload = Schema.Struct({
   editor: Schema.NullOr(Schema.Struct({ canOpen: Schema.Literal(true) })),
   code: Schema.Struct({
     /**
-     * One-based source range. End coordinates follow the parser's exclusive end position.
+     * One-based source range. End coordinates follow the parser's exclusive end position. `null` when the finding
+     * concerns the whole file.
      */
-    focus: Schema.Struct({
-      startLine: Schema.Number,
-      startColumn: Schema.Number,
-      endLine: Schema.Number,
-      endColumn: Schema.Number,
-    }),
+    focus: Schema.NullOr(
+      Schema.Struct({
+        startLine: Schema.Number,
+        startColumn: Schema.Number,
+        endLine: Schema.Number,
+        endColumn: Schema.Number,
+      }),
+    ),
   }),
   guidance: ReviewGuidance,
   status: FindingStatus,
@@ -169,8 +190,12 @@ export const CalibrationReport = Schema.Struct({
 export type CalibrationReport = Schema.Schema.Type<typeof CalibrationReport>;
 
 export const ReviewStatePayload = Schema.Struct({
-  version: Schema.Literal(3),
+  version: Schema.Literal(4),
   sources: Schema.Record(Schema.String, Schema.String),
+  /**
+   * Diffs of the changed files a finding names, keyed by path.
+   */
+  changes: Schema.Record(Schema.String, ReviewChange),
   coverage: Schema.Struct({
     scope: Schema.Literals(["partial", "complete"]),
     files: Schema.Array(Schema.String),
@@ -253,7 +278,7 @@ export type ReviewFinishResult = Schema.Schema.Type<typeof ReviewFinishResult>;
  * Detached artifact format written by `check --review-output` and read by `review --from`.
  */
 export const ReviewArtifact = Schema.Struct({
-  version: Schema.Literal(3),
+  version: Schema.Literal(4),
   state: ReviewStatePayload,
 });
 export type ReviewArtifact = Schema.Schema.Type<typeof ReviewArtifact>;

@@ -9,13 +9,14 @@ import { findingContext } from "./features/detail/selectors";
 import { decodeSavedReview } from "./features/session/command";
 import { shortcutFor } from "./features/shortcuts/subscription";
 import { Message } from "./message";
-import { emptyDraft, persistedReview, Screen, type Model } from "./shared/model";
+import { emptyDraft, FILES_DEFAULT, persistedReview, Screen, type Model } from "./shared/model";
 import { encodeJson } from "./shared/json";
 import { deriveReview, effectiveFindingStatus } from "./shared/selectors";
 import { update } from "./update";
 
 const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
-  version: 3,
+  version: 4,
+  changes: {},
   sources: { "src/query.ts": "import { db } from './db';\n\nexport const users = () =>\n  db.user.findMany();\n" },
   coverage: { scope: "complete", files: ["src/query.ts"], rules: ["data/bounded-query"] },
   mode,
@@ -94,6 +95,12 @@ const model = (mode: "calibration" | "review"): Model => ({
   independentReview: false,
   independentNotes: {},
   revealedFindings: [],
+  viewedFile: null,
+  collapsedDirectories: [],
+  filesOpen: true,
+  filesWidth: FILES_DEFAULT,
+  resizingFiles: false,
+  filesSheetOpen: false,
   toastsPaused: false,
   modKey: "Ctrl",
   toasts: [],
@@ -367,6 +374,10 @@ describe("review stories", () => {
     expect(shortcutFor({ ...plain, key: "ArrowUp" })).toBe("previous");
     expect(shortcutFor({ ...plain, key: "a" })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "?" })).toBe("help");
+    expect(shortcutFor({ ...plain, key: "]" })).toBe("files");
+    expect(shortcutFor({ ...plain, key: "ArrowLeft", metaKey: true })).toBe("collapse_folders");
+    expect(shortcutFor({ ...plain, key: "ArrowRight", ctrlKey: true })).toBe("expand_folders");
+    expect(shortcutFor({ ...plain, key: "ArrowLeft", ctrlKey: true, editable: true })).toBeNull();
     expect(shortcutFor({ ...plain, key: "a", editable: true })).toBeNull();
     expect(shortcutFor({ ...plain, key: "Enter", ctrlKey: true, editable: true })).toBe("accept");
     expect(shortcutFor({ ...plain, key: "Enter", metaKey: true, shiftKey: true, editable: true })).toBe(

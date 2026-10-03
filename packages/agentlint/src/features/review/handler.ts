@@ -187,12 +187,14 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       invalidationReasons: [...reasons],
       editor: options.transport === "attached" && isInsideRepository ? { canOpen: true } : null,
       code: {
-        focus: {
-          startLine: finding.line,
-          startColumn: finding.column,
-          endLine: finding.endLine,
-          endColumn: finding.endColumn,
-        },
+        focus: finding.wholeFile
+          ? null
+          : {
+              startLine: finding.line,
+              startColumn: finding.column,
+              endLine: finding.endLine,
+              endColumn: finding.endColumn,
+            },
       },
       guidance: {
         summary: rule.standard.summary ?? null,
@@ -234,8 +236,18 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
   }
 
   return {
-    version: 3,
+    version: 4,
     sources: collection.sources,
+    changes: Object.fromEntries(
+      Object.entries(collection.changes).map(([file, change]) => [
+        file,
+        {
+          status: change.status,
+          previousPath: change.previousPath ?? null,
+          hunks: change.hunks.map((hunk) => ({ oldStart: hunk.oldStart, newStart: hunk.newStart, lines: hunk.lines })),
+        },
+      ]),
+    ),
     coverage: {
       scope: collection.scope,
       files: [...collection.scannedFiles],

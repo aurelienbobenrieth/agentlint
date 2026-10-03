@@ -21,6 +21,14 @@ Resolve `<agentlint-cmd>` from the repository package manager: `pnpm agentlint`,
 3. Prefer changing the evidence so the standard is clearly satisfied.
 4. For an `agent` authority finding that is already permitted, run `<agentlint-cmd> accept <selector> --reason "..."` with the concrete fact that satisfies the standard. Do not use a generic reason.
 5. Never create human authority. For a `human` finding, do the work you can, then run `<agentlint-cmd> propose <selector> --summary "..." [--diff-file path]` so the reviewer sees your change or your reason for not changing it next to the evidence. Then ask the user to run the review UI or `approve` command.
+   The summary sits beside the rule and the code, so never restate them. Write three lines, one short sentence each: `Changed:` what changed, in plain words; `Holds:` the one fact that shows the standard still holds (a file and line, a test, a refusal path), or why it does not; `Check:` what only the reviewer can confirm. Name files and symbols, not internal shorthand. For example:
+
+   ```text
+   Changed: new access-signing-keys.ts loads the team's JWKS (10 min cache, 3 s timeout).
+   Holds: a token no key verifies is refused at staff-access.ts:42; staff-access.test.ts covers it.
+   Check: the JWKS URL uses the stage's own team.
+   ```
+
 6. A prior lineage reason is context only. Re-evaluate the changed evidence; do not assume the old acceptance still applies.
 7. Check the reported scope. An open partial scan covers only that scope. A complete checkpoint must inspect every configured obligation. Resolve evidence-read and configuration failures before judging the gate.
 8. Rerun the gate after changes or acceptance. Stop only when the applicable check reports the gate open.
