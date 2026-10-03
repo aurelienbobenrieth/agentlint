@@ -1024,6 +1024,13 @@ pre {
 
 /* Files to review together */
 
+/* The sheet toggle and its backdrop exist for narrow screens only; a wide screen shows the pane only when docked. */
+.tip:has(> .files-toggle--sheet),
+.files-backdrop,
+.shell:not(.shell--files) .workspace > .files {
+  display: none;
+}
+
 /* Docked right like an editor's secondary panel: full height, its own scroll, resizable from its left edge. */
 .files {
   display: flex;
@@ -1887,10 +1894,41 @@ pre {
 }
 
 @media (max-width: 820px) {
-  /* Too narrow for a third column: the files pane hides, the code panel keeps the finding's own file. */
+  /* Too narrow for a third column: the files pane opens as a sheet over the detail instead of docking. */
   .workspace > .files,
   .workspace > .resizer--files {
     display: none;
+  }
+
+  /* As specific as the wide-screen rule that hides an undocked pane, and later, so the sheet wins. */
+  .shell.shell--files-sheet .workspace > .files {
+    position: fixed;
+    z-index: 40;
+    inset: var(--topbar-h) 0 0 auto;
+    display: flex;
+    width: min(86vw, 340px);
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .shell--files-sheet .files-backdrop {
+    position: fixed;
+    z-index: 39;
+    inset: var(--topbar-h) 0 0 0;
+    display: block;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .shell--files-sheet .files__file,
+  .shell--files-sheet .files__dirname {
+    height: 36px;
+  }
+
+  .tip:has(> .files-toggle--docked) {
+    display: none;
+  }
+
+  .tip:has(> .files-toggle--sheet) {
+    display: inline-flex;
   }
 
   .shell--files .workspace,

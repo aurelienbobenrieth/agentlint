@@ -19,6 +19,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     persistChange({ model, change: (current) => modifyFields(current, { resizingSidebar: () => false }) }),
   ToggledFiles: () =>
     persistChange({ model, change: (current) => modifyFields(current, { filesOpen: (open) => !open }) }),
+  ToggledFilesSheet: () => ({ model: modifyFields(model, { filesSheetOpen: (open) => !open }) }),
   StartedFilesResize: () => ({ model: modifyFields(model, { resizingFiles: () => true }) }),
   ResizedFiles: ({ width }) => ({ model: modifyFields(model, { filesWidth: () => clampFilesWidth(width) }) }),
   NudgedFiles: ({ width }) =>

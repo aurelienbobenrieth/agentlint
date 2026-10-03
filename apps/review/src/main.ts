@@ -38,6 +38,7 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     filesOpen: true,
     filesWidth: FILES_DEFAULT,
     resizingFiles: false,
+    filesSheetOpen: false,
     toastsPaused: false,
     modKey: typeof navigator !== "undefined" && /Mac|iPhone|iPad/u.test(navigator.platform) ? "⌘" : "Ctrl",
     toasts: [],

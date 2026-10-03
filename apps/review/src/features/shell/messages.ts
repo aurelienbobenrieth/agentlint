@@ -10,6 +10,11 @@ export const fields = {
   NudgedSidebar: { width: S.Number },
   EndedSidebarResize: {},
   ToggledFiles: {},
+  /**
+   * The narrow-screen files sheet. Separate from the docked pane so opening it on a phone never hides the pane on a
+   * desktop.
+   */
+  ToggledFilesSheet: {},
   StartedFilesResize: {},
   /**
    * The pane is docked right, so its width is the distance from the pointer to the window's right edge.

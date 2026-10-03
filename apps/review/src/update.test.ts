@@ -100,6 +100,7 @@ const model = (mode: "calibration" | "review"): Model => ({
   filesOpen: true,
   filesWidth: FILES_DEFAULT,
   resizingFiles: false,
+  filesSheetOpen: false,
   toastsPaused: false,
   modKey: "Ctrl",
   toasts: [],

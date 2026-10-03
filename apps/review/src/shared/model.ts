@@ -147,6 +147,7 @@ export const Model = S.Struct({
   filesOpen: S.Boolean,
   filesWidth: S.Number,
   resizingFiles: S.Boolean,
+  filesSheetOpen: S.Boolean,
   /**
    * False for a moment after the selection moved without the reviewer navigating (a decision removed the selected
    * finding). Decision shortcuts wait for it so a double tap cannot decide the next finding.

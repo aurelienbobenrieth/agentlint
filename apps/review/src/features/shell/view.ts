@@ -141,12 +141,15 @@ export const reviewView = ({
   readonly h: HtmlBuilder<Message>;
 }): Html => {
   const derived = deriveReview({ state, model });
-  const pane = model.filesOpen ? filesPane({ state, model, derived, h }) : null;
+  // Wide screens dock the pane; narrow ones open the same pane as a sheet over the detail.
+  const pane = model.filesOpen || model.filesSheetOpen ? filesPane({ state, model, derived, h }) : null;
+  const docked = pane !== null && model.filesOpen;
+  const sheet = pane !== null && model.filesSheetOpen;
   const resizing = model.resizingSidebar || model.resizingFiles;
   return h.div(
     [
       h.Class(
-        `shell${model.sidebarOpen ? "" : " shell--collapsed"}${pane === null ? "" : " shell--files"}${resizing ? " shell--resizing" : ""}`,
+        `shell${model.sidebarOpen ? "" : " shell--collapsed"}${docked ? " shell--files" : ""}${sheet ? " shell--files-sheet" : ""}${resizing ? " shell--resizing" : ""}`,
       ),
       h.Style({ "--sidebar-w": `${model.sidebarWidth}px`, "--files-w": `${model.filesWidth}px` }),
     ],
@@ -183,6 +186,9 @@ export const reviewView = ({
             [],
           ),
           detail({ state, model, derived, h }),
+          ...(sheet
+            ? [h.div([h.Class("files-backdrop"), h.AriaHidden(true), h.OnClick(Message.ToggledFilesSheet())], [])]
+            : []),
           ...(pane === null
             ? []
             : [

@@ -701,11 +701,21 @@ const detailBar = ({
               attributes: [
                 h.OnClick(Message.ToggledFiles()),
                 h.AriaPressed(model.filesOpen ? "true" : "false"),
-                h.Class(`icon-btn${model.filesOpen ? " icon-btn--active" : ""}`),
+                h.Class(`icon-btn files-toggle files-toggle--docked${model.filesOpen ? " icon-btn--active" : ""}`),
               ],
               name: "panelRight",
               h,
               keys: ["]"],
+            }),
+            iconButton({
+              label: model.filesSheetOpen ? "Hide files" : "Show files",
+              attributes: [
+                h.OnClick(Message.ToggledFilesSheet()),
+                h.AriaPressed(model.filesSheetOpen ? "true" : "false"),
+                h.Class(`icon-btn files-toggle files-toggle--sheet${model.filesSheetOpen ? " icon-btn--active" : ""}`),
+              ],
+              name: "panelRight",
+              h,
             }),
           ]
         : []),

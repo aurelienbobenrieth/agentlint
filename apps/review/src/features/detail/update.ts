@@ -36,7 +36,10 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
         }),
     });
   },
-  SelectedFile: ({ findingId, file }) => ({ model: modifyFields(model, { viewedFile: () => ({ findingId, file }) }) }),
+  // Picking a file from the narrow-screen sheet closes it, so the code it shows is visible.
+  SelectedFile: ({ findingId, file }) => ({
+    model: modifyFields(model, { viewedFile: () => ({ findingId, file }), filesSheetOpen: () => false }),
+  }),
   ToggledFileDirectory: ({ path }) => ({
     model: modifyFields(model, {
       collapsedDirectories: (paths) =>
