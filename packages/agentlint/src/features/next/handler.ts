@@ -28,6 +28,7 @@ export const nextHandler = Effect.fn("nextHandler")(function* (command: NextComm
           check: new CheckResult({
             findings: [first],
             sources: check.sources,
+            changes: check.changes,
             scannedFiles: check.scannedFiles,
             acceptances: check.acceptances,
             unresolved: check.unresolved,

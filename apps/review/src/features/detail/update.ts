@@ -1,11 +1,12 @@
 import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
-import { draftFor, findingById } from "../../shared/selectors";
+import { deriveReview, draftFor, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers } from "../../shared/update";
 import { persistChange } from "../session/update";
 import { enqueueToast } from "../toasts/update";
 import { CopyText, OpenEditor } from "./command";
+import { directoryPaths, fileTree, setAllDirectories } from "./files";
 import type { fields } from "./messages";
 import { findingContext } from "./selectors";
 
@@ -34,6 +35,28 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
           }),
         }),
     });
+  },
+  // Picking a file from the narrow-screen sheet closes it, so the code it shows is visible.
+  SelectedFile: ({ findingId, file }) => ({
+    model: modifyFields(model, { viewedFile: () => ({ findingId, file }), filesSheetOpen: () => false }),
+  }),
+  ToggledFileDirectory: ({ path }) => ({
+    model: modifyFields(model, {
+      collapsedDirectories: (paths) =>
+        paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path],
+    }),
+  }),
+  SetAllFileDirectories: ({ collapsed: fold }) => {
+    if (model.screen._tag !== "Reviewing") return { model };
+    // The finding on screen, including the first-row fallback, so the shortcut folds the tree the reviewer sees.
+    const selected = deriveReview({ state: model.screen.state, model }).selected;
+    if (selected === undefined) return { model };
+    const paths = directoryPaths(fileTree(selected.relatedFiles));
+    return {
+      model: modifyFields(model, {
+        collapsedDirectories: (collapsed) => setAllDirectories({ collapsed, paths, fold }),
+      }),
+    };
   },
   SelectedCodeView: ({ codeView }) =>
     persistChange({ model, change: (current) => modifyFields(current, { codeView: () => codeView }) }),

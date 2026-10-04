@@ -419,7 +419,7 @@ describe("review session finish", () => {
     release.resolve();
     expect((await action).status).toBe(200);
     expect((await finish).status).toBe(200);
-    expect(fixture.finished).toEqual([expect.objectContaining({ summary: "1 accept" })]);
+    expect(fixture.finished).toEqual([expect.objectContaining({ summary: "1 accepted" })]);
     expect(fixture.lockfilesAtFinish).toEqual([]);
     const late = await post({ path: "/api/action", cookie, body: encodeJson({ type: "withdraw", findingId }) });
     expect([late.status, decodeResult(late.body).message]).toEqual([409, "The review is finishing."]);

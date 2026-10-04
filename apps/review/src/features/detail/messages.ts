@@ -5,6 +5,12 @@ import { CodeView } from "../../shared/model";
 
 export const fields = {
   SelectedCodeView: { codeView: CodeView },
+  SelectedFile: { findingId: S.String, file: S.String },
+  ToggledFileDirectory: { path: S.String },
+  /**
+   * Folds or unfolds every directory of the finding on screen.
+   */
+  SetAllFileDirectories: { collapsed: S.Boolean },
   ToggledGuidance: {},
   ToggledIndependentReview: {},
   UpdatedIndependentNote: { findingId: S.String, value: S.String },

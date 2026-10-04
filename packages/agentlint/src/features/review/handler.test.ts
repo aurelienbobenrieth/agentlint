@@ -170,6 +170,60 @@ describe("review payload", () => {
       expect(detached.applications).toEqual([]);
     }),
   );
+
+  it.effect("carries the change's diff and leaves a finding without lines unfocused", () => {
+    const after = "export const key = load();\n";
+    const hunks = [
+      {
+        oldStart: 0,
+        oldLines: 0,
+        newStart: 1,
+        newLines: 1,
+        lines: [{ kind: "addition" as const, content: "export const key = load();" }],
+      },
+    ];
+    const changeRule = defineRule({
+      lifecycle: "change",
+      standard: { id: "keys", revision: 1, title: "Keys", guidance: "Review keys." },
+      binding: { id: "keys", authority: "human", include: ["src/**"] },
+      detector: {
+        id: "keys",
+        version: 1,
+        detect: ({ context }) => {
+          context.report({ key: "file", file: "src/keys.ts", message: "New key source.", evidence: null });
+          context.report({ key: "line", file: "src/keys.ts", message: "Key call.", evidence: 1, startLine: 1 });
+        },
+      },
+    });
+    const layer = featureTestLayer({
+      cwd,
+      rules: [changeRule],
+      git: {
+        changeSet: () =>
+          Effect.succeed({
+            baseline: { kind: "git", ref: "main" },
+            files: [
+              { status: "added", path: "src/keys.ts", before: null, after: { content: after, digest: "after" }, hunks },
+            ],
+          }),
+      },
+    });
+    return Effect.gen(function* () {
+      const payload = yield* buildReviewPayload({ mode: "review", transport: "attached" });
+      expect(payload.changes).toEqual({
+        "src/keys.ts": {
+          status: "added",
+          previousPath: null,
+          hunks: [{ oldStart: 0, newStart: 1, lines: hunks[0]?.lines }],
+        },
+      });
+      const focus = Object.fromEntries(payload.findings.map((finding) => [finding.message, finding.code.focus]));
+      expect(focus).toEqual({
+        "New key source.": null,
+        "Key call.": { startLine: 1, startColumn: 1, endLine: 1, endColumn: 1 },
+      });
+    }).pipe(Effect.provide(layer));
+  });
 });
 
 describe("next handoff", () => {

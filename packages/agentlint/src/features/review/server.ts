@@ -242,10 +242,16 @@ export const makeReviewListener = Effect.fn("makeReviewListener")(function* (con
     );
 
   const summary = (): string => {
-    const parts = A.map([...actionCounts], ([action, count]) => `${count} ${action}`);
-    if (sessionState.feedback.length) parts.push(`${sessionState.feedback.length} change request(s)`);
-    if (sessionState.calibration.length) parts.push(`${sessionState.calibration.length} calibration note(s)`);
-    return parts.length ? parts.join(", ") : "no actions recorded";
+    const parts = A.filter(
+      [
+        [actionCounts.get("accept") ?? 0, "accepted"],
+        [sessionState.feedback.length, "sent back for changes"],
+        [actionCounts.get("withdraw") ?? 0, "withdrawn"],
+        [sessionState.calibration.length, "labeled"],
+      ] as const,
+      ([count]) => count > 0,
+    );
+    return parts.length ? parts.map(([count, outcome]) => `${count} ${outcome}`).join(" · ") : "No decisions recorded";
   };
   const feedbackOutput = (): string => {
     if (sessionState.feedback.length) {

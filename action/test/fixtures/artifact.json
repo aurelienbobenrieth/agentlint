@@ -1,7 +1,8 @@
 {
-  "version": 3,
+  "version": 4,
   "state": {
-    "version": 3,
+    "version": 4,
+    "changes": {},
     "mode": "review",
     "transport": "detached",
     "project": "demo",

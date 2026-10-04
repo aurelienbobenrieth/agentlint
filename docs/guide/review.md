@@ -12,19 +12,20 @@
 
 `agentlint review` serves the packaged FoldKit SPA on loopback with a session token.
 
-- **Queue**: everything that still needs a decision, grouped by file, with any agent proposal (summary + diff) beside the code.
+- **Queue**: everything that still needs a decision, grouped by file. Each finding opens with the rule's message, what to check before accepting, and the agent's proposal, then the code: the diff for a change finding. Files to review together sit in a resizable pane on the right.
 - **Decisions**: what's already accepted, by whom and when, so a human can audit agent acceptances and request a correction.
 - **Request changes** needs no text. It revokes a compatible acceptance and closes its gate.
 - **Accept** needs a reason, unless an agent proposal exists; then the proposal is the reason.
 - Finishing hands requested changes back to the agent through the same handoff it receives from [`next`](acceptance.md#next-hands-the-agent-one-finding-at-a-time). Those findings stay unresolved.
 
-| Key       | Action          | Key       | Action            |
-| --------- | --------------- | --------- | ----------------- |
-| `J` / `K` | next / previous | `/`       | search            |
-| `A`       | accept          | `F`       | filters           |
-| `R`       | request changes | `1` / `2` | Queue / Decisions |
-| `E`       | open in editor  | `X`       | dismiss toast     |
-| `C`       | copy context    | `?`       | all shortcuts     |
+| Key       | Action          | Key        | Action                    |
+| --------- | --------------- | ---------- | ------------------------- |
+| `J` / `K` | next / previous | `/`        | search                    |
+| `A`       | accept          | `F`        | filters                   |
+| `R`       | request changes | `1` / `2`  | Queue / Decisions         |
+| `E`       | open in editor  | `X`        | dismiss toast             |
+| `C`       | copy context    | `?`        | all shortcuts             |
+| `[` / `]` | list / files    | ⌘/Ctrl+←/→ | fold / unfold all folders |
 
 ## "Open in…" never lets the browser choose a path
 

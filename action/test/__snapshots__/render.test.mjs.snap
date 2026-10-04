@@ -18,7 +18,7 @@ exports[`hostile and oversized content > fences a diff that contains a fence, an
 
 **Agent proposal**
 
-@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)  
 \\# Heading
 
 <details><summary>Proposed diff</summary>

@@ -200,7 +200,7 @@ function decodeFinding(raw) {
  * @returns {Artifact}
  */
 export function decodeArtifact(raw) {
-  if (!isRecord(raw) || raw["version"] !== 3) throw new TypeError("not a version 3 review artifact");
+  if (!isRecord(raw) || raw["version"] !== 4) throw new TypeError("not a version 4 review artifact");
   const state = recordAt({ record: raw, key: "state" });
   const findings = state["findings"];
   if (!Array.isArray(findings)) throw new TypeError("state.findings is not an array");

@@ -99,6 +99,19 @@ export function plain(value) {
 }
 
 /**
+ * A proposal's lines (`Changed:`, `Holds:`, `Check:`) as hard line breaks, which a single newline is not in Markdown.
+ *
+ * @param {string} summary
+ */
+function proposalLines(summary) {
+  return summary
+    .split(/\r?\n/u)
+    .map((line) => plain(line.trim()))
+    .filter((line) => line.length > 0)
+    .join("  \n");
+}
+
+/**
  * A code span whose delimiter is longer than any backtick run inside it. Pipes stay escaped for table cells.
  *
  * @param {string} value
@@ -324,7 +337,7 @@ export function renderInlineBody(finding) {
     lines.push("");
   }
   if (finding.proposal) {
-    lines.push("**Agent proposal**", "", clip({ value: plain(finding.proposal.summary), limit: 4_000 }), "");
+    lines.push("**Agent proposal**", "", clip({ value: proposalLines(finding.proposal.summary), limit: 4_000 }), "");
     if (finding.proposal.diff) {
       lines.push(
         "<details><summary>Proposed diff</summary>",

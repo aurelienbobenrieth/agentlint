@@ -67,7 +67,13 @@ const findingRow = ({
       ),
       h.span(
         [h.Class("row__trailing")],
-        [trailing === null ? `L${finding.line}` : relativeTime({ iso: trailing, nowIso: context.generatedAt })],
+        [
+          trailing !== null
+            ? relativeTime({ iso: trailing, nowIso: context.generatedAt })
+            : finding.code.focus === null
+              ? "File"
+              : `L${finding.code.focus.startLine}`,
+        ],
       ),
     ],
   );

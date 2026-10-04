@@ -151,6 +151,16 @@ export const ChangedFile = Schema.Struct({
 export type ChangedFile = Schema.Schema.Type<typeof ChangedFile>;
 
 /**
+ * What a reviewer reads of one changed path: its diff without the file snapshots.
+ */
+export const ChangedFileDiff = Schema.Struct({
+  status: ChangedFile.fields.status,
+  previousPath: ChangedFile.fields.previousPath,
+  hunks: ChangedFile.fields.hunks,
+});
+export type ChangedFileDiff = Schema.Schema.Type<typeof ChangedFileDiff>;
+
+/**
  * Git comparison selected by the CLI or its caller.
  */
 export const ChangeBaseline = Schema.Struct({

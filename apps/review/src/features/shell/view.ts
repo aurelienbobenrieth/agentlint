@@ -3,10 +3,10 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import type { ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import { type Model, SIDEBAR_MAX, SIDEBAR_MIN } from "../../shared/model";
+import { FILES_MAX, FILES_MIN, type Model, SIDEBAR_MAX, SIDEBAR_MIN } from "../../shared/model";
 import { deriveReview } from "../../shared/selectors";
 import { button, iconButton } from "../../shared/ui/controls";
-import { detail } from "../detail/view";
+import { detail, filesPane } from "../detail/view";
 import { sidebar } from "../list/view";
 import { helpDialog } from "../shortcuts/view";
 import { toasts } from "../toasts/view";
@@ -108,12 +108,25 @@ const RESIZE_STEP = 16;
 /**
  * The window-splitter keys: arrows step, Home and End jump to the limits.
  */
-const resizeTarget = ({ key, width }: { readonly key: string; readonly width: number }): number | null => {
+const resizeTarget = ({
+  key,
+  width,
+  min,
+  max,
+  growKey,
+}: {
+  readonly key: string;
+  readonly width: number;
+  readonly min: number;
+  readonly max: number;
+  readonly growKey: "ArrowLeft" | "ArrowRight";
+}): number | null => {
+  const shrinkKey = growKey === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
   const targets: Readonly<Record<string, number>> = {
-    ArrowLeft: width - RESIZE_STEP,
-    ArrowRight: width + RESIZE_STEP,
-    Home: SIDEBAR_MIN,
-    End: SIDEBAR_MAX,
+    [shrinkKey]: width - RESIZE_STEP,
+    [growKey]: width + RESIZE_STEP,
+    Home: min,
+    End: max,
   };
   return targets[key] ?? null;
 };
@@ -128,10 +141,17 @@ export const reviewView = ({
   readonly h: HtmlBuilder<Message>;
 }): Html => {
   const derived = deriveReview({ state, model });
+  // Wide screens dock the pane; narrow ones open the same pane as a sheet over the detail.
+  const pane = model.filesOpen || model.filesSheetOpen ? filesPane({ state, model, derived, h }) : null;
+  const docked = pane !== null && model.filesOpen;
+  const sheet = pane !== null && model.filesSheetOpen;
+  const resizing = model.resizingSidebar || model.resizingFiles;
   return h.div(
     [
-      h.Class(`shell${model.sidebarOpen ? "" : " shell--collapsed"}${model.resizingSidebar ? " shell--resizing" : ""}`),
-      h.Style({ "--sidebar-w": `${model.sidebarWidth}px` }),
+      h.Class(
+        `shell${model.sidebarOpen ? "" : " shell--collapsed"}${docked ? " shell--files" : ""}${sheet ? " shell--files-sheet" : ""}${resizing ? " shell--resizing" : ""}`,
+      ),
+      h.Style({ "--sidebar-w": `${model.sidebarWidth}px`, "--files-w": `${model.filesWidth}px` }),
     ],
     [
       topbar({ state, model, openCount: derived.openCount, undecidedCount: derived.undecidedCount, h }),
@@ -150,7 +170,13 @@ export const reviewView = ({
               h.AriaValuemax(SIDEBAR_MAX),
               h.Tabindex(0),
               h.OnKeyDownPreventDefault((key) => {
-                const width = resizeTarget({ key, width: model.sidebarWidth });
+                const width = resizeTarget({
+                  key,
+                  width: model.sidebarWidth,
+                  min: SIDEBAR_MIN,
+                  max: SIDEBAR_MAX,
+                  growKey: "ArrowRight",
+                });
                 return width === null ? Option.none() : Option.some(Message.NudgedSidebar({ width }));
               }),
               h.OnPointerDown((_pointerType, pointerButton) =>
@@ -160,6 +186,41 @@ export const reviewView = ({
             [],
           ),
           detail({ state, model, derived, h }),
+          ...(sheet
+            ? [h.div([h.Class("files-backdrop"), h.AriaHidden(true), h.OnClick(Message.ToggledFilesSheet())], [])]
+            : []),
+          ...(pane === null
+            ? []
+            : [
+                h.div(
+                  [
+                    h.Class("resizer resizer--files"),
+                    h.Role("separator"),
+                    h.AriaLabel("Resize files"),
+                    h.AriaOrientation("vertical"),
+                    h.AriaValuenow(model.filesWidth),
+                    h.AriaValuemin(FILES_MIN),
+                    h.AriaValuemax(FILES_MAX),
+                    h.Tabindex(0),
+                    h.OnKeyDownPreventDefault((key) => {
+                      // Docked right: the left arrow widens the pane.
+                      const width = resizeTarget({
+                        key,
+                        width: model.filesWidth,
+                        min: FILES_MIN,
+                        max: FILES_MAX,
+                        growKey: "ArrowLeft",
+                      });
+                      return width === null ? Option.none() : Option.some(Message.NudgedFiles({ width }));
+                    }),
+                    h.OnPointerDown((_pointerType, pointerButton) =>
+                      pointerButton === 0 ? Option.some(Message.StartedFilesResize()) : Option.none(),
+                    ),
+                  ],
+                  [],
+                ),
+                pane,
+              ]),
         ],
       ),
       toasts({ model, h }),

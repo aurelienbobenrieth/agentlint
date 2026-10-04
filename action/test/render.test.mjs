@@ -72,6 +72,16 @@ describe("render", () => {
     expect(renderCheckOutput({ gate: "error", findings: [] }).title).toBe("agentlint could not run");
   });
 
+  it("keeps each line of a labelled proposal on its own line", async () => {
+    const [first] = await findings();
+    if (!first?.proposal) throw new Error("fixture");
+    const body = renderInlineBody({
+      ...first,
+      proposal: { ...first.proposal, diff: null, summary: "Changed: a\n\nHolds: b\r\nCheck: c" },
+    });
+    expect(body).toContain("**Agent proposal**\n\nChanged: a  \nHolds: b  \nCheck: c\n");
+  });
+
   it("escapes workflow command properties and data", async () => {
     const all = await findings();
     const lines = renderWorkflowCommands(all);
