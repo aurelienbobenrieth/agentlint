@@ -6,7 +6,7 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Console, Effect, FileSystem, Layer, Path, Result } from "effect";
-import { Argument, CliError, CliOutput, Command, Flag } from "effect/unstable/cli";
+import { Argument, CliError, CliOutput, Command, Flag } from "effect/cli";
 import {
   baseFlag,
   filesArgument,
