@@ -122,6 +122,7 @@ describe("binary check and acceptance loop", () => {
           Git,
           Git.of({
             detectDefaultBranch: () => Effect.succeed("main"),
+            trackedBase: () => Effect.succeed(undefined),
             baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
             changedFiles: () => Effect.succeed(["migrations/1.sql"]),
             changeSet: () =>
@@ -155,6 +156,7 @@ describe("binary check and acceptance loop", () => {
         Git,
         Git.of({
           detectDefaultBranch: () => Effect.succeed("main"),
+          trackedBase: () => Effect.succeed(undefined),
           baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
           changedFiles: () => Effect.succeed(["src/demo.ts"]),
           changeSet: () => Effect.die("State-only scans must not load snapshots"),
@@ -416,9 +418,11 @@ const checkAgainst = (base: string | undefined) => new CheckCommand({ all: true,
 const branch = ({
   rules,
   trunkChange,
+  tracked,
 }: {
   readonly rules: ReadonlyArray<AgentlintRule>;
   readonly trunkChange: Record<string, string>;
+  readonly tracked?: string;
 }) =>
   Layer.mergeAll(
     Layer.succeed(ConfigLoader, ConfigLoader.of({ load: () => Effect.succeed(normalizeConfig({ rules })) })),
@@ -426,6 +430,7 @@ const branch = ({
       Git,
       Git.of({
         detectDefaultBranch: () => Effect.succeed(trunk),
+        trackedBase: () => Effect.succeed(tracked),
         baseline: (baseRef = trunk) => Effect.succeed({ ref: baseRef, commit: mergeBases[baseRef] ?? "unknown" }),
         changedFiles: () => Effect.succeed([]),
         changeSet: (input) => {
@@ -463,6 +468,23 @@ describe("records a check against another base cannot see", () => {
       const again = yield* run(checkHandler(checkAgainst(trunk)));
       expect(again.accepted).toHaveLength(1);
       expect(again.exitCode).toBe(0);
+    }),
+  );
+
+  it.effect("keeps a change acceptance through a check against the branch HEAD tracks", () =>
+    Effect.gen(function* () {
+      yield* cleanup;
+      const rules = [migrationRule({ authority: "agent" })];
+      const trunkChange = { "migrations/1.sql": "DROP TABLE users;" };
+      const onTrunk = withBranch(branch({ rules, trunkChange }));
+      const first = yield* onTrunk(checkHandler(checkAgainst(undefined)));
+      yield* onTrunk(acceptFinding(A.getUnsafe(first.unresolved, 0), { authority: "agent", reason: "Unused." }));
+
+      const stacked = yield* withBranch(branch({ rules, trunkChange, tracked: parent }))(
+        checkHandler(checkAgainst(undefined)),
+      );
+      expect(stacked).toMatchObject({ scope: "complete", findings: [], staleCount: 0, exitCode: 0 });
+      expect(yield* readStoredAcceptances).toHaveLength(1);
     }),
   );
 
@@ -511,6 +533,7 @@ describe("records a check against another base cannot see", () => {
         Git,
         Git.of({
           detectDefaultBranch: () => Effect.fail(noDefault),
+          trackedBase: () => Effect.succeed(undefined),
           baseline: (baseRef) =>
             baseRef === undefined
               ? Effect.fail(noDefault)

@@ -124,7 +124,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
       }
     : yield* (yield* AcceptanceStore).read();
   const proposals = yield* (yield* ProposalStore).read();
-  const collection = options.check ?? (yield* collectSelection({ ...options, base: options.base ?? config.base }));
+  const collection = options.check ?? (yield* collectSelection(options));
   const findings: ReviewFindingPayload[] = [];
 
   for (const finding of collection.findings) {
@@ -256,7 +256,7 @@ export const buildReviewPayload = Effect.fn("buildReviewPayload")(function* (opt
     mode: options.mode,
     transport: options.transport,
     project: path.basename(env.cwd),
-    base: collection.base ?? options.base ?? config.base ?? "working tree",
+    base: collection.base ?? "working tree",
     generatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     applications: options.transport === "attached" ? [...(options.applications ?? [])] : [],
     findings,

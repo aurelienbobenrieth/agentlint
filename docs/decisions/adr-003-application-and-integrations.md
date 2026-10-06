@@ -31,6 +31,7 @@ Later adapters, the [GitHub action](./adr-008-github-action.md) and the setup sk
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `check`                                        | Gate selected files, changed files, or the whole repository (`--all`)                    |
 | `next`                                         | One unresolved obligation with evidence, authority, and command arguments                |
+| `base`                                         | The change base, its merge base, and what chose it                                       |
 | `accept`, `approve`, `propose`                 | Agent acceptance, human acceptance, agent proposal                                       |
 | `explain`                                      | A rule or finding with guidance and lineage                                              |
 | `rules list` / `test` / `scan` / `calibration` | List bindings, run fixtures, calibrate without enforcement, merge calibration reports    |

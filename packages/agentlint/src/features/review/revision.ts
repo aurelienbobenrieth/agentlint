@@ -8,6 +8,7 @@ import { Env } from "../../config/env.js";
 import type { AgentlintRule } from "../../domain/rule/model.js";
 import { ConfigLoader } from "../../shared/infrastructure/config-loader.js";
 import { Git } from "../../shared/infrastructure/git/service.js";
+import { selectBase } from "../../shared/pipeline/base.js";
 import { filterRules, scopeMatcher } from "../../shared/pipeline/finding/rules.js";
 
 /**
@@ -42,7 +43,7 @@ export const scanRevision = Effect.fn("scanRevision")(function* ({
   const scopes = active.map((rule) => scopeMatcher(rule));
   const dependencies = new Set(active.flatMap((rule) => declaredDependencies(rule)));
   const visible = [...new Set([...listed.filter((file) => scopes.some((inScope) => inScope(file))), ...dependencies])];
-  const hash = createHash("sha256").update(yield* git.revision(base ?? config.base));
+  const hash = createHash("sha256").update(yield* git.revision((yield* selectBase(base))?.ref));
   const stats = yield* Effect.forEach(
     visible.toSorted(),
     (file) =>

@@ -32,6 +32,7 @@ import {
 } from "./file-resolver.js";
 import { grammarForExtension } from "./language-map.js";
 import { ScanProgress } from "./scan-progress.js";
+import { selectBase } from "./base.js";
 import { compileMatches, disposeMatches, runMatches, type RunnableMatches } from "./pattern-match.js";
 import { visitorKeys, walkFile } from "./tree-walker.js";
 import { filterRules, scopeMatcher, sortFindings, type ScopeMatcher } from "./finding/rules.js";
@@ -319,7 +320,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
   const activeRules = filterRules({ config, requested: options.rules });
   const scope: CollectResult["scope"] =
     options.all && options.files.length === 0 && options.rules.length === 0 ? "complete" : "partial";
-  const requestedBase = options.base ?? config.base;
+  const requestedBase = (yield* selectBase(options.base))?.ref;
 
   if (activeRules.length === 0) {
     return {
