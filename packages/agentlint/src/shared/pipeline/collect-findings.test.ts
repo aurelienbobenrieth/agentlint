@@ -72,6 +72,7 @@ async function collect({
         Git,
         Git.of({
           detectDefaultBranch: () => Effect.succeed("main"),
+          trackedBase: () => Effect.succeed(undefined),
           baseline: () => Effect.succeed({ ref: "main", commit: "main-merge-base" }),
           changedFiles: () => Effect.succeed([]),
           changeSet: ({ _base, include }: { readonly _base: string; readonly include: (path: string) => boolean }) => {

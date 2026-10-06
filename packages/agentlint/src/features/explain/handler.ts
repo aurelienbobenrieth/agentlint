@@ -61,7 +61,7 @@ export const explainHandler = Effect.fn("explainHandler")(function* (command: Ex
   if (directRule) return new ExplainResult({ output: explainRule(directRule), found: true });
 
   const cache = yield* selectorCache.read();
-  const collection = yield* collectFindings({ all: true, rules: [], base: config.base, files: [] });
+  const collection = yield* collectFindings({ all: true, rules: [], base: undefined, files: [] });
   const resolution = resolveFindingSelector({ selector: command.selector, findings: collection.findings, cache });
   if (!resolution.ok) return new ExplainResult({ output: resolution.message, found: false });
 

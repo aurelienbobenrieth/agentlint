@@ -151,6 +151,12 @@ export class Git extends Context.Service<
   {
     detectDefaultBranch(): Effect.Effect<string, GitError>;
     /**
+     * The branch HEAD tracks (`git branch --set-upstream-to`): a stacked branch's base. `undefined` when HEAD is
+     * detached, tracks nothing or a ref that no longer exists, or tracks the same branch on a remote, whose merge base
+     * would hide the commits already pushed.
+     */
+    trackedBase(): Effect.Effect<string | undefined>;
+    /**
      * Where HEAD left `baseRef`, else the default branch: the baseline a change set compares against.
      */
     baseline(baseRef?: string): Effect.Effect<{ readonly ref: string; readonly commit: string }, GitError>;
@@ -242,6 +248,20 @@ export class Git extends Context.Service<
             }),
           ),
         );
+
+      const trackedBase = Effect.fn("Git.trackedBase")(
+        function* () {
+          const branch = yield* run({ operation: "tracked branch lookup", args: ["symbolic-ref", "--quiet", "HEAD"] });
+          const [upstream = "", upstreamBranch = ""] = (yield* run({
+            operation: "tracked branch lookup",
+            args: ["for-each-ref", "--format=%(upstream:short)%00%(upstream:remoteref)", branch],
+          })).split("\0");
+          if (upstream === "" || upstreamBranch === branch) return undefined;
+          return (yield* existsRef(`${upstream}^{commit}`)) ? upstream : undefined;
+        },
+        // Without an answer the default branch decides; a Git failure that matters surfaces at the comparison itself.
+        Effect.orElseSucceed(() => undefined),
+      );
 
       const resolveBaseline = Effect.fn("Git.resolveBaseline")(function* (baseRef?: string) {
         const ref = yield* safeRef(baseRef ?? (yield* detectDefaultBranch()));
@@ -635,7 +655,15 @@ export class Git extends Context.Service<
         return `${head} ${baseline}`;
       });
 
-      return Git.of({ detectDefaultBranch, baseline: resolveBaseline, changedFiles, changeSet, listFiles, revision });
+      return Git.of({
+        detectDefaultBranch,
+        trackedBase,
+        baseline: resolveBaseline,
+        changedFiles,
+        changeSet,
+        listFiles,
+        revision,
+      });
     }),
   );
 }

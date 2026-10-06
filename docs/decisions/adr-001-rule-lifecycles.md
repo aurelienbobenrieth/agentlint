@@ -35,12 +35,14 @@ AST matching, path selection, diffs, and repository inspection are detection cap
 
 ```mermaid
 flowchart LR
-  R{"base ref:<br/>--base, else config base,<br/>else origin/HEAD, origin/main,<br/>main, origin/master, master"} --> M["merge-base HEAD ref"]
+  R{"base ref:<br/>--base, else AGENTLINT_BASE,<br/>else config base, else upstream,<br/>else origin/HEAD, origin/main,<br/>main, origin/master, master"} --> M["merge-base HEAD ref"]
   M --> S["ChangeSet vs working tree"]
   R -. none .-> E["error, exit 2"]
   M -. "none (e.g. shallow clone)" .-> E
 ```
 
+- The upstream is the branch HEAD tracks, so a stacked branch is judged against its parent. It is skipped when it is the same branch on a remote: its merge base would hide the commits already pushed.
+- `agentlint base` prints the selected ref, its merge base, and the source, so a tool outside agentlint compares against the same commit.
 - The working tree side includes committed, staged, unstaged, and untracked content.
 - `ChangeSet`: `baseline` (`ref`, `commit`) and one entry per file with `status`, `previousPath`, `before`/`after` snapshots, and `hunks`.
 
@@ -131,5 +133,6 @@ The occurrence key is the node's structural child path or a unique detector `key
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-20: Aligned the `before` hook argument and the state fingerprint inputs with the implementation.
 - 2026-09-23: Reformatted for scanning. Recorded when a state scan covers the whole repository, the base fallback order, and the one-of `pattern` or `query` rule. Decision unchanged.
+- 2026-10-06: Added `AGENTLINT_BASE` and the tracked upstream to the base order, and `agentlint base` to print the result.
 
 </details>

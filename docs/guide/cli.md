@@ -6,6 +6,7 @@
 agentlint check [files...] [--all] [--base ref] [--rule id]
                 [--format text|jsonl] [--review-output path]
 agentlint next [--base ref] [--rule id] [--format text|json]
+agentlint base [--base ref] [--format text|json]
 agentlint accept <selector> --reason "..." [--base ref]
 agentlint approve <selector> --reason "..." [--base ref]
 agentlint propose <selector> --summary "..." [--diff-file path] [--base ref]
@@ -43,6 +44,7 @@ Every command exits `2`, never `1`, on an internal error.
 | `check --all`           | Complete state scan and safe stale cleanup                                                      | [Acceptance](acceptance.md#complete-scans-remove-dead-acceptances)                 |
 | `check --review-output` | Writes a detached review artifact                                                               | [Review](review.md#detached-ci-review-keeps-the-gate-closed-until-you-import)      |
 | `next`                  | Returns one current obligation with evidence, authority, and argument arrays                    | [Acceptance](acceptance.md#next-hands-the-agent-one-finding-at-a-time)             |
+| `base`                  | Prints the ref change rules compare against, its merge base, and what chose it                  | [The change base](#the-change-base)                                                |
 | `accept` / `approve`    | Records an acceptance with a reason; `approve` is the explicit human entry point                | [Acceptance](acceptance.md)                                                        |
 | `propose`               | Attaches agent work to a finding it can't accept                                                | [Acceptance](acceptance.md#an-agent-proposes-a-human-ratifies)                     |
 | `explain`               | Shows the standard and guidance behind a rule or finding                                        |                                                                                    |
@@ -58,14 +60,28 @@ Every command exits `2`, never `1`, on an internal error.
 
 ## Flags and arguments
 
-| Input            | Meaning                                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `<selector>`     | A finding number from the last `check`, or a full finding key                                                                   |
-| `--rule`         | Restricts to a rule id; repeat or comma-separate for several. Narrowed scans are partial.                                       |
-| `--base <ref>`   | Change evidence base. Without it, agentlint detects an upstream or conventional main branch and fails clearly if none is valid. |
-| `[files...]`     | Files or directories; directories expand recursively. Explicit files make the scan partial.                                     |
-| `--port`         | Local server port; `0` (default) picks a free port                                                                              |
-| `--no-open`      | Print the URL instead of opening the browser                                                                                    |
-| `--format jsonl` | One JSON record per line from `check`                                                                                           |
+| Input            | Meaning                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `<selector>`     | A finding number from the last `check`, or a full finding key                               |
+| `--rule`         | Restricts to a rule id; repeat or comma-separate for several. Narrowed scans are partial.   |
+| `--base <ref>`   | Change evidence base, over every other source in [The change base](#the-change-base)        |
+| `[files...]`     | Files or directories; directories expand recursively. Explicit files make the scan partial. |
+| `--port`         | Local server port; `0` (default) picks a free port                                          |
+| `--no-open`      | Print the URL instead of opening the browser                                                |
+| `--format jsonl` | One JSON record per line from `check`                                                       |
+
+## The change base
+
+Change rules diff the working tree against the merge base of HEAD and the first ref named here:
+
+| Source                 | Set by                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--base <ref>`         | One command                                                                                                                                             |
+| `AGENTLINT_BASE=<ref>` | One run or one shell; blank means unset                                                                                                                 |
+| config `base`          | The repository                                                                                                                                          |
+| upstream               | `git branch --set-upstream-to=<parent>` on a stacked branch; skipped when it is the same branch on a remote, whose merge base would hide pushed commits |
+| default                | `origin/HEAD`, else `origin/main`, `main`, `origin/master`, `master`                                                                                    |
+
+`agentlint base --format json` prints `{ ref, commit, source }`, so another tool (a test runner's `--changed`) compares against the same commit. A check against any base but the default keeps every change record: see [Acceptance](acceptance.md#complete-scans-remove-dead-acceptances).
 
 `.agentlint/.cache/` maps run-local finding numbers such as `1` back to full finding identities. It is disposable and must not be committed.

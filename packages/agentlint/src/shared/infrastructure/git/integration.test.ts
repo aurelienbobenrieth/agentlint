@@ -365,3 +365,36 @@ it("explains a shallow clone and a missing default branch", async () => {
     },
   });
 });
+
+it("answers the branch HEAD tracks, unless it is the same branch, gone, or HEAD is detached", async () => {
+  await withRepository({
+    seed: { "a.ts": "a();\n" },
+    body: async ({ cwd, git, run }) => {
+      const tracked = () => run({ use: (service) => service.trackedBase() });
+      git("remote", "add", "origin", cwd);
+      git("fetch", "--quiet", "origin");
+      git("switch", "--quiet", "-c", "feature/child");
+      expect(await tracked()).toBeUndefined();
+
+      git("branch", "--set-upstream-to=main");
+      expect(await tracked()).toBe("main");
+
+      git("branch", "--set-upstream-to=origin/main");
+      expect(await tracked()).toBe("origin/main");
+
+      // Pushed: the same branch on the remote would hide the commits already pushed.
+      git("update-ref", "refs/remotes/origin/feature/child", "HEAD");
+      git("branch", "--set-upstream-to=origin/feature/child");
+      expect(await tracked()).toBeUndefined();
+
+      git("branch", "--quiet", "feature/parent");
+      git("branch", "--set-upstream-to=feature/parent");
+      git("branch", "--quiet", "-D", "feature/parent");
+      expect(await tracked()).toBeUndefined();
+
+      git("branch", "--set-upstream-to=main");
+      git("switch", "--quiet", "--detach");
+      expect(await tracked()).toBeUndefined();
+    },
+  });
+});

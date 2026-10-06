@@ -38,6 +38,10 @@ export class Env extends Context.Service<
      */
     readonly actor: string;
     /**
+     * `AGENTLINT_BASE`: the change base for one run or one shell, over the config's. Blank means unset.
+     */
+    readonly base?: string | undefined;
+    /**
      * Captured child-process environment. Infrastructure may narrow or override it per command.
      */
     readonly variables?: Readonly<NodeJS.ProcessEnv>;
@@ -91,6 +95,7 @@ export class Env extends Context.Service<
       cwd: process.cwd(),
       argv: process.argv.slice(2),
       actor,
+      base: rawEnv["AGENTLINT_BASE"]?.trim() || undefined,
       variables: { ...rawEnv },
       platform: process.platform,
       noColor: !!process.env["NO_COLOR"] || !isTTY,

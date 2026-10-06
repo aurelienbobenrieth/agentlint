@@ -25,6 +25,8 @@ import { acceptHandler } from "./features/accept/handler.js";
 import { AcceptCommand } from "./features/accept/request.js";
 import { acceptancesHandler } from "./features/acceptances/handler.js";
 import { AcceptancesCommand } from "./features/acceptances/request.js";
+import { baseHandler } from "./features/base/handler.js";
+import { BaseCommand } from "./features/base/request.js";
 import { checkHandler } from "./features/check/handler.js";
 import { CheckCommand } from "./features/check/request.js";
 import { explainHandler } from "./features/explain/handler.js";
@@ -159,6 +161,20 @@ const next = Command.make(
 ).pipe(
   Command.withDescription("Return one current obligation with evidence, authority and executable argument arrays"),
 );
+
+const baseCommand = Command.make(
+  "base",
+  {
+    base: baseFlag,
+    format: Flag.Literals("format", ["text", "json"]).pipe(Flag.withDefault("text")),
+  },
+  Effect.fn("base")(function* ({ base, format }) {
+    const { ref, commit, source } = yield* baseHandler(new BaseCommand({ base }));
+    yield* Console.log(
+      format === "json" ? encodePrettyJson({ ref, commit, source }) : `${ref} (${source}), merge base ${commit}`,
+    );
+  }),
+).pipe(Command.withDescription("Print the ref change rules compare against, its merge base, and what chose it"));
 
 const decisionCommand = ({
   name,
@@ -498,6 +514,7 @@ const agentlint = Command.make("agentlint").pipe(
   Command.withSubcommands([
     check,
     next,
+    baseCommand,
     accept,
     approve,
     propose,
