@@ -6,7 +6,7 @@ description: >
 metadata:
   type: core
   library: agentlint
-  library_version: "0.6.0"
+  library_version: "0.7.0"
 sources:
   - "aurelienbobenrieth/agentlint:packages/agentlint/README.md"
   - "aurelienbobenrieth/agentlint:packages/agentlint/src/bin.ts"
