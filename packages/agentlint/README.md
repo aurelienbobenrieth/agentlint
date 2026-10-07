@@ -6,6 +6,8 @@
 
 **Your `AGENTS.md` rules are followed most of the time. agentlint turns the important ones into a gate and keeps a committed record of every exception.**
 
+<img src="https://raw.githubusercontent.com/aurelienbobenrieth/agentlint/main/docs/assets/review-hero.png" alt="The agentlint review UI: a queue of findings on the left; on the right, a finding that needs a human decision, the standard's checks, the agent's proposal, and the flagged code with Accept and Request changes." width="100%" />
+
 Agents get the mechanical part right and slip on judgment: a payment call without an idempotency key, a dropped column without a backfill, a fallback that hides a failure, an unbounded read that was fine in the fixture.
 
 | Tool          | With a judgment call                            |

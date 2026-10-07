@@ -1,38 +1,54 @@
-# agentlint
+<div align="center">
+
+<h1>agentlint</h1>
+
+<p><strong>Your <code>AGENTS.md</code> rules are followed most of the time.<br />agentlint turns the important ones into a gate and keeps a committed record of every exception.</strong></p>
 
 [![CI](https://github.com/aurelienbobenrieth/agentlint/actions/workflows/ci.yml/badge.svg)](https://github.com/aurelienbobenrieth/agentlint/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@aurelienbbn/agentlint.svg)](https://www.npmjs.com/package/@aurelienbbn/agentlint)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Deterministic findings and explicit judgment gates for coding agents.**
+[Get started](docs/guide/getting-started.md) · [Try the demo](examples/demo/README.md) · [Guide](docs/guide/README.md) · [Why it works this way](docs/decisions/README.md)
 
-Linters catch what is mechanically wrong; prompts only ask agents to remember. agentlint gates the judgment in between: it flags code that needs a decision, shows your standard, and stays closed until the evidence changes or someone with enough authority accepts it.
+<br />
 
-```mermaid
-flowchart LR
-  E[Repository evidence] --> D[Deterministic detector] --> F[Finding]
-  F --> Q{Exact compatible<br/>acceptance?}
-  Q -- yes --> O[Gate open]
-  Q -- no --> C[Gate closed]
-  C -- fix the code --> E
-  C -- accept with reason<br/>and authority --> A[(Committed acceptance)]
-  A --> Q
-```
+<img src="docs/assets/review-hero.png" alt="The agentlint review UI: a queue of findings on the left; on the right, a finding that needs a human decision, the standard's checks, the agent's proposal, and the flagged code with Accept and Request changes." width="100%" />
 
-An acceptance is a committed `eslint-disable` that needs a reason, an authority, and a fresh review when the code moves. No model, no bundled rules, no required agent harness: your repository owns every standard.
+</div>
 
-## Six ideas carry the model
+## Agents slip on judgment, not syntax
 
-Agents usually get the mechanics right. The risk is the unasked question: _is this retry safe, is this migration reversible, should a human see this?_
+A payment call without an idempotency key. A dropped column without a backfill. An unbounded read that was fine in the fixture. Each one passes the tests.
 
-| Idea             | Meaning                                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **State rule**   | Judges current source: `db.users.findMany()` without a bound.                                                                        |
-| **Change rule**  | Judges the Git change since the merge base: a dropped table, a widened role.                                                         |
-| **Authority**    | Who may close the gate. An agent may accept a bounded query with a concrete reason; only a human may accept a destructive migration. |
-| **Fingerprint**  | Keeps an acceptance through formatting and line moves; invalidates it on a material code change.                                     |
-| **Review epoch** | Lets the repository deliberately expire otherwise compatible decisions. The engine reads no clock.                                   |
-| **Outcome**      | Attaches later corrections, rollbacks, incidents, useful interceptions, or unnecessary reviews to the finding.                       |
+| Tool          | With a judgment call                            |
+| ------------- | ----------------------------------------------- |
+| Prompt        | Asks the agent to remember                      |
+| Linter        | Can only say "always wrong"                     |
+| AI reviewer   | Says something different on every run           |
+| Tired human   | Approves a big diff because the tests are green |
+| **agentlint** | Blocks until someone records a reason           |
+
+agentlint flags the code shape, shows your standard next to it, and stays closed until the code changes or someone with enough authority accepts it. No model, no network, no clock: the same repository gives the same findings, locally and in CI.
+
+## The gate closes the agent's turn
+
+<img src="docs/assets/gate-closed.png" alt="Terminal output of agentlint check --all: nine unresolved findings grouped by rule, each with its file, line, and the next command to run. Gate closed." width="100%" />
+
+Run it as a Claude Code or Codex `Stop` hook and as a required CI check. The agent fixes the code or records why it is acceptable, if its authority allows. Exit codes are `0` open, `1` closed, `2` broken.
+
+## Humans decide with the policy beside the code
+
+<img src="docs/assets/review-context.png" alt="The review UI on a customer-data export finding: the repository's written privacy contract is open in the main pane, with the export code and its field contract listed under Review together." width="100%" />
+
+`pnpm agentlint review` opens a keyboard-first local UI. Each finding shows what to check before accepting, the agent's proposal, the code or diff, and the files to read with it. On a pull request, the [GitHub action](action/README.md) opens one thread per finding and `/agentlint approve` records human authority in place.
+
+## Every exception is a reviewable record
+
+<img src="docs/assets/review-decisions.png" alt="The Decisions view: a bounded-query finding the agent accepted, with its reason, actor, and date, and a Request correction button." width="100%" />
+
+An acceptance carries a reason, an actor, and the authority the rule requires (`agent` or `human`). It lives in `.agentlint/acceptances.jsonl`, shows in the PR diff, and expires when the code materially changes: an `eslint-disable` that needs a reason, an authority, and a new review when the code moves.
+
+> An open gate means every current finding in the scan scope has a compatible recorded decision. It doesn't prove the judgment was right, or that unconfigured concerns were reviewed.
 
 ## Four commands to a working gate
 
@@ -43,7 +59,9 @@ pnpm agentlint rules test    # proves each detector against its fixtures
 pnpm agentlint check --all   # runs the gate
 ```
 
-Or have your coding agent install the package and follow its `setup` skill: it helps turn the standards your repository already enforces into rules, calibrates before enforcing, and installs the Claude Code or Codex hook so a finished turn means an open gate.
+Or have your coding agent install the package and follow its `setup` skill: it turns the standards your repository already enforces into rules, calibrates before enforcing, and installs the hook so a finished turn means an open gate.
+
+agentlint ships no rules. Your repository owns every standard, detector, and binding.
 
 ## A rule is standard + detector + binding
 
@@ -73,19 +91,32 @@ const boundedReads = defineRule({
 export default defineConfig({ rules: [boundedReads] });
 ```
 
-## A closed gate ends in a fix or a recorded reason
+A `state` rule judges current source. A `change` rule judges the Git diff since the merge base: a dropped table, a widened role.
 
-```bash
-pnpm agentlint explain 1
-pnpm agentlint accept 1 --reason "The route caps every request at 100 rows."
-```
+<details>
+<summary><strong>The rest of the model in six ideas</strong></summary>
 
-Findings that need a human go where the human works:
+| Idea             | Meaning                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **State rule**   | Judges current source: `db.users.findMany()` without a bound.                                                                        |
+| **Change rule**  | Judges the Git change since the merge base: a dropped table, a widened role.                                                         |
+| **Authority**    | Who may close the gate. An agent may accept a bounded query with a concrete reason; only a human may accept a destructive migration. |
+| **Fingerprint**  | Keeps an acceptance through formatting and line moves; invalidates it on a material code change.                                     |
+| **Review epoch** | Lets the repository deliberately expire otherwise compatible decisions. The engine reads no clock.                                   |
+| **Outcome**      | Attaches later corrections, rollbacks, incidents, useful interceptions, or unnecessary reviews to the finding.                       |
 
-- **Locally:** `pnpm agentlint review` opens a keyboard-first workspace with the code, the standard, and the agent's proposal side by side.
-- **On the pull request:** the [GitHub action](action/README.md) opens one thread per finding; `/agentlint approve` records human authority in place.
+</details>
 
-Next: the [package README](packages/agentlint/README.md) for the overview, the [guide](docs/guide/README.md) for the full model, the [demo](examples/demo/README.md) for the whole loop, the [decision records](docs/decisions/README.md) for the why.
+## Where to go next
+
+| Goal                                   | Read                                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| See the whole loop on a sample app     | [Demo](examples/demo/README.md)                                                          |
+| Turn a repeated correction into a rule | [Get started](docs/guide/getting-started.md), [Write rules](docs/guide/writing-rules.md) |
+| Close findings as an agent or a human  | [Acceptance](docs/guide/acceptance.md), [Review](docs/guide/review.md)                   |
+| Gate pull requests and agent turns     | [CI and hooks](docs/guide/ci.md)                                                         |
+| Know exactly what the gate guarantees  | [Guarantees](docs/guide/guarantees.md)                                                   |
+| Understand a design choice             | [Decision records](docs/decisions/README.md)                                             |
 
 ## Workspace
 
@@ -98,6 +129,8 @@ Next: the [package README](packages/agentlint/README.md) for the overview, the [
 | `docs/guide`         | User guide: rules, acceptance, review, CI, CLI, API, guarantees.            |
 | `docs/decisions`     | Product and architecture decision records.                                  |
 | `action`             | Reusable GitHub action: check run, review threads, `/agentlint approve`.    |
+
+The screenshots come from the demo: `pnpm build && pnpm --filter @agentlint/review readme:assets` regenerates them.
 
 ## Contributing
 
