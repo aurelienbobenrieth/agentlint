@@ -9,7 +9,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "readme:assets": "node scripts/readme-assets.mjs"
   },
   "dependencies": {
     "@effect/platform-browser": "catalog:",
