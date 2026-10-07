@@ -43,16 +43,12 @@ git("config", "user.name", "agentlint demo");
 git("add", "-A");
 git("commit", "--quiet", "-m", "demo");
 
-// `check` exits 1 while findings are unresolved, which is what the image shows. The first run may move seeded
-// acceptances to the current fingerprint scheme; the second shows what a user sees on a settled repository.
-const check = () =>
-  spawnSync(process.execPath, [bin, "check", "--all", "--base", "main"], {
-    cwd: demo,
-    encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1" },
-  });
-check();
-const gate = check();
+// `check` exits 1 while findings are unresolved, which is what the image shows.
+const gate = spawnSync(process.execPath, [bin, "check", "--all", "--base", "main"], {
+  cwd: demo,
+  encoding: "utf8",
+  env: { ...process.env, NO_COLOR: "1" },
+});
 if (gate.status !== 1) throw new Error(`Expected a closed gate, got exit ${gate.status}:\n${gate.stderr}`);
 
 const server = spawn(process.execPath, [bin, "review", "--no-open", "--port", "0", "--base", "main"], { cwd: demo });

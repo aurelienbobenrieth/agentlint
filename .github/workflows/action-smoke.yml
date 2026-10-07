@@ -63,3 +63,7 @@ jobs:
           test -n "$ARTIFACT"
           test -s "$ARTIFACT"
           printf '%s' "$PLAN" | grep -q '/check-runs'
+
+      # A fingerprint bump makes `check` rewrite the seeded decisions; refresh them with `pnpm check` in the demo.
+      - name: Assert the demo's seeded decisions are current
+        run: git diff --exit-code -- examples/demo/.agentlint
