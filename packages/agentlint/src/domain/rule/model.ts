@@ -78,7 +78,7 @@ export interface VisitorHooks {
 /**
  * Imperative AST visitor escape hatch, keyed by grammar node type.
  */
-export type Visitors = VisitorHooks & Partial<Record<TreeSitterNodeType, VisitorHandler>>;
+export type Visitors = VisitorHooks & Partial<Record<TreeSitterNodeType | `octane_${string}`, VisitorHandler>>;
 
 /**
  * One in-memory repository used by a detector fixture.

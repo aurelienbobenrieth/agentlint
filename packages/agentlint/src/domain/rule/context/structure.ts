@@ -31,7 +31,7 @@ const CLOSERS = new Set([")", "]", "}", ">"]);
 /**
  * Children that are text to a JSX element: text, and `{"literal"}` expressions a formatter adds for significant spaces.
  */
-const JSX_PARENTS = new Set(["jsx_element", "jsx_fragment"]);
+const JSX_PARENTS = new Set(["jsx_element", "jsx_fragment", "octane_jsx_element", "octane_jsx_fragment"]);
 
 /**
  * A string in the key position of these parents names a property; `{ "a": 1 }` and `{ a: 1 }` are the same object.
@@ -308,6 +308,16 @@ export interface NormalizedFile {
 }
 
 /**
+ * Octane boundary gaps are grammar punctuation, never generated code.
+ */
+function structuralGap(node: AgentlintNode, text: string): string {
+  const octane =
+    node.type.startsWith("octane_") ||
+    (node.type === "program" && node.children.some((member) => member.type.startsWith("octane_")));
+  return octane ? text.replace(/\s+/g, "") : text;
+}
+
+/**
  * Normalize the tree under `root`, which must span `source`. Built without recursion, so depth costs no stack.
  */
 export function normalizeFile({
@@ -356,7 +366,7 @@ export function normalizeFile({
     };
     const span = { end: offset(node.startPosition) };
     for (const [index, child] of children.entries()) {
-      gap(source.slice(span.end, offset(child.startPosition)));
+      gap(structuralGap(node, source.slice(span.end, offset(child.startPosition))));
       span.end = offset(child.endPosition);
       for (const [position, entry] of normalized.entries()) {
         if (entry.raw !== index) continue;
@@ -368,7 +378,7 @@ export function normalizeFile({
         );
       }
     }
-    gap(source.slice(span.end, offset(node.endPosition)));
+    gap(structuralGap(node, source.slice(span.end, offset(node.endPosition))));
     // Reversed so that gaps and children pop in source order.
     for (const item of ordered.toReversed()) pending.push(item);
   }

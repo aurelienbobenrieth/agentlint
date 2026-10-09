@@ -43,8 +43,8 @@ const TestingRuntime = ManagedRuntime.make(TestingLayer);
  * @since 0.2.0
  * @category Constructors
  */
-export function testRuleFixtures(rule: AgentlintRule): Promise<FixtureReport> {
-  return TestingRuntime.runPromise(runRuleFixtures(rule));
+export function testRuleFixtures(rule: AgentlintRule, options?: { readonly tsrx?: "octane" }): Promise<FixtureReport> {
+  return TestingRuntime.runPromise(runRuleFixtures(rule, options?.tsrx));
 }
 
 /**
@@ -58,12 +58,14 @@ export function testRuleOnSource({
   rule,
   source,
   file = "fixture.tsx",
+  tsrx,
 }: {
   readonly rule: StateRule;
   readonly source: string;
   readonly file?: string;
+  readonly tsrx?: "octane";
 }): Promise<ReadonlyArray<FindingRecord>> {
-  return TestingRuntime.runPromise(runRuleOnSource(rule, source, file));
+  return TestingRuntime.runPromise(runRuleOnSource(rule, source, file, tsrx));
 }
 
 /**
@@ -89,9 +91,11 @@ export function testRuleOnChange({
 export function testRuleOnSources({
   rule,
   sources,
+  tsrx,
 }: {
   readonly rule: StateRule;
+  readonly tsrx?: "octane";
   readonly sources: ReadonlyArray<readonly [string, string]>;
 }): Promise<ReadonlyArray<FindingRecord>> {
-  return TestingRuntime.runPromise(runRuleOnSources(rule, sources));
+  return TestingRuntime.runPromise(runRuleOnSources(rule, sources, tsrx));
 }

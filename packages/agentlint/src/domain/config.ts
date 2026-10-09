@@ -8,6 +8,10 @@ import { defineRule, type AgentlintRule, type RuleStandard } from "./rule/model.
 
 export interface AgentlintConfig {
   /**
+   * Explicit optional authored Octane state scanning. Requires consumer-installed octane.
+   */
+  readonly tsrx?: "octane" | undefined;
+  /**
    * Reusable configuration layers. Earlier layers load first.
    */
   readonly extends?: ReadonlyArray<AgentlintConfig> | undefined;
@@ -26,6 +30,7 @@ export interface AgentlintConfig {
 }
 
 export interface NormalizedConfig {
+  readonly tsrx?: "octane" | undefined;
   readonly rules: ReadonlyArray<AgentlintRule>;
   readonly rulesById: ReadonlyMap<string, AgentlintRule>;
   readonly ignores: ReadonlyArray<string>;
@@ -66,6 +71,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("agentlint/Co
 
 const decodeConfigShape = Schema.decodeUnknownResult(
   Schema.Struct({
+    tsrx: Schema.optional(Schema.Literal("octane")),
     extends: Schema.optional(Schema.Array(Schema.Unknown)),
     rules: Schema.optional(Schema.Array(Schema.Unknown)),
     ignores: Schema.optional(Schema.Array(Schema.String)),
@@ -131,6 +137,7 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   const rulesById = new Map<string, AgentlintRule>();
   const rulesByStandard = new Map<string, AgentlintRule>();
   const ignores: string[] = [];
+  const tsrx = layers.findLast((layer) => layer.tsrx !== undefined)?.tsrx;
   const base = layers.findLast((layer) => layer.base !== undefined)?.base;
 
   for (const layer of layers) {
@@ -155,6 +162,7 @@ export function normalizeConfig(config: AgentlintConfig): NormalizedConfig {
   }
 
   return {
+    ...(tsrx === undefined ? {} : { tsrx }),
     rules: [...rulesById.values()],
     rulesById,
     ignores: [...new Set(ignores)],

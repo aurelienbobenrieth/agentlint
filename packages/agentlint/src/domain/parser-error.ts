@@ -7,12 +7,20 @@ import { Schema } from "effect";
  * @category Errors
  */
 export class ParserError extends Schema.TaggedError<ParserError>()("agentlint/ParserError", {
-  reason: Schema.Literals(["wasm_missing", "unknown_grammar", "init_failed", "load_failed", "parse_failed"]),
+  reason: Schema.Literals([
+    "wasm_missing",
+    "unknown_grammar",
+    "init_failed",
+    "load_failed",
+    "parse_failed",
+    "frontend_failed",
+  ]),
   grammar: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
     return {
+      frontend_failed: `Octane frontend failed: ${this.detail}`,
       wasm_missing: `WASM file not found: ${this.detail}`,
       unknown_grammar: `Unknown grammar: ${this.grammar}`,
       init_failed: `Parser failed to initialize${this.detail ? `: ${this.detail}` : ""}`,

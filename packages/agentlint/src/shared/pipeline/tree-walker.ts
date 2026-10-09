@@ -115,3 +115,29 @@ export function walkFile({
 
   return allFindings;
 }
+
+/**
+ * Walk the complete authored tree, including explicit Octane boundary nodes.
+ */
+export function walkAuthoredFile({
+  root,
+  rules,
+}: {
+  readonly root: AgentlintNode;
+  readonly rules: ReadonlyArray<RuleEntry>;
+}): ReadonlyArray<FindingRecord> {
+  const pending = [root];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    for (const entry of rules) {
+      const visit = visitorHandler({ visitors: entry.visitors, key: node.type });
+      if (!visit) continue;
+      try {
+        synchronousHook({ ruleId: entry.ruleId, hook: node.type, value: visit(node) });
+      } catch (cause) {
+        throw new DetectionError({ ruleId: entry.ruleId, cause });
+      }
+    }
+    pending.push(...node.children.toReversed());
+  }
+  return rules.flatMap((entry) => entry.context.drainFindings());
+}

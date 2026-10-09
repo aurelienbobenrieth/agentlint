@@ -5,6 +5,7 @@
 | I want to…                                   | Read                                       |
 | -------------------------------------------- | ------------------------------------------ |
 | Install, write a first rule, adopt gradually | [Get started](getting-started.md)          |
+| Scan authored Octane `.tsrx` state           | [Octane frontend](octane.md)               |
 | Write state and change rules                 | [Write rules](writing-rules.md)            |
 | Accept, approve, propose, or work the queue  | [Acceptance](acceptance.md)                |
 | Review findings locally or from CI           | [Review](review.md)                        |

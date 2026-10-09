@@ -1,8 +1,8 @@
 /**
- * File extension → tree-sitter grammar mapping.
+ * File extension → frontend grammar mapping.
  *
- * Maps every supported file extension to the grammar name used by the parser service. This is the single source of
- * truth for which file types agentlint can analyze.
+ * Maps every supported file extension to the grammar name used by state scanning. Octane is an explicit optional
+ * frontend. This is the single source of truth for which file types agentlint can analyze.
  *
  * Uses Effect `HashMap` for an immutable, structurally-equal lookup table.
  *
@@ -21,6 +21,7 @@ import { HashMap, Option } from "effect";
 const EXTENSION_TO_GRAMMAR: HashMap.HashMap<string, string> = HashMap.make(
   ["ts", "typescript"],
   ["tsx", "tsx"],
+  ["tsrx", "octane"],
   ["js", "javascript"],
   ["jsx", "javascript"],
   ["mts", "typescript"],
