@@ -32,6 +32,59 @@ const genericQueryRule = (query: string) =>
   });
 
 describe("authored Octane state scanning", () => {
+  it("exposes native template comments without synthetic JSX semantics", async () => {
+    const text = `export function Card() @{
+  <div>
+    // danger() is a comment
+    <span>{danger()}</span>
+    /* danger() is also a comment */
+    <p>danger text</p>
+  </div>
+}`;
+    expect(await scan(text)).toHaveLength(1);
+    const comments = await testRuleOnSource({
+      rule: genericQueryRule("(comment) @match"),
+      source: text,
+      file: "Card.tsrx",
+      tsrx: "octane",
+    });
+    expect(comments.map((hit) => [hit.line, hit.column, hit.sourceSnippet])).toEqual([
+      [3, 5, "// danger() is a comment"],
+      [5, 5, "/* danger() is also a comment */"],
+    ]);
+    expect(
+      await testRuleOnSource({
+        rule: genericQueryRule("(jsx_expression (comment) @match)"),
+        source: text,
+        file: "Card.tsrx",
+        tsrx: "octane",
+      }),
+    ).toEqual([]);
+    const renderedText = defineRule({
+      ...rule,
+      detector: {
+        id: "test/rendered-text",
+        version: 1,
+        createOnce({ context }) {
+          return {
+            jsx_text(node) {
+              if (node.text.includes("danger")) context.report({ node, message: "Rendered text" });
+            },
+          };
+        },
+      },
+    });
+    const rendered = await testRuleOnSource({ rule: renderedText, source: text, file: "Card.tsrx", tsrx: "octane" });
+    expect(rendered.map((hit) => hit.sourceSnippet)).toEqual(["danger text"]);
+    const first = await scan(text);
+    expect((await scan("\n" + text.replaceAll("  ", "    "))).map((hit) => hit.fingerprint)).toEqual(
+      first.map((hit) => hit.fingerprint),
+    );
+    expect((await scan(text.replace("is a comment", "is changed evidence"))).map((hit) => hit.fingerprint)).not.toEqual(
+      first.map((hit) => hit.fingerprint),
+    );
+    expect(await scan(text)).toEqual(first);
+  });
   it.each([
     {
       name: "compiler IfStatement alternates in multi-branch template chains",

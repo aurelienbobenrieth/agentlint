@@ -37,7 +37,6 @@ const decodeNext = Schema.decodeUnknownSync(
     }),
   ),
 );
-const decodeVersion = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ version: Schema.String })));
 function run(label, command, args, expected = 0) {
   const result = spawnSync(command, args, { cwd: project, encoding: "utf8", timeout: 120000 });
   const record = { label, command, args, status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -88,7 +87,9 @@ writeFileSync(join(project, ".gitignore"), "node_modules/\n");
 run("git add", "git", ["add", "."]);
 run("git snapshot", "git", ["commit", "-m", "Frozen Octane proof sources"]);
 cli("missing optional compiler fails closed", ["check", "--all"], 2);
-run("install pinned compiler", "npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "octane@0.10.0"]);
+run("install pinned compiler", "npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "octane@0.12.1"]);
+assert(!existsSync(join(project, "node_modules/@tsrx/oxc")), "Volar scanning does not require the native parser");
+assert(!existsSync(join(project, "node_modules/typescript")), "Volar scanning does not require TypeScript");
 cli("CLI fixtures", ["rules", "test"]);
 const check = (label, expected = 0) =>
   cli(label, ["check", "--all", "--format", "jsonl"], expected).trim().split("\n").filter(Boolean).map(decodeFinding);
@@ -185,12 +186,27 @@ writeFileSync(compiler, incompleteCompiler("compiled.sourceAst.body[0].declarati
 writeFileSync(target, "export function OmittedText() @{ <div>Authored template text</div> }");
 cli("omitted template text is not comment trivia", ["check", "--all"], 2);
 cli("omitted template text cannot be accepted", ["accept", "1", "--reason", "Must fail"], 2);
+writeFileSync(
+  compiler,
+  incompleteCompiler(`const render = compiled.sourceAst.body[0].declaration.body.render;
+const child = render.children[0];
+render.children[0] = {type: "JSXExpressionContainer", start: child.start, end: child.end,
+expression: {type: "JSXEmptyExpression", start: child.start, end: child.end}};`),
+);
+cli("fake native comment cannot hide authored text", ["check", "--all"], 2);
+cli("fake native comment cannot be accepted", ["accept", "1", "--reason", "Must fail"], 2);
+assert(commands.at(-1).stderr.includes("invalid authored native comment"));
 writeFileSync(compiler, realCompiler);
 writeFileSync(target, before);
 const compilerPackage = join(project, "node_modules/octane/package.json");
 const realPackage = readFileSync(compilerPackage);
-writeFileSync(compilerPackage, realPackage.toString().replace('"version": "0.10.0"', '"version": "0.11.0"'));
-cli("unqualified compiler version fails closed", ["check", "--all"], 2);
+for (const unsupportedVersion of ["0.10.0", "0.12.2"]) {
+  writeFileSync(
+    compilerPackage,
+    realPackage.toString().replace('"version": "0.12.1"', `"version": "${unsupportedVersion}"`),
+  );
+  cli(`unqualified compiler ${unsupportedVersion} fails closed`, ["check", "--all"], 2);
+}
 writeFileSync(compilerPackage, realPackage);
 writeFileSync(target, after);
 for (let repeat = 0; repeat < 3; repeat++) {
@@ -216,9 +232,10 @@ writeFileSync(
       afterSha256: hash(after),
       compilerSha256: hash(realCompiler),
       node: process.version,
-      octane: "0.10.0",
-      installedOxcDependency: decodeVersion(readFileSync(join(project, "node_modules/@tsrx/oxc/package.json"), "utf8"))
-        .version,
+      octane: "0.12.1",
+      nativeParserInstalled: existsSync(join(project, "node_modules/@tsrx/oxc")),
+      typescriptInstalled: existsSync(join(project, "node_modules/typescript")),
+      frontend: "octane/compiler/volar bundled editor parser",
       assertions: "passed",
       commands: commands.length,
     },

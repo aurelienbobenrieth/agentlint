@@ -3,7 +3,7 @@
 Octane `.tsrx` state scanning is optional. Install the tested compiler in the consumer project and opt in:
 
 ```sh
-npm install --save-dev --save-exact octane@0.10.0
+npm install --save-dev --save-exact octane@0.12.1
 ```
 
 ```ts
@@ -21,17 +21,17 @@ Agentlint calls Octane's official `compileToVolarMappings` with `loose: false`, 
 
 The adapter builds a tree from maximal unchanged authored TS/TSX regions. These regions use the existing TSX grammar and matcher. Components and template control flow use explicit boundary nodes instead of pretending that generated helpers are authored calls:
 
-| Authored construct                               | Boundary visitor                            |
-| ------------------------------------------------ | ------------------------------------------- |
-| Component declaration containing `@{`            | `octane_function_declaration`               |
-| Component body                                   | `octane_jsx_code_block`                     |
-| `@if`, including `@else` branches                | `octane_jsx_if_expression`                  |
-| `@else if` remainder of a template chain         | `octane_if_statement`                       |
-| `@for`, including keyed loops                    | `octane_jsx_for_expression`                 |
-| Template branch/loop block                       | `octane_block_statement`                    |
-| Fragment or element containing template controls | `octane_jsx_fragment`, `octane_jsx_element` |
+| Authored construct                                         | Boundary visitor                            |
+| ---------------------------------------------------------- | ------------------------------------------- |
+| Component declaration containing `@{`                      | `octane_function_declaration`               |
+| Component body                                             | `octane_jsx_code_block`                     |
+| `@if`, including `@else` branches                          | `octane_jsx_if_expression`                  |
+| `@else if` remainder of a template chain                   | `octane_if_statement`                       |
+| `@for`, including keyed loops                              | `octane_jsx_for_expression`                 |
+| Template branch/loop block                                 | `octane_block_statement`                    |
+| Fragment or element containing controls or native comments | `octane_jsx_fragment`, `octane_jsx_element` |
 
-Other ancestors spanning boundaries have `octane_` plus the authored compiler kind in snake case, such as `octane_export_named_declaration`. Their field names come from the compiler, such as `declaration`, `params`, `body`, `render`, `test`, `consequent`, `alternate`, `left`, `right`, and `key`. Arrays remain source-ordered children, and `childByFieldName` returns the first child for an array field. Ordinary regions retain tree-sitter fields and node types. Visitors can traverse the authored parent/child tree. Comments in boundary gaps contribute evidence but are not separate visited comment nodes.
+Other ancestors spanning boundaries have `octane_` plus the authored compiler kind in snake case, such as `octane_export_named_declaration`. Their field names come from the compiler, such as `declaration`, `params`, `body`, `render`, `test`, `consequent`, `alternate`, `left`, `right`, and `key`. Arrays remain source-ordered children, and `childByFieldName` returns the first child for an array field. Ordinary regions retain tree-sitter fields and node types. Visitors can traverse the authored parent/child tree. Native template comments represented by the editor frontend are validated with the TSX lexer and exposed as authored `comment` nodes. They cannot become rendered `jsx_text` or synthetic `jsx_expression` findings. Other comments in boundary gaps contribute evidence but are not separate visited comment nodes.
 
 For example, `useLinkedState(query, $INITIAL)` inspects the unchanged call and callback, including TypeScript annotations. It cannot match a compiler-created `__map_iterable` call because that generated code never enters the scan. To inspect a component or an Octane branch, use a boundary visitor and its authored fields.
 
@@ -69,7 +69,7 @@ Findings use the existing `source-structure` v4 identities and acceptance store.
 
 Supported and tested syntax includes imports, typed and destructured component parameters, generic component declarations, defaulted and rest parameters, ordinary and typed arrow callbacks, template expressions, sibling conditionals and loops inside a fragment, multi-branch `@else if` chains, keyed loops, template line/block comments, statement-only component bodies (including a legitimate null `render`), and the frozen workspace-search component. Template comments are validated as trivia using the TSX parser, while missing AST fields or omitted template text still refuse coverage. Malformed calls and multiple top-level template outputs are refused. Scoped styles, `@switch`, `@try`, and JSX spread children are currently refused rather than treated as complete coverage. Other unsupported ordinary regions also fail closed. This is not a qualification of the complete Octane grammar or every formatter transformation.
 
-The tested compiler is exactly Octane **0.10.0**. Other versions are refused until qualified. Its Volar entry uses its bundled JavaScript frontend with TypeScript compatibility parsing. The installed dependency includes `@tsrx/oxc` **0.16.0**, but this scan does not claim to exercise that native parser. Engine tests use Effect **4.0.0**, TypeScript **7.0.2**, web-tree-sitter **0.25.10**, and tree-sitter-typescript **0.23.2** for TSX. Consumer CLI proof ran on Node **24.16.0**. The optional compiler requires Node **22.22.2** or newer. Octane declares a TypeScript 5.9 peer, so consumer projects should retain their own supported toolchain. The scanner calls the compiler API, not its TypeScript integration.
+The tested compiler is exactly Octane **0.12.1**. Other versions, including other 0.12 patches, are refused until qualified. Its Volar entry uses its bundled editor frontend with TypeScript compatibility parsing. Scanning does not require TypeScript or the optional native parser `@tsrx/oxc` (Octane's optional peer is **0.20.0**). The installed consumer proof verifies that both the native parser and TypeScript are absent. Engine tests use Effect **4.0.0**, TypeScript **7.0.2**, web-tree-sitter **0.25.10**, and tree-sitter-typescript **0.23.2** for TSX. Consumer CLI proof ran on Node **24.16.0**. The optional compiler requires Node **22.22.2** or newer. Octane's optional TypeScript peer is `^5.9.3 || ^6.0.0 || >=7.1.0-0`, so consumers using its TypeScript integration should retain a supported toolchain. The scanner calls the Volar compiler API independently of that integration.
 
 Missing compiler exports, compiler exceptions, reported syntax errors, invalid/overlapping ranges, a partial program range, or an unrepresentable region produce `ParserError` with `frontend_failed`. `accept` reparses current evidence and cannot accept those failed scans. The compiler is executable consumer-installed code, so opting in trusts that dependency just as loading a rule config trusts its code.
 

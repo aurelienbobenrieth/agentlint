@@ -52,11 +52,12 @@ interface AuthoredAst {
   readonly end: number;
   readonly children: ReadonlyArray<{ readonly field: string; readonly node: AuthoredAst }>;
   readonly dialect: boolean;
+  readonly nativeComment: boolean;
 }
 
-function authoredAst(value: unknown, sourceLength: number, templateControl = false): AuthoredAst {
+function authoredAst(value: unknown, source: string, templateControl = false): AuthoredAst {
   const shape = header(value);
-  if (shape.start < 0 || shape.end < shape.start || shape.end > sourceLength)
+  if (shape.start < 0 || shape.end < shape.start || shape.end > source.length)
     throw new ParserError({
       reason: "frontend_failed",
       grammar: "octane",
@@ -69,6 +70,17 @@ function authoredAst(value: unknown, sourceLength: number, templateControl = fal
       detail: `Unsupported authored syntax ${shape.type}`,
     });
   const fields = record(value);
+  // The editor parser projects native template comments into JSX shells without authored braces.
+  // Keep them out of ordinary TSX regions, which would mistake // comments for rendered JSX text.
+  const nativeComment = shape.type === "JSXExpressionContainer" && source[shape.start] !== "{";
+  if (nativeComment)
+    Schema.decodeUnknownSync(
+      Schema.Struct({
+        type: Schema.Literal("JSXEmptyExpression"),
+        start: Schema.Literal(shape.start),
+        end: Schema.Literal(shape.end),
+      }),
+    )(fields.expression);
   // Octane represents the remainder of an @else-if chain with ordinary IfStatement kinds.
   // Only the compiler's alternate field carries template semantics into those nodes.
   const templateIf = shape.type === "JSXIfExpression" || (templateControl && shape.type === "IfStatement");
@@ -96,7 +108,7 @@ function authoredAst(value: unknown, sourceLength: number, templateControl = fal
       if (item === null || typeof item !== "object" || !("type" in item) || typeof item.type !== "string") continue;
       const child = authoredAst(
         item,
-        sourceLength,
+        source,
         ((dialect.has(shape.type) || templateIf) && item.type === "BlockStatement") ||
           (templateIf && field === "alternate" && item.type === "IfStatement"),
       );
@@ -125,7 +137,9 @@ function authoredAst(value: unknown, sourceLength: number, templateControl = fal
   return {
     ...shape,
     children,
-    dialect: templateControl || dialect.has(shape.type) || children.some((child) => child.node.dialect),
+    dialect:
+      nativeComment || templateControl || dialect.has(shape.type) || children.some((child) => child.node.dialect),
+    nativeComment,
   };
 }
 
@@ -234,7 +248,7 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
   const ast = yield* Effect.try({
     try: () => {
       const require = createRequire(anchor);
-      const version = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.Literal("0.10.0") }))(
+      const version = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.Literal("0.12.1") }))(
         require(resolve(dirname(require.resolve("octane/compiler/volar")), "../../package.json")),
       );
       const compiler: unknown = require("octane/compiler/volar");
@@ -263,7 +277,7 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
         }),
       )(compiled.sourceAst);
       void program;
-      return authoredAst(compiled.sourceAst, source.length);
+      return authoredAst(compiled.sourceAst, source);
     },
     catch: (cause) =>
       new ParserError({
@@ -278,6 +292,29 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
   };
   const build: (node: AuthoredAst, parent: AgentlintNode | null) => Effect.Effect<AgentlintNode, ParserError> =
     Effect.fn("Octane.build")(function* (node, parent) {
+      if (node.nativeComment) {
+        const text = source.slice(node.start, node.end);
+        const tree = yield* parser.parse({ source: text, grammar: "tsx" });
+        const inner = tree.rootNode.namedChildren[0];
+        if (
+          tree.rootNode.hasError ||
+          tree.rootNode.namedChildren.length !== 1 ||
+          !inner ||
+          inner.type !== "comment" ||
+          inner.startIndex !== 0 ||
+          inner.endIndex !== text.length
+        ) {
+          tree.delete();
+          return yield* new ParserError({
+            reason: "frontend_failed",
+            grammar: "octane",
+            detail: `${file}: invalid authored native comment at ${node.start}`,
+          });
+        }
+        const comment = new AuthoredNode(source, node.start, node.end, "comment", parent);
+        regions.push({ tree, queryRoot: inner, wrap: (captured) => (captured.id === inner.id ? comment : undefined) });
+        return comment;
+      }
       if (
         node.type === "JSXText" ||
         node.type === "JSXIdentifier" ||
