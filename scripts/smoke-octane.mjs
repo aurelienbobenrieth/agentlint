@@ -63,7 +63,22 @@ mkdirSync(dirname(target), { recursive: true });
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/agentlint/src/__fixtures__/octane");
 const before = readFileSync(join(fixtureRoot, "documents-before.tsrx"), "utf8");
 const after = readFileSync(join(fixtureRoot, "documents-after.tsrx"), "utf8");
-const rule = `defineRule({ lifecycle: "state", standard: { id: "documents/workspace-state", revision: 1, title: "Workspace search state is scoped to its workspace", guidance: "Search results and errors must be invalidated by workspace changes, even when the query is unchanged." }, detector: { id: "documents/query-only-linked-state", version: 1, match: { pattern: "useLinkedState(query, $INITIAL)", message: "Review query-only search state for missing workspace invalidation." }, fixtures: { mustReport: [{ file: "Card.tsrx", source: 'export function Card() @{ const x = useLinkedState(query, () => 42); <div>{x}</div> }' }], mustStaySilent: [{ file: "Card.tsrx", source: 'export function Card() @{ const x = useLinkedState(searchKey, () => 42); <div>{x}</div> }' }] } }, binding: { id: "documents/workspace-state", authority: "agent", include: ["${path}"] } })`;
+const adapterRegression = `export function Card<V extends string>({ query }: { query: V }) @{
+  const state = useLinkedState(query, () => null);
+  <div>
+    // Authored template comment, not omitted source.
+    /* Block comment between template children. */
+    @if (true) { <span>{useLinkedState(query, () => 0)}</span> }
+    @else if (false) { <span>{useLinkedState(query, () => 1)}</span> }
+    @else { <span>{state}</span> }
+  </div>
+}
+export function StatementOnly([query]: readonly string[], ...rest: string[]) @{
+  return useLinkedState(query, () => rest);
+}
+export function Empty() @{}
+export function EmptyBranches() @{ @if (true) {} @else if (false) {} @else {} }`;
+const rule = `defineRule({ lifecycle: "state", standard: { id: "documents/workspace-state", revision: 1, title: "Workspace search state is scoped to its workspace", guidance: "Search results and errors must be invalidated by workspace changes, even when the query is unchanged." }, detector: { id: "documents/query-only-linked-state", version: 1, match: { pattern: "useLinkedState(query, $INITIAL)", message: "Review query-only search state for missing workspace invalidation." }, fixtures: { mustReport: [{ file: "Card.tsrx", source: 'export function Card() @{ const x = useLinkedState(query, () => 42); <div>{x}</div> }' }, { file: "Branches.tsrx", source: ${JSON.stringify(adapterRegression)} }], mustStaySilent: [{ file: "Card.tsrx", source: 'export function Card() @{ const x = useLinkedState(searchKey, () => 42); <div>{x}</div> }' }, { file: "Branches.tsrx", source: ${JSON.stringify(adapterRegression.replaceAll("query", "searchKey"))} }] } }, binding: { id: "documents/workspace-state", authority: "agent", include: ["${path}"] } })`;
 const config = (optIn = true) =>
   `import { defineConfig, defineRule } from "@aurelienbbn/agentlint";\nexport const workspaceRule = ${rule};\nexport default defineConfig({ ${optIn ? 'tsrx: "octane",' : ""} rules: [workspaceRule] });\n`;
 const configPath = join(project, ".agentlint/config.ts");
@@ -77,6 +92,25 @@ run("install pinned compiler", "npm", ["install", "--ignore-scripts", "--no-audi
 cli("CLI fixtures", ["rules", "test"]);
 const check = (label, expected = 0) =>
   cli(label, ["check", "--all", "--format", "jsonl"], expected).trim().split("\n").filter(Boolean).map(decodeFinding);
+writeFileSync(target, adapterRegression);
+const regressionHits = check("adapter regression authored findings", 1);
+assert.equal(regressionHits.length, 4);
+for (const [index, hit] of regressionHits.entries()) {
+  const line = adapterRegression.split("\n")[hit.location.line - 1];
+  assert(line.slice(hit.location.column - 1).startsWith(hit.snippet));
+  cli(`accept adapter regression ${index}`, [
+    "accept",
+    hit.selector,
+    "--reason",
+    "Disposable adapter regression proof.",
+  ]);
+}
+assert.equal(check("adapter regression accepted gate").length, 0);
+writeFileSync(target, "\n" + adapterRegression.replaceAll("  ", "    "));
+assert.equal(check("adapter regression formatting retains acceptance").length, 0);
+writeFileSync(target, adapterRegression.replace("() => 0", "() => 2"));
+assert.equal(check("adapter regression authored change reopens review", 1).length, 4);
+writeFileSync(target, before);
 const baseline = [];
 for (let repeat = 0; repeat < 3; repeat++) {
   const result = check(`before ${repeat}`, 1);
@@ -135,7 +169,24 @@ writeFileSync(
 );
 cli("empty full-span AST cannot satisfy acceptance", ["check", "--all"], 2);
 cli("empty full-span AST cannot be accepted", ["accept", "1", "--reason", "Must fail"], 2);
+writeFileSync(join(dirname(compiler), "agentlint-proof-original.js"), realCompiler);
+const incompleteCompiler = (mutation) =>
+  `import { compileToVolarMappings as original } from "./agentlint-proof-original.js";
+export function compileToVolarMappings(...args) {
+  const compiled = original(...args);
+  ${mutation}
+  return compiled;
+}`;
+writeFileSync(compiler, incompleteCompiler("delete compiled.sourceAst.body[0].declaration.body.render;"));
+writeFileSync(target, "export function MissingRender() @{ const state = useLinkedState(query, () => 0); }");
+cli("missing render field is not a legitimate null render", ["check", "--all"], 2);
+cli("missing render field cannot be accepted", ["accept", "1", "--reason", "Must fail"], 2);
+writeFileSync(compiler, incompleteCompiler("compiled.sourceAst.body[0].declaration.body.render.children = [];"));
+writeFileSync(target, "export function OmittedText() @{ <div>Authored template text</div> }");
+cli("omitted template text is not comment trivia", ["check", "--all"], 2);
+cli("omitted template text cannot be accepted", ["accept", "1", "--reason", "Must fail"], 2);
 writeFileSync(compiler, realCompiler);
+writeFileSync(target, before);
 const compilerPackage = join(project, "node_modules/octane/package.json");
 const realPackage = readFileSync(compilerPackage);
 writeFileSync(compilerPackage, realPackage.toString().replace('"version": "0.10.0"', '"version": "0.11.0"'));

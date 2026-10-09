@@ -54,7 +54,7 @@ interface AuthoredAst {
   readonly dialect: boolean;
 }
 
-function authoredAst(value: unknown, sourceLength: number, templateBlock = false): AuthoredAst {
+function authoredAst(value: unknown, sourceLength: number, templateControl = false): AuthoredAst {
   const shape = header(value);
   if (shape.start < 0 || shape.end < shape.start || shape.end > sourceLength)
     throw new ParserError({
@@ -69,12 +69,19 @@ function authoredAst(value: unknown, sourceLength: number, templateBlock = false
       detail: `Unsupported authored syntax ${shape.type}`,
     });
   const fields = record(value);
+  // Octane represents the remainder of an @else-if chain with ordinary IfStatement kinds.
+  // Only the compiler's alternate field carries template semantics into those nodes.
+  const templateIf = shape.type === "JSXIfExpression" || (templateControl && shape.type === "IfStatement");
+  const templateBlock = templateControl && shape.type === "BlockStatement";
   const boundaryContracts: Readonly<Record<string, ReadonlyArray<string>>> = {
-    JSXCodeBlock: ["render"],
-    JSXIfExpression: ["test", "consequent"],
     JSXForExpression: ["left", "right", "body"],
   };
   for (const field of boundaryContracts[shape.type] ?? []) header(fields[field]);
+  if (shape.type === "JSXCodeBlock" && fields.render !== null) header(fields.render);
+  if (templateIf) {
+    header(fields.test);
+    header(fields.consequent);
+  }
   for (const field of shape.type === "JSXCodeBlock" || shape.type === "Program" || templateBlock
     ? ["body"]
     : shape.type === "JSXElement" || shape.type === "JSXFragment"
@@ -87,7 +94,12 @@ function authoredAst(value: unknown, sourceLength: number, templateBlock = false
     if (ignored.has(field)) continue;
     for (const item of isUnknownArray(entry) ? entry : [entry]) {
       if (item === null || typeof item !== "object" || !("type" in item) || typeof item.type !== "string") continue;
-      const child = authoredAst(item, sourceLength, dialect.has(shape.type) && item.type === "BlockStatement");
+      const child = authoredAst(
+        item,
+        sourceLength,
+        ((dialect.has(shape.type) || templateIf) && item.type === "BlockStatement") ||
+          (templateIf && field === "alternate" && item.type === "IfStatement"),
+      );
       if (child.start < shape.start || child.end > shape.end)
         throw new ParserError({
           reason: "frontend_failed",
@@ -113,7 +125,7 @@ function authoredAst(value: unknown, sourceLength: number, templateBlock = false
   return {
     ...shape,
     children,
-    dialect: templateBlock || dialect.has(shape.type) || children.some((child) => child.node.dialect),
+    dialect: templateControl || dialect.has(shape.type) || children.some((child) => child.node.dialect),
   };
 }
 
@@ -294,8 +306,13 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
           : [
               ["", ""],
               ["(", ")"],
-              ...(node.type === "Identifier"
+              ...(["Identifier", "ObjectPattern", "ArrayPattern", "AssignmentPattern", "RestElement"].includes(
+                node.type,
+              )
                 ? [["function __parameter(", "){}"] satisfies readonly [string, string]]
+                : []),
+              ...(node.type === "TSTypeParameterDeclaration"
+                ? [["function __generic", "(){}"] satisfies readonly [string, string]]
                 : []),
               ...(node.type === "TSTypeAnnotation"
                 ? [["const __value", "=null"] satisfies readonly [string, string]]
@@ -373,7 +390,7 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
           : `octane_${node.type.replace(/^JSX/, "Jsx").replace(/[A-Z]/g, (letter, index) => `${index ? "_" : ""}${letter.toLowerCase()}`)}`,
         parent,
       );
-      if (node.children.length === 0 && node.type !== "Program" && node.type !== "JSXText")
+      if (node.children.length === 0 && !["Program", "JSXText", "JSXCodeBlock", "BlockStatement"].includes(node.type))
         return yield* new ParserError({
           reason: "frontend_failed",
           grammar: "octane",
@@ -382,7 +399,8 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
       for (const child of node.children) boundary.add(yield* build(child.node, boundary), child.field);
       return boundary;
     });
-  // Program/statement-block gaps may contain only trivia. Template gaps may contain only whitespace.
+  // Every gap must contain only trivia, including Octane's template line/block comments.
+  // Parse gaps rather than stripping comment-looking text: omitted authored code still refuses coverage.
   // A complete outer range alone is not evidence that the compiler retained every authored statement.
   const validateGaps = Effect.fn("Octane.validateGaps")(function* () {
     const pending = [ast];
@@ -410,12 +428,6 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
         gaps.push(source.slice(end, node.end - closing.length));
         for (const gap of gaps) {
           if (!gap.trim()) continue;
-          if (template)
-            return yield* new ParserError({
-              reason: "frontend_failed",
-              grammar: "octane",
-              detail: `${file}: compiler omitted authored template content at ${node.start}`,
-            });
           const tree = yield* parser.parse({ source: gap, grammar: "tsx" });
           const omitted =
             tree.rootNode.hasError || tree.rootNode.namedChildren.some((child) => child?.type !== "comment");
@@ -424,7 +436,7 @@ export const parseOctane = Effect.fn("Octane.parse")(function* ({
             return yield* new ParserError({
               reason: "frontend_failed",
               grammar: "octane",
-              detail: `${file}: compiler omitted authored statements at ${node.start}`,
+              detail: `${file}: compiler omitted authored ${template ? "template content" : "statements"} at ${node.start}`,
             });
         }
       }

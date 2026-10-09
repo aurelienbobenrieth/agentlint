@@ -25,8 +25,108 @@ const rule = defineRule({
   binding: { id: "test/danger", authority: "agent" },
 });
 const scan = (text = source) => testRuleOnSource({ rule, source: text, file: "Card.tsrx", tsrx: "octane" });
+const genericQueryRule = (query: string) =>
+  defineRule({
+    ...rule,
+    detector: { id: "test/generic-query", version: 1, match: { query, message: "Generic parameters" } },
+  });
 
 describe("authored Octane state scanning", () => {
+  it.each([
+    {
+      name: "compiler IfStatement alternates in multi-branch template chains",
+      text: `export function Card(props: { icon: string }) @{
+  @if (danger() === "sparkles") { <div>{danger()}</div> }
+  @else if (danger() === "pen") { <span>{danger()}</span> }
+  @else if (props.icon === "image") { <p>{danger()}</p> }
+  @else { <i>{danger()}</i> }
+}`,
+      count: 6,
+    },
+    {
+      name: "typed destructured and generic component parameters",
+      text: `export function Card<V extends string>({ item, actions }: {
+  item: V; actions: () => void
+}) @{
+  <button onClick={() => danger(item)}>{danger(actions)}</button>
+}`,
+      count: 2,
+    },
+    {
+      name: "typed array, defaulted and rest component parameters",
+      text: `export function Card([item]: readonly string[], value = danger(), ...rest: string[]) @{
+  <div>{danger(item, value, rest)}</div>
+}`,
+      count: 2,
+    },
+    {
+      name: "line and block comments between authored template children",
+      text: `export function Card() @{
+  <div>
+    // Octane treats this as a comment, not rendered text: danger()
+    <span>{danger()}</span>
+    /* Another comment: danger() */
+    @if (true) { <p>{danger()}</p> }
+  </div>
+}`,
+      count: 2,
+    },
+    {
+      name: "statement-only component bodies with null render",
+      text: `export function Card() @{
+  const state = danger();
+  return state.match({ Ready: () => <div>{danger()}</div> });
+}`,
+      count: 2,
+    },
+    {
+      name: "validated empty component bodies and template branches",
+      text: `export function Empty() @{}
+export function Card() @{ @if (true) {} @else if (false) {} @else {} }`,
+      count: 0,
+    },
+  ])("scans $name at authored positions with activation and silence", async ({ text, count }) => {
+    const hits = await scan(text);
+    expect(hits).toHaveLength(count);
+    for (const hit of hits) {
+      expect(text.split("\n")[hit.line - 1]?.slice(hit.column - 1)).toMatch(/^danger\(/);
+      expect(hit.sourceSnippet).toMatch(/^danger\(/);
+    }
+    expect(await scan(text.replaceAll("danger", "safe"))).toEqual([]);
+    expect(await scan(text)).toEqual(hits);
+  });
+
+  it("preserves template branch structure through compiler IfStatement alternates", async () => {
+    const text = `export function Card() @{
+  @if (danger()) { <div/> } @else if (danger()) { <span/> } @else { <p/> }
+}`;
+    const branches = defineRule({
+      ...rule,
+      detector: {
+        id: "test/branches",
+        version: 1,
+        createOnce({ context }) {
+          return {
+            octane_if_statement(node) {
+              const test = node.childByFieldName("test");
+              const consequent = node.childByFieldName("consequent");
+              const alternate = node.childByFieldName("alternate");
+              if (
+                test?.text === "danger()" &&
+                consequent?.type === "octane_block_statement" &&
+                alternate?.type === "octane_block_statement"
+              )
+                context.report({ node, message: "Authored template alternate" });
+            },
+          };
+        },
+      },
+    });
+    const hits = await testRuleOnSource({ rule: branches, source: text, file: "Card.tsrx", tsrx: "octane" });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.sourceSnippet).toMatch(/^if \(danger\(\)\)/);
+  });
+
   it("runs activation/silence fixtures and reports every authored call at original positions", async () => {
     expect(await testRuleFixtures(rule, { tsrx: "octane" })).toMatchObject({ total: 2, failures: [] });
     const hits = await scan();
@@ -189,6 +289,26 @@ it("rejects query captures of synthetic parse-context wrappers", async () => {
   await expect(testRuleOnSource({ rule: query, source, file: "Card.tsrx", tsrx: "octane" })).rejects.toThrow(
     /region boundary|region wrapper/,
   );
+});
+
+it("keeps generic parameter queries authored and refuses synthetic declaration relationships", async () => {
+  const text = "export function Card<V extends string>(props: { value: V }) @{ <div>{props.value}</div> }";
+  const hits = await testRuleOnSource({
+    rule: genericQueryRule("(type_parameters) @match"),
+    source: text,
+    file: "Card.tsrx",
+    tsrx: "octane",
+  });
+  expect(hits).toHaveLength(1);
+  expect(hits[0]?.sourceSnippet).toBe("<V extends string>");
+  await expect(
+    testRuleOnSource({
+      rule: genericQueryRule("(function_declaration type_parameters: (type_parameters) @match)"),
+      source: text,
+      file: "Card.tsrx",
+      tsrx: "octane",
+    }),
+  ).rejects.toThrow(/synthetic parse-context/);
 });
 
 it("refuses query meaning created by an expression-statement parse wrapper", async () => {
