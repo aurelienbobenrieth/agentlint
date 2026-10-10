@@ -134,3 +134,5 @@ Every type, schema, and error: [Public API](https://github.com/aurelienbobenriet
 ## License
 
 [MIT](https://github.com/aurelienbobenrieth/agentlint/blob/main/packages/agentlint/LICENSE)
+
+Optional authored Octane `.tsrx` state scanning requires a consumer-installed `octane@0.10.0` and explicit `tsrx: "octane"` configuration. See the [Octane guide](../../docs/guide/octane.md) for setup and structural boundaries.

@@ -63,7 +63,7 @@ export const rulesTestHandler = Effect.fn("rulesTestHandler")(function* (command
   const lines: string[] = [];
   const totals = { failed: 0, withoutFixtures: 0 };
   for (const rule of rules) {
-    const report = yield* runRuleFixtures(rule);
+    const report = yield* runRuleFixtures(rule, config.tsrx);
     if (report.total === 0) {
       totals.withoutFixtures += 1;
       lines.push(`skip ${report.ruleId} (no fixtures)`);

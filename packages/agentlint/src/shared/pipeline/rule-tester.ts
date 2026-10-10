@@ -24,6 +24,7 @@ import { collectStateFindings, detectChange } from "./collect-findings.js";
 export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
   rule: StateRule,
   sources: ReadonlyArray<readonly [file: string, source: string]>,
+  tsrx?: "octane",
 ) {
   for (const [file] of sources) {
     if (!grammarForExtension(file.split(".").pop() ?? "") && !(rule.binding.dependencies ?? []).includes(file)) {
@@ -34,6 +35,8 @@ export const runRuleOnSources = Effect.fn("runRuleOnSources")(function* (
     [rule],
     sources.map(([file]) => file),
     new Map(sources),
+    undefined,
+    tsrx,
   );
 });
 
@@ -44,8 +47,9 @@ export const runRuleOnSource = Effect.fn("runRuleOnSource")(function* (
   rule: StateRule,
   source: string,
   file = "fixture.tsx",
+  tsrx?: "octane",
 ) {
-  return yield* runRuleOnSources(rule, [[file, source]]);
+  return yield* runRuleOnSources(rule, [[file, source]], tsrx);
 });
 
 /**
@@ -72,8 +76,12 @@ function fixtureLabel(fixture: StateFixture | ChangeFixture): string | undefined
   return Schema.is(Schema.String)(fixture) ? undefined : fixture.label;
 }
 
-const runStateFixture = Effect.fn("runStateFixture")(function* (rule: StateRule, fixture: StateFixture) {
-  return yield* runRuleOnSources(rule, stateFiles(fixture));
+const runStateFixture = Effect.fn("runStateFixture")(function* (
+  rule: StateRule,
+  fixture: StateFixture,
+  tsrx?: "octane",
+) {
+  return yield* runRuleOnSources(rule, stateFiles(fixture), tsrx);
 });
 
 const sameFindings = (left: ReadonlyArray<FindingRecord>, right: ReadonlyArray<FindingRecord>): boolean =>
@@ -97,21 +105,21 @@ const nondeterministic = ({
 /**
  * Run activation and silence fixtures for either lifecycle.
  */
-export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: AgentlintRule) {
+export const runRuleFixtures = Effect.fn("runRuleFixtures")(function* (rule: AgentlintRule, tsrx?: "octane") {
   const failures: FixtureFailure[] = [];
   if (rule.lifecycle === "state") {
     const mustReport = rule.detector.fixtures?.mustReport ?? [];
     const mustStaySilent = rule.detector.fixtures?.mustStaySilent ?? [];
     for (const [index, fixture] of mustReport.entries()) {
-      const findings = yield* runStateFixture(rule, fixture);
-      const replay = yield* runStateFixture(rule, fixture);
+      const findings = yield* runStateFixture(rule, fixture, tsrx);
+      const replay = yield* runStateFixture(rule, fixture, tsrx);
       if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
       if (findings.length === 0)
         failures.push({ expectation: "mustReport", index, label: fixtureLabel(fixture), findingCount: 0 });
     }
     for (const [index, fixture] of mustStaySilent.entries()) {
-      const findings = yield* runStateFixture(rule, fixture);
-      const replay = yield* runStateFixture(rule, fixture);
+      const findings = yield* runStateFixture(rule, fixture, tsrx);
+      const replay = yield* runStateFixture(rule, fixture, tsrx);
       if (!sameFindings(findings, replay)) failures.push(nondeterministic({ index, fixture, findings }));
       if (findings.length > 0)
         failures.push({

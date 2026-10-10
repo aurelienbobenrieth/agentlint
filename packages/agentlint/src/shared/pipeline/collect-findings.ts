@@ -2,7 +2,7 @@
  * Finding collection for state and change rules. @module @since 0.2.0
  */
 
-import { Array as A, Effect, FileSystem, Path, Schema } from "effect";
+import { Array as A, Data, Effect, Match, FileSystem, Path, Schema } from "effect";
 import { DetectionError, synchronousHook, UnknownBindingError, UnparseableFilesError } from "./detection-error.js";
 import { Env } from "../../config/env.js";
 import { StaleScope } from "../../domain/acceptance.js";
@@ -22,6 +22,9 @@ import { fileStructureDigest, RuleContextImpl } from "../../domain/rule/context/
 import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git/service.js";
+import type { Tree } from "web-tree-sitter";
+import { parseOctane, type OctaneSource } from "../infrastructure/octane.js";
+import { ParserError } from "../../domain/parser-error.js";
 import { Parser } from "../infrastructure/parser.js";
 import {
   compileGlobs,
@@ -34,7 +37,7 @@ import { grammarForExtension } from "./language-map.js";
 import { ScanProgress } from "./scan-progress.js";
 import { selectBase } from "./base.js";
 import { compileMatches, disposeMatches, runMatches, type RunnableMatches } from "./pattern-match.js";
-import { visitorKeys, walkFile } from "./tree-walker.js";
+import { visitorKeys, walkFile, walkAuthoredFile } from "./tree-walker.js";
 import { filterRules, scopeMatcher, sortFindings, type ScopeMatcher } from "./finding/rules.js";
 
 export { ruleEnabledForFile } from "./finding/rules.js";
@@ -81,6 +84,10 @@ export const CollectOptions = Schema.Struct({
 });
 export type CollectOptions = Schema.Schema.Type<typeof CollectOptions>;
 
+type FileTree = Data.TaggedEnum<{ Native: { readonly tree: Tree }; Octane: OctaneSource }>;
+const FileTree = Data.taggedEnum<FileTree>();
+const disposeFileTree = FileTree.$match({ Native: ({ tree }) => tree.delete(), Octane: ({ dispose }) => dispose() });
+
 interface StateRuleEntry {
   readonly rule: StateRule;
   readonly inScope: ScopeMatcher;
@@ -108,6 +115,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
   files: ReadonlyArray<string>,
   fixtureSources?: ReadonlyMap<string, string>,
   capture?: ScanCapture,
+  tsrx?: "octane",
 ) {
   const env = yield* Env;
   const parser = yield* Parser;
@@ -203,15 +211,22 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
   }) {
     const applicable = A.filter(entries, (entry) => entry.inScope(file));
     if (applicable.length === 0) return;
-    const tree = yield* parser.parse({ source, grammar });
-    if (tree.rootNode.hasError) {
-      tree.delete();
-      // Keep analysing so one run names every broken file; the scan still fails once it ends.
+    const parsed = yield* Match.value(grammar).pipe(
+      Match.when("octane", () =>
+        parseOctane({ source, file, anchor: path.resolve(env.cwd, "package.json") }).pipe(Effect.map(FileTree.Octane)),
+      ),
+      Match.orElse((nativeGrammar) =>
+        parser.parse({ source, grammar: nativeGrammar }).pipe(Effect.map((tree) => FileTree.Native({ tree }))),
+      ),
+    );
+    if (FileTree.$match(parsed, { Native: ({ tree }) => tree.rootNode.hasError, Octane: () => false })) {
+      disposeFileTree(parsed);
       unparseable.push({ file, grammar });
       return;
     }
     const runnable: Array<{ ruleId: string; context: RuleContextImpl; visitors: Visitors }> = [];
     const structureDigest = fileStructureDigest(source);
+    const matchGrammar = FileTree.$match(parsed, { Native: () => grammar, Octane: () => "tsx" });
 
     yield* Effect.gen(function* () {
       for (const entry of applicable) {
@@ -227,7 +242,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
         });
         if (enabled === false) continue;
         if (entry.matches.length > 0) {
-          const cached = entry.compiledByGrammar.get(grammar);
+          const cached = entry.compiledByGrammar.get(matchGrammar);
           const compiled =
             cached ??
             (yield* Effect.gen(function* () {
@@ -235,19 +250,32 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
               const grammars = new Set<string>();
               for (const candidate of files) {
                 const other = entry.inScope(candidate) && grammarForExtension(path.extname(candidate).slice(1));
-                if (other) grammars.add(other);
+                if (other) grammars.add(other === "octane" ? "tsx" : other);
               }
               const result = yield* compileMatches({
                 ruleId: entry.rule.binding.id,
                 matches: entry.matches,
-                grammar,
+                grammar: matchGrammar,
                 grammars: [...grammars],
               });
-              entry.compiledByGrammar.set(grammar, result);
+              entry.compiledByGrammar.set(matchGrammar, result);
               return result;
             }));
           yield* Effect.try({
-            try: () => runMatches({ tree, runnable: compiled, context: entry.context }),
+            try: () =>
+              FileTree.$match(parsed, {
+                Native: ({ tree }) => runMatches({ tree, runnable: compiled, context: entry.context }),
+                Octane: ({ regions }) => {
+                  for (const region of regions)
+                    runMatches({
+                      tree: region.tree,
+                      queryRoot: region.queryRoot,
+                      view: region.wrap,
+                      runnable: compiled,
+                      context: entry.context,
+                    });
+                },
+              }),
             catch: (cause) => new DetectionError({ ruleId: entry.rule.binding.id, cause }),
           });
         }
@@ -257,17 +285,29 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
       }
       findings.push(
         ...(yield* Effect.try({
-          try: () => walkFile({ tree, rules: runnable }),
+          try: () =>
+            FileTree.$match(parsed, {
+              Native: ({ tree }) => walkFile({ tree, rules: runnable }),
+              Octane: ({ root: authoredRoot }) => walkAuthoredFile({ root: authoredRoot, rules: runnable }),
+            }),
           catch: (cause) =>
             cause instanceof DetectionError ? cause : new DetectionError({ ruleId: "tree-walker", cause }),
         })),
       );
-    }).pipe(Effect.ensuring(Effect.sync(() => tree.delete())));
+    }).pipe(Effect.ensuring(Effect.sync(() => disposeFileTree(parsed))));
   });
 
   const progress = yield* ScanProgress;
   yield* Effect.gen(function* () {
     const walked: { last: readonly [file: string, source: string] | undefined } = { last: undefined };
+    for (const file of files) {
+      if (file.endsWith(".tsrx") && A.some(entries, (entry) => entry.inScope(file)) && tsrx !== "octane")
+        return yield* new ParserError({
+          reason: "frontend_failed",
+          grammar: "octane",
+          detail: `${file}: configured .tsrx state source requires tsrx: "octane" and consumer-installed octane.`,
+        });
+    }
     const analyzed = A.flatMap(files, (file) => {
       const grammar = grammarForExtension(path.extname(file).slice(1));
       return grammar && A.some(entries, (entry) => entry.inScope(file)) ? [{ file, grammar }] : [];
@@ -359,7 +399,7 @@ export const collectFindings = Effect.fn("collectFindings")(function* (options: 
       },
       gitService: { changedFiles: () => changedPaths, listFiles: git.listFiles },
     });
-    findings.push(...(yield* collectStateFindings(stateRules, files, undefined, capture)));
+    findings.push(...(yield* collectStateFindings(stateRules, files, undefined, capture, config.tsrx)));
   }
 
   const resultState = { selectedBase: requestedBase, seesEveryChange: true };

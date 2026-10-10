@@ -488,6 +488,9 @@ export function disposeMatches(runnable: RunnableMatches): void {
   disposeCompiled(runnable.compiled);
 }
 
+const queryMatchKey = (match: ReturnType<Query["matches"]>[number]) =>
+  JSON.stringify([match.patternIndex, match.captures.map((capture) => [capture.name, capture.node.id])]);
+
 const nodeKey = (node: AgentlintNode): string =>
   [node.type, node.startPosition.row, node.startPosition.column, node.endPosition.row, node.endPosition.column].join(
     ":",
@@ -503,7 +506,11 @@ export function runMatches({
   tree,
   runnable,
   context,
+  view,
+  queryRoot,
 }: {
+  readonly queryRoot?: TSNode | undefined;
+  readonly view?: ((node: TSNode) => AgentlintNode | undefined) | undefined;
   readonly tree: Tree;
   readonly runnable: RunnableMatches;
   readonly context: RuleContextImpl;
@@ -517,7 +524,8 @@ export function runMatches({
       visit: ({ node: inner, position }: { readonly node: TSNode; readonly position: readonly number[] }) => {
         const candidates = byType.get(inner.type);
         if (candidates) {
-          const node = wrapNode(inner);
+          const node = view ? view(inner) : wrapNode(inner);
+          if (!node) return;
           for (const candidate of candidates) {
             const captures: Captures = new Map();
             if (
@@ -526,10 +534,9 @@ export function runMatches({
             ) {
               // One node is one finding for a rule. The first declared match that applies names it.
               reported.add(nodeKey(node));
-              context.reportAt({
-                options: { node, message: interpolatePattern({ message: candidate.message, captures }) },
-                position,
-              });
+              const options = { node, message: interpolatePattern({ message: candidate.message, captures }) };
+              if (view) context.report(options);
+              else context.reportAt({ options, position });
               break;
             }
           }
@@ -539,10 +546,33 @@ export function runMatches({
   }
 
   for (const compiledQuery of queries) {
-    for (const match of compiledQuery.query.matches(tree.rootNode)) {
+    const matches = compiledQuery.query.matches(queryRoot ?? tree.rootNode);
+    if (queryRoot) {
+      const authored = new Set(matches.map(queryMatchKey));
+      if (compiledQuery.query.matches(tree.rootNode).some((match) => !authored.has(queryMatchKey(match))))
+        throw new PatternError({
+          ruleId: context.rule.binding.id,
+          reason: "query_invalid",
+          detail:
+            "Octane queries cannot depend on synthetic parse-context wrappers outside an authored TS/TSX region boundary.",
+        });
+    }
+    for (const match of matches) {
       const selected = match.captures.find((capture) => capture.name === "match") ?? match.captures[0];
       if (!selected) continue;
-      const node = wrapNode(selected.node);
+      if (view && match.captures.some((capture) => !view(capture.node)))
+        throw new PatternError({
+          ruleId: context.rule.binding.id,
+          reason: "query_invalid",
+          detail: "Octane query captures cannot cross an authored TS/TSX region boundary.",
+        });
+      const node = view ? view(selected.node) : wrapNode(selected.node);
+      if (!node)
+        throw new PatternError({
+          ruleId: context.rule.binding.id,
+          reason: "query_invalid",
+          detail: "Octane queries must select authored nodes inside an unchanged TS/TSX region, not a region wrapper.",
+        });
       if (reported.has(nodeKey(node))) continue;
       reported.add(nodeKey(node));
       context.report({
