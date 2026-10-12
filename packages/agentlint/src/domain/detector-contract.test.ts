@@ -92,6 +92,34 @@ const changeRule = (evidence: unknown) =>
 const changeFixture = { fixture: { after: { "a.sql": "DROP TABLE t;" } } };
 
 describe("detectors report JSON evidence", () => {
+  it("keeps valid evidence reads at the pre-validation count for both lifecycles", async () => {
+    let reads = 0;
+    const evidence = {
+      get value() {
+        reads++;
+        return 1;
+      },
+    };
+    const rule = defineRule({
+      lifecycle: "state",
+      standard,
+      binding: { id: "state-evidence-reads", authority: "agent" },
+      detector: {
+        id: "state-evidence-reads",
+        version: 1,
+        createOnce: ({ context }) => ({
+          call_expression: (node) => context.report({ node, message: "Review.", evidence }),
+        }),
+      },
+    });
+    expect(await testRuleOnSource({ rule, source: "danger(1)" })).toHaveLength(1);
+    // Main reads each property four times for the current and legacy state fingerprints, twice for a change.
+    expect(reads).toBe(4);
+    reads = 0;
+    expect(await testRuleOnChange({ rule: changeRule(evidence), ...changeFixture })).toHaveLength(1);
+    expect(reads).toBe(2);
+  });
+
   it("names missing evidence in a change detector instead of failing in the fingerprint (#75)", async () => {
     const pending = testRuleOnChange({ rule: changeRule(undefined), ...changeFixture });
     await expect(pending).rejects.toMatchObject({
