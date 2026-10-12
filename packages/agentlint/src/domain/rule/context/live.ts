@@ -2,7 +2,13 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState, legacyStateFingerprint, repositoryPath } from "../../fingerprint.js";
+import {
+  canonicalDigest,
+  fingerprintEvidence,
+  fingerprintState,
+  legacyStateFingerprint,
+  repositoryPath,
+} from "../../fingerprint.js";
 import { Result, Schema } from "effect";
 import { type FindingOptions, FindingRecord } from "../../finding.js";
 import type { AgentlintNode, Position } from "../../node.js";
@@ -309,6 +315,20 @@ export class RuleContextImpl implements RuleContext {
       if (!Object.hasOwn(this.dependencies, related)) throw this.#reportError("undeclared_related", related);
     }
 
+    const fileStructure = this.#fileStructure;
+    const fingerprints = fingerprintEvidence({
+      evidence: options.evidence ?? null,
+      fingerprint: () => ({
+        current: fingerprintState({ path: this.#file, structure: evidence(fileStructure.current), occurrence }),
+        legacy: legacyStateFingerprint({
+          path: this.#file,
+          structure: evidence(fileStructure.legacy),
+          occurrence: occurrenceKey,
+        }),
+      }),
+    });
+    if (Result.isFailure(fingerprints)) throw this.#reportError("invalid_evidence", fingerprints.failure.detail);
+
     this.findings.push(
       new FindingRecord({
         selector: undefined,
@@ -316,18 +336,8 @@ export class RuleContextImpl implements RuleContext {
         lifecycle: "state",
         authority: this.rule.binding.authority,
         source: this.#sourceIdentity,
-        fingerprint: fingerprintState({
-          path: this.#file,
-          structure: evidence(this.#fileStructure.current),
-          occurrence,
-        }),
-        legacyFingerprints: [
-          legacyStateFingerprint({
-            path: this.#file,
-            structure: evidence(this.#fileStructure.legacy),
-            occurrence: occurrenceKey,
-          }),
-        ],
+        fingerprint: fingerprints.success.current,
+        legacyFingerprints: [fingerprints.success.legacy],
         lineageKey: canonicalDigest({
           kind: "state-lineage",
           bindingId: this.rule.binding.id,

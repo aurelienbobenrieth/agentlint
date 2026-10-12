@@ -3,7 +3,7 @@
  */
 
 import { Result } from "effect";
-import { canonicalDigest, fingerprintChange, repositoryPath } from "../../fingerprint.js";
+import { canonicalDigest, fingerprintChange, fingerprintEvidence, repositoryPath } from "../../fingerprint.js";
 import { FindingRecord } from "../../finding.js";
 import { findingSourceForRule } from "../identity.js";
 import { DetectorContractError } from "../model.js";
@@ -49,6 +49,9 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
 
     const identity = canonicalDigest({ path: changed.path, key: options.key });
     if (!options.key.trim()) throw this.#reportError("empty_key", options.key);
+    // Untyped configs reach here without evidence; the fingerprint would fail without naming the field (#75).
+    if (options.evidence === undefined)
+      throw this.#reportError("invalid_evidence", "change detectors must report evidence");
     if (this.#keys.has(identity)) throw this.#reportError("duplicate_key", options.key);
     this.#keys.add(identity);
     const beforePath = changed.previousPath ?? changed.path;
@@ -63,14 +66,10 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
         throw this.#reportError("outside_change_set", related);
     }
 
-    this.findings.push(
-      new FindingRecord({
-        selector: undefined,
-        ruleId: this.rule.binding.id,
-        lifecycle: "change",
-        authority: this.rule.binding.authority,
-        source: this.#sourceIdentity,
-        fingerprint: fingerprintChange({
+    const fingerprint = fingerprintEvidence({
+      evidence: options.evidence,
+      fingerprint: () =>
+        fingerprintChange({
           before: null,
           after: options.evidence,
           beforePath,
@@ -78,6 +77,17 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
           operation: operation(changed),
           occurrence: options.key,
         }),
+    });
+    if (Result.isFailure(fingerprint)) throw this.#reportError("invalid_evidence", fingerprint.failure.detail);
+
+    this.findings.push(
+      new FindingRecord({
+        selector: undefined,
+        ruleId: this.rule.binding.id,
+        lifecycle: "change",
+        authority: this.rule.binding.authority,
+        source: this.#sourceIdentity,
+        fingerprint: fingerprint.success,
         lineageKey:
           options.lineageKey ??
           canonicalDigest({

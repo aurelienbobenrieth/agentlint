@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   bindingDigest,
@@ -5,10 +6,21 @@ import {
   canonicalStringify,
   Fingerprint,
   fingerprintChange,
+  fingerprintEvidence,
   fingerprintState,
   isSupportedFingerprint,
   normalizeRepositoryPath,
 } from "./fingerprint.js";
+
+const fingerprintOf = (evidence: unknown) => () =>
+  fingerprintChange({
+    before: null,
+    after: evidence as never,
+    beforePath: "a.sql",
+    afterPath: "a.sql",
+    operation: "add",
+    occurrence: "k",
+  });
 
 describe("canonical fingerprints", () => {
   it("ignores object key order and preserves distinct Unicode", () => {
@@ -38,6 +50,40 @@ describe("canonical fingerprints", () => {
     expect(() => Reflect.apply(canonicalStringify, undefined, [{ value: undefined }])).toThrow(
       "not canonical JSON data",
     );
+  });
+
+  it("locates an evidence failure inside the evidence and rethrows any other failure", () => {
+    const located = fingerprintEvidence({ evidence: { n: Number.NaN }, fingerprint: fingerprintOf({ n: Number.NaN }) });
+    expect(Result.isFailure(located) && located.failure.detail).toBe("numbers must be finite: NaN at $.n");
+    const valid = fingerprintEvidence({ evidence: { n: 1 }, fingerprint: () => "computed digest" });
+    expect(Result.isSuccess(valid) && valid.success).toBe("computed digest");
+    expect(() => fingerprintEvidence({ evidence: { n: 1 }, fingerprint: fingerprintOf({ n: Number.NaN }) })).toThrow(
+      "numbers must be finite: NaN at $.after.n",
+    );
+  });
+
+  it("names what it rejected and where", () => {
+    expect(() =>
+      Reflect.apply(canonicalStringify, undefined, [
+        { "odd key": [0, { v: undefined }], ok: [Number.POSITIVE_INFINITY] },
+      ]),
+    ).toThrow('the value is not canonical JSON data: undefined at $["odd key"][1].v');
+    expect(() => canonicalStringify({ ok: [Number.POSITIVE_INFINITY] })).toThrow(
+      "numbers must be finite: Infinity at $.ok[0]",
+    );
+    expect(() => Reflect.apply(canonicalStringify, undefined, [new Map()])).toThrow(
+      "only plain objects can be canonicalized: Map at $",
+    );
+  });
+
+  it("locates cycles without rejecting shared objects or null-prototype JSON", () => {
+    const cycle: unknown[] = [0];
+    cycle.push(cycle);
+    expect(() => Reflect.apply(canonicalStringify, undefined, [{ nested: cycle }])).toThrow(
+      "canonical JSON data cannot contain cycles: a cycle at $.nested[1]",
+    );
+    const shared = Object.assign(Object.create(null), { n: 1 });
+    expect(canonicalStringify({ b: shared, a: shared })).toBe('{"a":{"n":1},"b":{"n":1}}');
   });
 
   it("normalizes equivalent repository paths", () => {
