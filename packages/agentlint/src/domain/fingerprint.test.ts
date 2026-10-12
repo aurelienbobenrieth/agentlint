@@ -40,6 +40,20 @@ describe("canonical fingerprints", () => {
     );
   });
 
+  it("names what it rejected and where", () => {
+    expect(() =>
+      Reflect.apply(canonicalStringify, undefined, [
+        { "odd key": [0, { v: undefined }], ok: [Number.POSITIVE_INFINITY] },
+      ]),
+    ).toThrow('the value is not canonical JSON data: undefined at $["odd key"][1].v');
+    expect(() => canonicalStringify({ ok: [Number.POSITIVE_INFINITY] })).toThrow(
+      "numbers must be finite: Infinity at $.ok[0]",
+    );
+    expect(() => Reflect.apply(canonicalStringify, undefined, [new Map()])).toThrow(
+      "only plain objects can be canonicalized: Map at $",
+    );
+  });
+
   it("normalizes equivalent repository paths", () => {
     expect(normalizeRepositoryPath("./src\\domain/../index.ts")).toBe("src/index.ts");
     expect(() => normalizeRepositoryPath("../outside.ts")).toThrow("escapes the repository");

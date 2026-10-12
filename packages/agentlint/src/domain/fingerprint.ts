@@ -94,42 +94,70 @@ export interface ChangeFingerprintEvidence {
   readonly captures?: CanonicalObject;
 }
 
-function encode({ value, ancestors }: { readonly value: unknown; readonly ancestors: ReadonlySet<object> }): string {
+/**
+ * A JSONPath-style location for error messages: `$`, `$.key`, `$[0]`, `$["odd key"]`.
+ */
+function childPath({ path, key }: { readonly path: string; readonly key: string | number }): string {
+  if (typeof key === "number") return `${path}[${key}]`;
+  return /^[A-Za-z_$][\w$]*$/u.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`;
+}
+
+function invalidValue({
+  problem,
+  found,
+  path,
+}: {
+  readonly problem: string;
+  readonly found: string;
+  readonly path: string;
+}): FingerprintError {
+  return new FingerprintError({ reason: "invalid_value", detail: `${problem}: ${found} at ${path}` });
+}
+
+/**
+ * What a value that is not JSON data is, for an error message.
+ */
+function kindOf(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (typeof value !== "object") return typeof value;
+  return Object.getPrototypeOf(value)?.constructor?.name ?? "object";
+}
+
+function encode({
+  value,
+  ancestors,
+  path,
+}: {
+  readonly value: unknown;
+  readonly ancestors: ReadonlySet<object>;
+  readonly path: string;
+}): string {
   if (value === null) return "null";
   if (isString(value)) return encodeString(value);
   if (isBoolean(value)) return value ? "true" : "false";
   if (isNumber(value)) {
-    if (!Number.isFinite(value)) {
-      throw new FingerprintError({ reason: "invalid_value", detail: "numbers must be finite" });
-    }
+    if (!Number.isFinite(value)) throw invalidValue({ problem: "numbers must be finite", found: String(value), path });
     return Object.is(value, -0) ? "0" : encodeNumber(value);
   }
   if (Array.isArray(value)) {
-    if (ancestors.has(value)) {
-      throw new FingerprintError({ reason: "invalid_value", detail: "canonical JSON data cannot contain cycles" });
-    }
+    if (ancestors.has(value))
+      throw invalidValue({ problem: "canonical JSON data cannot contain cycles", found: "a cycle", path });
     const nextAncestors = new Set(ancestors).add(value);
-    return `[${Array.from(value, (entry) => encode({ value: entry, ancestors: nextAncestors })).join(",")}]`;
+    return `[${Array.from(value, (entry, index) => encode({ value: entry, ancestors: nextAncestors, path: childPath({ path, key: index }) })).join(",")}]`;
   }
-  if (!isRecord(value)) {
-    throw new FingerprintError({
-      reason: "invalid_value",
-      detail: "the value is not canonical JSON data",
-    });
-  }
-  if (ancestors.has(value)) {
-    throw new FingerprintError({ reason: "invalid_value", detail: "canonical JSON data cannot contain cycles" });
-  }
+  if (!isRecord(value))
+    throw invalidValue({ problem: "the value is not canonical JSON data", found: kindOf(value), path });
+  if (ancestors.has(value))
+    throw invalidValue({ problem: "canonical JSON data cannot contain cycles", found: "a cycle", path });
 
   const nextAncestors = new Set(ancestors).add(value);
 
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new FingerprintError({ reason: "invalid_value", detail: "only plain objects can be canonicalized" });
-  }
+  if (prototype !== Object.prototype && prototype !== null)
+    throw invalidValue({ problem: "only plain objects can be canonicalized", found: kindOf(value), path });
 
   const keys = Object.keys(value).toSorted();
-  return `{${keys.map((key) => `${encodeString(key)}:${encode({ value: value[key], ancestors: nextAncestors })}`).join(",")}}`;
+  return `{${keys.map((key) => `${encodeString(key)}:${encode({ value: value[key], ancestors: nextAncestors, path: childPath({ path, key }) })}`).join(",")}}`;
 }
 
 /**
@@ -139,7 +167,7 @@ function encode({ value, ancestors }: { readonly value: unknown; readonly ancest
  */
 export function canonicalJson(value: unknown): Result.Result<string, FingerprintError> {
   return Result.try({
-    try: () => encode({ value, ancestors: new Set() }),
+    try: () => encode({ value, ancestors: new Set(), path: "$" }),
     catch: (cause) =>
       cause instanceof FingerprintError
         ? cause

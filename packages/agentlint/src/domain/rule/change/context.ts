@@ -3,7 +3,7 @@
  */
 
 import { Result } from "effect";
-import { canonicalDigest, fingerprintChange, repositoryPath } from "../../fingerprint.js";
+import { canonicalDigest, canonicalJson, fingerprintChange, repositoryPath } from "../../fingerprint.js";
 import { FindingRecord } from "../../finding.js";
 import { findingSourceForRule } from "../identity.js";
 import { DetectorContractError } from "../model.js";
@@ -49,6 +49,11 @@ export class ChangeRuleContextImpl implements ChangeRuleContext {
 
     const identity = canonicalDigest({ path: changed.path, key: options.key });
     if (!options.key.trim()) throw this.#reportError("empty_key", options.key);
+    // Untyped configs reach here without evidence; the fingerprint would fail without naming the field (#75).
+    if (options.evidence === undefined)
+      throw this.#reportError("invalid_evidence", "change detectors must report evidence");
+    const canonical = canonicalJson(options.evidence);
+    if (Result.isFailure(canonical)) throw this.#reportError("invalid_evidence", canonical.failure.detail);
     if (this.#keys.has(identity)) throw this.#reportError("duplicate_key", options.key);
     this.#keys.add(identity);
     const beforePath = changed.previousPath ?? changed.path;

@@ -76,6 +76,71 @@ describe("detectors report synchronously", () => {
   });
 });
 
+const changeRule = (evidence: unknown) =>
+  defineRule({
+    lifecycle: "change",
+    standard,
+    binding: { id: "change-evidence", authority: "agent" },
+    detector: {
+      id: "change-evidence",
+      version: 1,
+      detect: ({ context }) => {
+        Reflect.apply(context.report, context, [{ key: "k", file: "a.sql", message: "Review.", evidence }]);
+      },
+    },
+  });
+const changeFixture = { fixture: { after: { "a.sql": "DROP TABLE t;" } } };
+
+describe("detectors report JSON evidence", () => {
+  it("names missing evidence in a change detector instead of failing in the fingerprint (#75)", async () => {
+    const pending = testRuleOnChange({ rule: changeRule(undefined), ...changeFixture });
+    await expect(pending).rejects.toMatchObject({
+      _tag: "agentlint/DetectionError",
+      cause: {
+        _tag: "agentlint/DetectorContractError",
+        reason: "invalid_evidence",
+        detail: "change detectors must report evidence",
+      },
+    });
+    await expect(pending).rejects.toThrow(
+      "Rule change-evidence failed: Rule change-evidence reported invalid evidence: change detectors must report evidence",
+    );
+  });
+
+  it("locates the value that is not JSON data", async () => {
+    await expect(
+      testRuleOnChange({ rule: changeRule({ counts: [1, Number.NaN] }), ...changeFixture }),
+    ).rejects.toMatchObject({
+      cause: { reason: "invalid_evidence", detail: "numbers must be finite: NaN at $.counts[1]" },
+    });
+    const stateRule = defineRule({
+      lifecycle: "state",
+      standard,
+      binding: { id: "state-evidence", authority: "agent" },
+      detector: {
+        id: "state-evidence",
+        version: 1,
+        createOnce: ({ context }) => ({
+          call_expression: (node) =>
+            context.report({ node, message: "Review.", evidence: { at: new Date(0) } as never }),
+        }),
+      },
+    });
+    await expect(testRuleOnSource({ rule: stateRule, source: "danger(1)" })).rejects.toMatchObject({
+      cause: {
+        _tag: "agentlint/DetectorContractError",
+        reason: "invalid_evidence",
+        detail: "only plain objects can be canonicalized: Date at $.at",
+      },
+    });
+  });
+
+  it("still lets a state detector omit evidence and a change detector report null", async () => {
+    expect(await testRuleOnSource({ rule: state, source: "danger(1)" })).toHaveLength(1);
+    expect(await testRuleOnChange({ rule: changeRule(null), ...changeFixture })).toHaveLength(1);
+  });
+});
+
 const thrown = (run: () => unknown): unknown => {
   try {
     run();

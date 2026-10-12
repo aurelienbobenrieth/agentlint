@@ -2,7 +2,13 @@
  * State detector context and finding construction. @module @since 0.2.0
  */
 
-import { canonicalDigest, fingerprintState, legacyStateFingerprint, repositoryPath } from "../../fingerprint.js";
+import {
+  canonicalDigest,
+  canonicalJson,
+  fingerprintState,
+  legacyStateFingerprint,
+  repositoryPath,
+} from "../../fingerprint.js";
 import { Result, Schema } from "effect";
 import { type FindingOptions, FindingRecord } from "../../finding.js";
 import type { AgentlintNode, Position } from "../../node.js";
@@ -285,6 +291,10 @@ export class RuleContextImpl implements RuleContext {
     }
     const occurrenceKey = options.key ?? `${options.node.type}:${position.join("/")}`;
     if (!occurrenceKey.trim()) throw this.#reportError("empty_key", occurrenceKey);
+    if (options.evidence !== undefined) {
+      const canonical = canonicalJson(options.evidence);
+      if (Result.isFailure(canonical)) throw this.#reportError("invalid_evidence", canonical.failure.detail);
+    }
     if (this.#keys.has(occurrenceKey)) throw this.#reportError("duplicate_key", occurrenceKey);
     this.#keys.add(occurrenceKey);
     // Two reported nodes v4 folds into one slot (parentheses and their content) stay two findings.

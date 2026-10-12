@@ -209,7 +209,8 @@ export interface ChangeFindingOptions {
   readonly file: string;
   readonly message: string;
   /**
-   * Detector-selected material judgment data used by the fingerprint.
+   * Detector-selected material judgment data used by the fingerprint. Required: it is what makes an acceptance lapse
+   * when the change does; report `null` only when no content is material.
    */
   readonly evidence: CanonicalValue;
   /**
@@ -351,6 +352,7 @@ export class DetectorContractError extends Schema.TaggedError<DetectorContractEr
       "duplicate_key",
       "undeclared_related",
       "async_hook",
+      "invalid_evidence",
     ]),
     detail: Schema.String,
   },
@@ -363,6 +365,7 @@ export class DetectorContractError extends Schema.TaggedError<DetectorContractEr
       duplicate_key: `Rule ${this.ruleId} reported a duplicate finding key: ${this.detail}`,
       undeclared_related: `Rule ${this.ruleId} reported undeclared related context: ${this.detail}`,
       async_hook: `Rule ${this.ruleId} returned a promise from ${this.detail}; detectors must report synchronously`,
+      invalid_evidence: `Rule ${this.ruleId} reported invalid evidence: ${this.detail}`,
     }[this.reason];
   }
 }
