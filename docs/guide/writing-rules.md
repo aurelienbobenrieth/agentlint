@@ -76,6 +76,7 @@ export default defineConfig({ rules: [boundedReads] });
 | `$NAME` / `$_`                     | One node, captured / not captured                                              |
 | `$$$ARGS`                          | Zero or more remaining sibling nodes                                           |
 | `$A === $A`                        | Repeats must capture the same code: matches `x === x`, not `x === y`           |
+| `typeof $X`, `let $X = $V`         | Operators and keywords are code: `$A === $B` never matches `a <= b`            |
 | `where`                            | Searches inside the matched code                                               |
 | `take: $_`                         | Also matches shorthand `{ take }`; never looks inside another property's value |
 | `query` + `@match`                 | Raw tree-sitter query; `@match` names the reported node                        |

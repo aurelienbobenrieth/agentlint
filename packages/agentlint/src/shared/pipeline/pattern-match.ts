@@ -52,6 +52,10 @@ interface PatternNode {
    */
   readonly children: ReadonlyArray<PatternNode>;
   /**
+   * Operators and keywords among the unnamed children: `===` and `<=` are both a `binary_expression`.
+   */
+  readonly tokens: ReadonlyArray<string>;
+  /**
    * Index of the sequence placeholder among `children`, or -1.
    */
   readonly multiIndex: number;
@@ -63,6 +67,15 @@ interface PatternNode {
 
 function namedChildren(node: AgentlintNode): ReadonlyArray<AgentlintNode> {
   return node.children.filter((child) => child.isNamed);
+}
+
+/**
+ * Unnamed tokens a formatter adds, drops, or respells. Every other unnamed token is code.
+ */
+const PUNCTUATION = new Set([",", ";", "(", ")", "{", "}", "[", "]", '"', "'"]);
+
+function tokens(node: AgentlintNode): ReadonlyArray<string> {
+  return node.children.filter((child) => !child.isNamed && !PUNCTUATION.has(child.type)).map((child) => child.type);
 }
 
 function normalizeText(text: string): string {
@@ -78,6 +91,7 @@ function toPatternNode(node: AgentlintNode): PatternNode {
     text,
     placeholder: SINGLE_METAVAR.test(text) ? "single" : MULTI_METAVAR.test(text) ? "multi" : undefined,
     children,
+    tokens: tokens(node),
     multiIndex,
     ambiguous: children.findLastIndex((child) => child.placeholder === "multi") !== multiIndex,
   };
@@ -156,6 +170,13 @@ function matchNode({
     return pattern.text === normalizeText(target.text);
   }
 
+  const targetTokens = tokens(target);
+  if (
+    pattern.tokens.length !== targetTokens.length ||
+    pattern.tokens.some((token, index) => token !== targetTokens[index])
+  )
+    return false;
+
   return matchChildren({ pattern, targetChildren: namedChildren(target), captures });
 }
 
@@ -218,14 +239,15 @@ function hasErrorNode(root: AgentlintNode): boolean {
 
 /**
  * Descend while a node has exactly one named child, stripping parser scaffolding (program, expression_statement,
- * wrappers) down to the node the author actually wrote.
+ * wrappers) down to the node the author actually wrote. A node with an operator or keyword is written code: `typeof $X`
+ * is not `$X`.
  */
 function effectivePatternNode(root: AgentlintNode): AgentlintNode {
   const traversal = { node: root };
   for (;;) {
     const children = namedChildren(traversal.node);
     const [first] = children;
-    if (children.length !== 1 || first === undefined) return traversal.node;
+    if (children.length !== 1 || first === undefined || tokens(traversal.node).length > 0) return traversal.node;
     traversal.node = first;
   }
 }
