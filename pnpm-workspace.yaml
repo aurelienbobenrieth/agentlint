@@ -13,7 +13,7 @@ catalog:
   "@effect/platform-browser": 4.0.0
   "@effect/platform-node": 4.0.0
   "@effect/platform-node-shared": 4.0.0
-  "@tanstack/intent": 0.4.0
+  "@tanstack/intent": 0.5.4
   effect: 4.0.0
   "@effect/vitest": 4.0.0
   typescript: 7.0.2
