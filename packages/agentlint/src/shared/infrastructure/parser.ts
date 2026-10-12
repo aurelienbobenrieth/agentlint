@@ -10,28 +10,18 @@ import { ParserError } from "../../domain/parser-error.js";
 
 import { Context, Effect, FileSystem, HashMap, Layer, Option, Path } from "effect";
 import { Env } from "../../config/env.js";
+import { GRAMMAR_SOURCES, packagedGrammarFile } from "./grammars.js";
 import { Language, Parser as TSParser, type Tree } from "web-tree-sitter";
 
 /**
- * Maps grammar names to their corresponding `.wasm` filenames.
- *
- * @since 0.1.0
- * @category Constants
+ * A `.wasm` asset: the file the build packages it as, and where an unbuilt checkout finds it under `node_modules`.
  */
-const GRAMMAR_FILES: HashMap.HashMap<string, string> = HashMap.make(
-  ["typescript", "tree-sitter-typescript.wasm"],
-  ["tsx", "tree-sitter-tsx.wasm"],
-  ["javascript", "tree-sitter-javascript.wasm"],
-  ["json", "tree-sitter-json.wasm"],
-);
+interface WasmAsset {
+  readonly file: string;
+  readonly source: string;
+}
 
-/**
- * Where an unbuilt checkout finds a grammar. TSX comes from tree-sitter-typescript 0.23.2, since the 0.20 build in
- * tree-sitter-wasms rejects `&` in JSX string attributes. TypeScript stays on 0.20, since 0.23.2 rejects a tagged
- * template with an object type argument (`` sql<{ id: string }>`…` ``).
- */
-const grammarDirectory = (filename: string): readonly string[] =>
-  filename === "tree-sitter-tsx.wasm" ? ["tree-sitter-typescript"] : ["tree-sitter-wasms", "out"];
+const CORE_WASM: WasmAsset = { file: "tree-sitter.wasm", source: "web-tree-sitter/tree-sitter.wasm" };
 
 export function resolvePackagedWasmPath({
   path,
@@ -82,9 +72,9 @@ export class Parser extends Context.Service<
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
 
-      const resolveWasmPath = Effect.fn("Parser.resolveWasmPath")(function* (filename: string) {
+      const resolveWasmPath = Effect.fn("Parser.resolveWasmPath")(function* ({ file, source }: WasmAsset) {
         const thisDir = path.resolve(import.meta.dirname);
-        const distPath = resolvePackagedWasmPath({ path, dir: thisDir, filename });
+        const distPath = resolvePackagedWasmPath({ path, dir: thisDir, filename: file });
         if (yield* fs.exists(distPath).pipe(Effect.orElseSucceed(() => false))) return distPath;
 
         const dependencyRoots = [
@@ -92,16 +82,11 @@ export class Parser extends Context.Service<
           path.resolve(thisDir, "..", "..", "..", "node_modules"),
         ];
         for (const nmBase of dependencyRoots) {
-          if (filename === "tree-sitter.wasm") {
-            const current = path.resolve(nmBase, "web-tree-sitter", filename);
-            if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
-          } else {
-            const grammar = path.resolve(nmBase, ...grammarDirectory(filename), filename);
-            if (yield* fs.exists(grammar).pipe(Effect.orElseSucceed(() => false))) return grammar;
-          }
+          const current = path.resolve(nmBase, source);
+          if (yield* fs.exists(current).pipe(Effect.orElseSucceed(() => false))) return current;
         }
 
-        return yield* new ParserError({ reason: "wasm_missing", detail: filename });
+        return yield* new ParserError({ reason: "wasm_missing", detail: file });
       });
 
       const state: {
@@ -113,7 +98,7 @@ export class Parser extends Context.Service<
       const ensureInit = yield* Effect.cached(
         Effect.gen(function* () {
           if (state.parser) return state.parser;
-          const initPath = yield* resolveWasmPath("tree-sitter.wasm");
+          const initPath = yield* resolveWasmPath(CORE_WASM);
           const parser = yield* Effect.tryPromise({
             try: async () => {
               await TSParser.init({ locateFile: () => initPath });
@@ -134,10 +119,10 @@ export class Parser extends Context.Service<
         const cached = Option.getOrUndefined(HashMap.get(state.languages, grammar));
         if (cached) return cached;
 
-        const file = Option.getOrUndefined(HashMap.get(GRAMMAR_FILES, grammar));
-        if (!file) return yield* new ParserError({ reason: "unknown_grammar", grammar });
+        const source = Object.hasOwn(GRAMMAR_SOURCES, grammar) ? GRAMMAR_SOURCES[grammar] : undefined;
+        if (!source) return yield* new ParserError({ reason: "unknown_grammar", grammar });
 
-        const wasmPath = yield* resolveWasmPath(file);
+        const wasmPath = yield* resolveWasmPath({ file: packagedGrammarFile(grammar), source });
         const lang = yield* Effect.tryPromise({
           try: () => Language.load(wasmPath),
           catch: (error) =>
