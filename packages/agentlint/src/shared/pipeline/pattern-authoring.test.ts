@@ -51,6 +51,54 @@ describe("pattern placeholders", () => {
     ).toEqual(["1: pair(1, 2) -> second is 2"]);
   });
 
+  it("requires the operators and keywords that the pattern spells out", async () => {
+    expect(
+      await matches({
+        match: { pattern: "$A === $B", message: "strict equality" },
+        source: "a === b; a <= b; a !== b; a == b;",
+      }),
+    ).toEqual(["1: a === b -> strict equality"]);
+    expect(
+      await matches({
+        match: { pattern: "let $X = $V", message: "let" },
+        source: "let x = 1; const y = 2;",
+      }),
+    ).toEqual(["1: let x = 1; -> let"]);
+    expect(
+      await matches({
+        match: { pattern: "$A.b", message: "member" },
+        source: "a.b; a?.b;",
+      }),
+    ).toEqual(["1: a.b -> member"]);
+    expect(
+      await matches({
+        match: { pattern: "typeof $X", message: "typeof" },
+        source: "typeof x; void x; x;",
+      }),
+    ).toEqual(["1: typeof x -> typeof"]);
+    expect(
+      await matches({
+        match: { pattern: "!$X", message: "negated $X" },
+        source: "!ready; -ready; ready;",
+      }),
+    ).toEqual(["1: !ready -> negated ready"]);
+  });
+
+  it("ignores the punctuation a formatter adds or removes", async () => {
+    expect(
+      await matches({
+        match: { pattern: "run($A, $B)", message: "run" },
+        source: "run(1, 2,); run(1, 2);",
+      }),
+    ).toEqual(["1: run(1, 2,) -> run", "1: run(1, 2) -> run"]);
+    expect(
+      await matches({
+        match: { pattern: 'log("a")', message: "log" },
+        source: "log('a'); log(\"a\"); log('b');",
+      }),
+    ).toEqual(["1: log('a') -> log", '1: log("a") -> log']);
+  });
+
   it("matches the written member path and not a longer or different one", async () => {
     expect(
       await matches({
