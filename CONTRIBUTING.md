@@ -18,6 +18,7 @@ pnpm test:watch                      # package tests in watch mode
 pnpm --filter @agentlint/review dev  # review SPA against a running `agentlint review --port 4973`
 pnpm fmt                             # format everything
 pnpm refs:sync                       # refresh the reference clones under .agents/ref-repos
+npx skills update -p                 # refresh the Harness skills in .agents/skills, then commit
 ```
 
 ## Maintainer rules
