@@ -91,7 +91,7 @@
     "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
-    "@effect/language-service": "0.87.2",
+    "@effect/language-service": "0.87.3",
     "@effect/vitest": "catalog:",
     "@tanstack/intent": "catalog:",
     "@types/node": "22.20.4",
