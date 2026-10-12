@@ -2,10 +2,25 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { Env } from "./env.js";
 
-const keys = ["AGENTLINT_ACTOR", "CODEX_SANDBOX", "CODEX_ENV_PWD", "CLAUDECODE", "CLAUDE_CODE", "USER", "USERNAME"];
+const keys = [
+  "AGENTLINT_ACTOR",
+  "CODEX_SANDBOX",
+  "CODEX_ENV_PWD",
+  "CODEX_THREAD_ID",
+  "CODEX_SHELL",
+  "CODEX_CI",
+  "CLAUDECODE",
+  "CLAUDE_CODE",
+  "CLAUDE_CODE_SESSION_ID",
+  "AI_AGENT",
+  "USER",
+  "USERNAME",
+];
 const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
-const actor = () => Effect.runSync(Effect.map(Env, (env) => env.actor).pipe(Effect.provide(Env.layer)));
+const resolved = () =>
+  Effect.runSync(Effect.map(Env, ({ actor, actorSource }) => ({ actor, actorSource })).pipe(Effect.provide(Env.layer)));
+const actor = () => resolved().actor;
 
 describe("Env actor", () => {
   afterEach(() => {
@@ -26,5 +41,13 @@ describe("Env actor", () => {
     for (const key of keys) delete process.env[key];
     process.env["AGENTLINT_ACTOR"] = "agent:ci";
     expect(actor()).toBe("agent:ci");
+  });
+
+  it("records a full-access Codex session as an agent with its thread (#74)", () => {
+    for (const key of keys) delete process.env[key];
+    process.env["CODEX_SHELL"] = "1";
+    process.env["CODEX_THREAD_ID"] = "019a-thread";
+    process.env["USER"] = "reviewer";
+    expect(resolved()).toEqual({ actor: "agent:codex?session=019a-thread&user=reviewer", actorSource: "detected" });
   });
 });
