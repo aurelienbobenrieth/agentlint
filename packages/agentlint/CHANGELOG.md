@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+### Patch Changes
+
+- [#82](https://github.com/aurelienbobenrieth/agentlint/pull/82) [`02673a0`](https://github.com/aurelienbobenrieth/agentlint/commit/02673a0b2bc63c14a6d14b23c9ca73f0508fc41a) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Build the bundled review UI with foldkit 0.166.0. Effect stays on 4.0.0, the release foldkit 0.166.0 requires.
+
 ## 0.7.0
 
 ### Minor Changes
