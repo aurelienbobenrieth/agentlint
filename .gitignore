@@ -35,9 +35,8 @@ Thumbs.db
 **/.agentlint/.cache/
 
 # Internal
-.agents/
+.agents/ref-repos/
 .claude/
-skills-lock.json
 
 # Local package tarballs
 local-packages/
