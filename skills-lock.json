@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "align": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/align/SKILL.md",
+      "computedHash": "8f3851022f0a6424368cbef17b05a695002fc6a8500e09d4410448dadf9c72ff"
+    },
+    "build": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/build/SKILL.md",
+      "computedHash": "9d948a348b4dd14fd9f99ca94acab8db3cedc9ec5eda040914cf6aa6bebf53db"
+    },
+    "code-review": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/code-review/SKILL.md",
+      "computedHash": "646bdec95cc2c3300a32b36d7ed833e55f3542304529822f4ebcf64a6bdbb326"
+    },
+    "communication": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/communication/SKILL.md",
+      "computedHash": "dc73bb0ad55fe03d81020dfa6809841c85ace78ea148d9d7c36d1a629e599b9c"
+    },
+    "git": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/git/SKILL.md",
+      "computedHash": "accc92acdbd0ad25beb71ff22495c904862c7674210c99af2ee4e9f46bb48920"
+    },
+    "retrospect": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/retrospect/SKILL.md",
+      "computedHash": "5f630980d4a6d73b9117f8c92ed7126acaae31e30637933684f17de59f6dc180"
+    },
+    "testing": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/testing/SKILL.md",
+      "computedHash": "833600f12fdb9a6190f09dd8cb6d88fc796c103e3d4b506d6d018608e7e8c728"
+    },
+    "toolsmith": {
+      "source": "aurelienbobenrieth/harness",
+      "sourceType": "github",
+      "skillPath": "skills/toolsmith/SKILL.md",
+      "computedHash": "c3f5fe722c61ce74bce59d3b0503cba94697561ff970456a310da86065a499fa"
+    }
+  }
+}
