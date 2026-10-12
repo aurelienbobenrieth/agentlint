@@ -22,6 +22,7 @@ import { fileStructureDigest, RuleContextImpl } from "../../domain/rule/context/
 import { normalizeLineEndings } from "../../domain/source-text.js";
 import { ConfigLoader } from "../infrastructure/config-loader.js";
 import { Git } from "../infrastructure/git/service.js";
+import { GRAMMAR_FALLBACKS } from "../infrastructure/grammars.js";
 import { Parser } from "../infrastructure/parser.js";
 import {
   compileGlobs,
@@ -190,6 +191,25 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
     }
   });
 
+  /**
+   * The first tree without errors from `grammar` or its fallback, with the grammar that built it.
+   */
+  const parseClean = Effect.fn("collectStateFindings.parseClean")(function* ({
+    source,
+    grammar,
+  }: {
+    readonly source: string;
+    readonly grammar: string;
+  }) {
+    const fallback = Object.hasOwn(GRAMMAR_FALLBACKS, grammar) ? GRAMMAR_FALLBACKS[grammar] : undefined;
+    for (const candidate of fallback ? [grammar, fallback] : [grammar]) {
+      const tree = yield* parser.parse({ source, grammar: candidate });
+      if (!tree.rootNode.hasError) return { tree, grammar: candidate };
+      tree.delete();
+    }
+    return undefined;
+  });
+
   const walkOne = Effect.fn("collectStateFindings.walkOne")(function* ({
     file,
     absolutePath,
@@ -203,13 +223,14 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
   }) {
     const applicable = A.filter(entries, (entry) => entry.inScope(file));
     if (applicable.length === 0) return;
-    const tree = yield* parser.parse({ source, grammar });
-    if (tree.rootNode.hasError) {
-      tree.delete();
+    const parsed = yield* parseClean({ source, grammar });
+    if (!parsed) {
       // Keep analysing so one run names every broken file; the scan still fails once it ends.
       unparseable.push({ file, grammar });
       return;
     }
+    // Matches compile per grammar, so a file its fallback parsed runs the fallback's.
+    const { tree, grammar: parsedWith } = parsed;
     const runnable: Array<{ ruleId: string; context: RuleContextImpl; visitors: Visitors }> = [];
     const structureDigest = fileStructureDigest(source);
 
@@ -227,7 +248,7 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
         });
         if (enabled === false) continue;
         if (entry.matches.length > 0) {
-          const cached = entry.compiledByGrammar.get(grammar);
+          const cached = entry.compiledByGrammar.get(parsedWith);
           const compiled =
             cached ??
             (yield* Effect.gen(function* () {
@@ -240,10 +261,10 @@ export const collectStateFindings = Effect.fn("collectStateFindings")(function* 
               const result = yield* compileMatches({
                 ruleId: entry.rule.binding.id,
                 matches: entry.matches,
-                grammar,
+                grammar: parsedWith,
                 grammars: [...grammars],
               });
-              entry.compiledByGrammar.set(grammar, result);
+              entry.compiledByGrammar.set(parsedWith, result);
               return result;
             }));
           yield* Effect.try({

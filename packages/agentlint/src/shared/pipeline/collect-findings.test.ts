@@ -242,6 +242,56 @@ describe("incomplete scans", () => {
     await expect(result).rejects.toThrow(/2 files:\n {2}src\/a\.ts \(typescript\)\n {2}src\/c\.tsx \(tsx\)$/);
   });
 
+  // Each bundled TypeScript grammar rejects valid code the other one parses (#73). A query compiles per grammar.
+  const dangerQuery = defineRule({
+    lifecycle: "state",
+    standard,
+    detector: {
+      id: "typescript/danger-query",
+      version: 1,
+      match: { query: '(call_expression function: (identifier) @fn (#eq? @fn "danger")) @match', message: "Review." },
+    },
+    binding: { id: "security/danger", authority: "agent" },
+  });
+
+  it.each([
+    { kind: "pattern", rule: danger() },
+    { kind: "query", rule: dangerQuery },
+  ])("judges a .ts file holding a regex that starts with <!--, next to a plain one ($kind)", async ({ rule }) => {
+    const result = await collect({
+      scenario: {
+        files: { "src/a.ts": "danger(1);\n", "src/b.ts": "export const COMMENT_START = /<!--/;\ndanger(2);\n" },
+        config: { rules: [rule] },
+      },
+    });
+    expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([
+      ["src/a.ts", 1],
+      ["src/b.ts", 2],
+    ]);
+  });
+
+  it.each([
+    { kind: "pattern", rule: danger() },
+    { kind: "query", rule: dangerQuery },
+  ])(
+    "judges a .tsx file holding a tagged template with an object type argument, next to a plain one ($kind)",
+    async ({ rule }) => {
+      const result = await collect({
+        scenario: {
+          files: {
+            "src/a.tsx": "danger(1);\n",
+            "src/b.tsx": "const rows = sql<{ id: string }>`select id from t`;\ndanger(2);\n",
+          },
+          config: { rules: [rule] },
+        },
+      });
+      expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([
+        ["src/a.tsx", 1],
+        ["src/b.tsx", 2],
+      ]);
+    },
+  );
+
   it("refuses a dependency that resolves outside the repository", async () => {
     const outside = realpathSync(mkdtempSync(join(tmpdir(), "agentlint-collect-outside-")));
     try {
