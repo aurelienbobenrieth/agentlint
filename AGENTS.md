@@ -4,7 +4,7 @@ agentlint is a deterministic review gate. Read [`packages/agentlint/README.md`](
 
 ## Skills
 
-Maintainer skills live in `.agents/skills/` (local, from Harness). When present, read `.agents/skills/communication/SKILL.md` before your first reply; it governs all prose. Load the matching skill before acting:
+Maintainer skills live in `.agents/skills/`, installed from [Harness](https://github.com/aurelienbobenrieth/harness) and pinned by `skills-lock.json`. Read `.agents/skills/communication/SKILL.md` before your first reply; it governs all prose. Load the matching skill before acting:
 
 ```text
 open requirements, ambiguous domain terms   → align
