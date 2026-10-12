@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2
+
+### Patch Changes
+
+- [#83](https://github.com/aurelienbobenrieth/agentlint/pull/83) [`128a8f0`](https://github.com/aurelienbobenrieth/agentlint/commit/128a8f0559b2cead1a8e98386b576ce3f435cdda) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - A TypeScript or TSX file that its grammar rejects is parsed again with the other bundled build of tree-sitter-typescript, and the check fails only when both reject it. Before, a `.ts` file holding a regex that starts with `<!--` (`/<!--/`) or a `.tsx` file holding a tagged template with an object type argument (`` sql<{ id: string }>`…` ``) failed the whole check with "Parse failed: syntax is incomplete or unsupported by the grammar". Files that parsed before keep their syntax tree, so their fingerprints and acceptances do not change.
+
 ## 0.7.1
 
 ### Patch Changes

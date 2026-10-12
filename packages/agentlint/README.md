@@ -115,7 +115,7 @@ steps:
     with: { fetch-depth: 0 } # required: change rules use the merge base
   - uses: actions/setup-node@v5
     with: { node-version: 22 }
-  - uses: aurelienbobenrieth/agentlint/action@v0.7.1
+  - uses: aurelienbobenrieth/agentlint/action@v0.7.2
 ```
 
 The full workflow is in the [CI guide](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/ci.md).
