@@ -52,6 +52,10 @@ No visual when two sentences do the job. Mermaid renders on GitHub only: npm REA
 
 These are defaults, not a template. Skip what doesn't serve this reader: headings on short answers, TL;DRs on short text, forced tables or diagrams, fixed section orders, glyphs outside tables.
 
+- Never use em dashes (U+2014) in authored prose. Use a comma, colon, parentheses, or a new sentence as the meaning requires. Don't substitute double hyphens or en dashes to imitate them.
+- Write like a person explaining the work to a colleague: concrete words, natural sentences, and details that matter to this reader. Cut stock transitions, inflated claims, and canned openings or closings.
+- Before sending, read the prose once for natural wording and remove any em dashes.
+
 ## Shapes and recovery
 
 ```text
