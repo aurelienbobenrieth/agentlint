@@ -72,6 +72,10 @@ const state = (mode: "calibration" | "review"): ReviewStatePayload => ({
 });
 
 const model = (mode: "calibration" | "review"): Model => ({
+  retainedFindingIds: [],
+  editingDecisionIds: [],
+  guidanceFindingIds: [],
+  expandedCode: {},
   screen: Screen.Reviewing({ state: state(mode) }),
   view: "queue",
   facets: { statuses: [], authorities: [], lifecycles: [], ruleIds: [] },
@@ -656,47 +660,62 @@ const commandArgs = ({
 }): CommandArguments | undefined => (result.commands ?? []).find((command) => command.name === name)?.args;
 
 describe("selection after a decision", () => {
-  it("moves to the next finding and ignores a double-tapped accept until the selection settles", () => {
+  it("does not retain a server decision hidden by a filter changed while saving", () => {
+    const current = queue({ transport: "attached", ids: ["f1", "f2"] });
+    const payload = reviewing(current);
+    const findings = payload.findings.map((finding) => ({
+      ...finding,
+      ruleId: finding.id === "f2" ? "other/rule" : finding.ruleId,
+    }));
+    const pending = send({
+      current: { ...current, screen: Screen.Reviewing({ state: { ...payload, findings } }) },
+      message: Message.ClickedAccept({ findingId: "f2" }),
+    });
+    const filtered = send({ current: pending, message: Message.ToggledRuleFacet({ ruleId: "data/bounded-query" }) });
+    const confirmed = send({
+      current: filtered,
+      message: Message.CompletedAction({
+        findingId: "f2",
+        state: {
+          ...payload,
+          findings: findings.map((finding) => (finding.id === "f2" ? { ...finding, status: "accepted" } : finding)),
+        },
+        message: "Saved.",
+      }),
+    });
+    expect(confirmed.selectedFindingId).toBe("f1");
+    expect(confirmed.retainedFindingIds).toEqual([]);
+  });
+  it("keeps the accepted finding selected and ignores a double tap until it is edited", () => {
     const accepted = update({
       model: queue({ transport: "detached", ids: ["f1", "f2", "f3"] }),
       message: Message.PressedShortcut({ action: "accept" }),
     });
-    expect(accepted.model.drafts["f2"]?.disposition).toBe("accept");
-    expect(accepted.model.selectedFindingId).toBe("f3");
-    expect(accepted.model.selectionSettled).toBe(false);
-    expect(commandNames(accepted)).toContain("SettleSelection");
-    expect(commandArgs({ result: accepted, name: "PersistReview" })).toMatchObject({ dirty: true });
-
+    expect(accepted.model.selectedFindingId).toBe("f2");
+    expect(accepted.model.retainedFindingIds).toEqual(["f2"]);
+    expect(deriveReview({ state: reviewing(accepted.model), model: accepted.model }).queueCount).toBe(2);
     const doubleTap = send({ current: accepted.model, message: Message.PressedShortcut({ action: "accept" }) });
     expect(doubleTap.drafts["f1"]).toBeUndefined();
     expect(doubleTap.drafts["f3"]).toBeUndefined();
-    expect(
-      send({ current: accepted.model, message: Message.PressedShortcut({ action: "request_changes" }) }).drafts["f3"],
-    ).toBeUndefined();
-
-    const stale = send({
-      current: accepted.model,
-      message: Message.SettledSelection({ version: accepted.model.selectionVersion - 1 }),
-    });
-    expect(stale.selectionSettled).toBe(false);
-    const settled = send({
-      current: accepted.model,
-      message: Message.SettledSelection({ version: accepted.model.selectionVersion }),
-    });
-    expect(
-      send({ current: settled, message: Message.PressedShortcut({ action: "accept" }) }).drafts["f3"]?.disposition,
-    ).toBe("accept");
+    const edited = sendAll(accepted.model, [
+      Message.EditedDecision({ findingId: "f2" }),
+      Message.UpdatedReason({ findingId: "f2", value: "The caller is not bounded." }),
+      Message.PressedShortcut({ action: "request_changes" }),
+    ]);
+    expect(edited.drafts["f2"]?.disposition).toBe("request_changes");
+    expect(edited.editingDecisionIds).toEqual([]);
   });
 
-  it("falls back to the previous neighbour, then to nothing", () => {
-    const first = send({
-      current: { ...queue({ transport: "detached", ids: ["f1", "f2"] }), selectedFindingId: "f2" },
-      message: Message.ClickedAccept({ findingId: "f2" }),
-    });
-    expect(first.selectedFindingId).toBe("f1");
-    const current = send({ current: first, message: Message.ClickedAccept({ findingId: "f1" }) });
-    expect(current.selectedFindingId).toBeNull();
-    expect(current.selectionSettled).toBe(true);
+  it("retains the file after its final decision, then clears it when the view changes", () => {
+    const current = sendAll(queue({ transport: "detached", ids: ["f1", "f2"] }), [
+      Message.ClickedAccept({ findingId: "f2" }),
+      Message.ClickedAccept({ findingId: "f1" }),
+    ]);
+    expect(current.selectedFindingId).toBe("f2");
+    expect(deriveReview({ state: reviewing(current), model: current }).selected?.id).toBe("f2");
+    expect(deriveReview({ state: reviewing(current), model: current }).visible).toEqual([]);
+    const switched = send({ current, message: Message.SelectedView({ view: "decisions" }) });
+    expect(switched.retainedFindingIds).toEqual([]);
   });
 
   it("lets navigation settle the selection at once", () => {
@@ -934,7 +953,9 @@ describe("request changes from the keyboard", () => {
   it("focuses the reason instead of recording an empty request", () => {
     const pressed = update({ model: model("review"), message: Message.PressedShortcut({ action: "request_changes" }) });
     expect(pressed.model.drafts["finding-1"]).toBeUndefined();
-    expect(commandArgs({ result: pressed, name: "FocusElement" })).toEqual({ selector: ".decision textarea" });
+    expect(commandArgs({ result: pressed, name: "FocusElement" })).toEqual({
+      selector: ".inline-finding--selected .decision textarea",
+    });
 
     const withReason = send({
       current: model("review"),

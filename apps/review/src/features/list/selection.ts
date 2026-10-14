@@ -16,6 +16,15 @@ export const selectFinding = ({
   readonly findingId: string | null;
 }): Model =>
   modifyFields(model, {
+    retainedFindingIds: (ids) => {
+      if (model.screen._tag !== "Reviewing") return [];
+      const findings = model.screen.state.findings;
+      return findings.find(({ id }) => id === model.selectedFindingId)?.file ===
+        findings.find(({ id }) => id === findingId)?.file
+        ? ids
+        : [];
+    },
+    viewedFile: () => null,
     selectedFindingId: () => findingId,
     selectionSettled: () => true,
     selectionVersion: (version) => version + 1,
@@ -35,7 +44,12 @@ export const reconcileSelection = ({
 }): UpdateReturn => {
   if (after.screen._tag !== "Reviewing") return { model: after };
   const listed = deriveReview({ state: after.screen.state, model: after }).visible;
-  if (listed.some(({ id }) => id === after.selectedFindingId)) return { model: after };
+  if (
+    listed.some(({ id }) => id === after.selectedFindingId) ||
+    (after.retainedFindingIds.includes(after.selectedFindingId ?? "") &&
+      after.screen.state.findings.some(({ id }) => id === after.selectedFindingId))
+  )
+    return { model: after };
   const remaining = new Set(listed.map(({ id }) => id));
   const previous =
     before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }).visible : [];

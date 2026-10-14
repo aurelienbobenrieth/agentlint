@@ -3,7 +3,7 @@ import { modifyFields } from "foldkit/struct";
 
 import type { ReviewActionRequest, ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { type Draft, type Model, Screen } from "../../shared/model";
-import { draftFor, duplicateFindingId, findingById } from "../../shared/selectors";
+import { deriveReview, draftFor, duplicateFindingId, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
 import { persist, persistLater, rejectDuplicateIds } from "../session/update";
@@ -84,6 +84,34 @@ const dispositions: Record<DecisionKind, Draft["disposition"]> = {
 
 const dispositionFor = (kind: DecisionKind): Draft["disposition"] => dispositions[kind];
 
+const keepDecision = ({
+  before,
+  model,
+  findingId,
+}: {
+  readonly before: Model;
+  readonly model: Model;
+  readonly findingId: string;
+}): Model => {
+  if (model.screen._tag !== "Reviewing" || model.screen.state.mode !== "review") return model;
+  if (
+    before.screen._tag !== "Reviewing" ||
+    (!before.retainedFindingIds.includes(findingId) &&
+      !deriveReview({ state: before.screen.state, model: before }).visible.some(({ id }) => id === findingId))
+  )
+    return model;
+  const findings = model.screen.state.findings;
+  if (
+    findings.find(({ id }) => id === findingId)?.file !==
+    findings.find(({ id }) => id === model.selectedFindingId)?.file
+  )
+    return model;
+  return modifyFields(model, {
+    retainedFindingIds: (ids) => [...new Set([...ids, findingId])],
+    editingDecisionIds: (ids) => ids.filter((id) => id !== findingId),
+  });
+};
+
 /**
  * Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation.
  */
@@ -128,7 +156,10 @@ export const submit = ({
     }),
   });
   if (model.screen.state.transport === "detached") {
-    const moved = reconcileSelection({ before: model, after: decided });
+    const moved = reconcileSelection({
+      before: model,
+      after: keepDecision({ before: model, model: decided, findingId }),
+    });
     const notified = enqueueToast({
       model: moved.model,
       message: kind === "withdraw" ? "Decision withdrawn." : "Decision saved in this browser.",
@@ -205,7 +236,10 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       }),
       { screen: () => Screen.Reviewing({ state }), busyFindingId: () => null, refreshFailed: () => false },
     );
-    const moved = reconcileSelection({ before: model, after: confirmed });
+    const moved = reconcileSelection({
+      before: model,
+      after: keepDecision({ before: model, model: confirmed, findingId }),
+    });
     return appendCommands({
       result: enqueueToast({ model: moved.model, message, tone: "success" }),
       commands: moved.commands ?? [],

@@ -124,6 +124,11 @@ export const PersistedReview = S.Struct({
 export type PersistedReview = typeof PersistedReview.Type;
 
 export const Model = S.Struct({
+  // Session-only reading state. Decisions still live in the existing drafts/server records.
+  retainedFindingIds: S.Array(S.String),
+  editingDecisionIds: S.Array(S.String),
+  guidanceFindingIds: S.Array(S.String),
+  expandedCode: S.Record(S.String, S.Number),
   screen: Screen,
   view: View,
   facets: Facets,
