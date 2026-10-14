@@ -137,6 +137,8 @@ test("keeps a pending card in place while another card is actionable and restore
     await expect(page.getByRole("main").getByText("Second query to review.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Saving…", exact: true })).toHaveCount(0);
     await expect(first.getByText("Accepted", { exact: true })).toBeVisible();
+    await expect(second).toHaveClass(/inline-finding--selected/u);
+    await expect(second.getByRole("heading")).toBeFocused();
     await second.getByRole("textbox", { name: "Reason or requested change" }).fill("Another verified bound.");
     await expect(second.getByRole("button", { name: "Accept", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toBeDisabled();
@@ -254,6 +256,8 @@ test("reviews a file once with folded context and editable inline decisions", as
   await page.getByRole("button", { name: "Collapse unchanged code" }).click();
   const firstCard = page.locator(".inline-finding").first();
   await firstCard.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect(page.locator("#finding-finding-2")).toHaveClass(/inline-finding--selected/u);
+  await expect(page.locator("#finding-finding-2").getByRole("heading")).toBeFocused();
   await expect(firstCard.getByRole("button", { name: "Edit decision" })).toBeVisible();
   await expect(page.locator(".inline-finding")).toHaveCount(2);
   await expect(page.getByText("const line263 = 263;", { exact: true })).toBeVisible();
@@ -367,6 +371,126 @@ test("loads a review, supports keyboard help, and remains contained on mobile", 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Bound database queries" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("shows the selected rule above a related file at the same width on desktop and mobile", async ({ page }) => {
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        sources: {
+          ...state.sources,
+          "src/query-contract.ts": Array.from({ length: 80 }, (_, i) => `export const limit${i + 1} = ${i + 1};`).join(
+            "\n",
+          ),
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const files = page.getByRole("complementary", { name: "Files to review together" });
+  await files.getByRole("button", { name: "query-contract.ts" }).click();
+  const body = page.locator(".detail__body");
+  await expect(body.locator(":scope > :first-child")).toHaveAttribute("id", "finding-finding-1");
+  await expect(body.locator(":scope > :last-child")).toHaveClass("code");
+  await expect(body.locator(".code .inline-finding")).toHaveCount(0);
+  await expect(body.locator(".line__c")).toHaveCount(80);
+  await expect(body.locator(".line__c").first()).toHaveText("export const limit1 = 1;");
+  await expect(body.locator(".line__c").last()).toHaveText("export const limit80 = 80;");
+  await expect(body.locator(".code-fold")).toHaveCount(0);
+  await expect(body.getByRole("button", { name: "Expand all code", exact: true })).toHaveCount(0);
+  const checkWidth = async (width: number) => {
+    await page.setViewportSize({ width, height: 844 });
+    const [card, code] = await Promise.all([
+      body.locator(".inline-finding").boundingBox(),
+      body.locator(".code").boundingBox(),
+    ]);
+    if (card === null || code === null) throw new Error("The rule card and related file must both be displayed.");
+    expect(card.x).toBeCloseTo(code.x, 0);
+    expect(card.width).toBeCloseTo(code.width, 0);
+    expect(card.y + card.height).toBeLessThanOrEqual(code.y);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  };
+  await checkWidth(1280);
+  await checkWidth(390);
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await files.getByRole("button", { name: "query.ts Flagged file" }).click();
+  await expect(body.locator(".code .inline-finding")).toHaveCount(1);
+  await expect(body.locator(":scope > .inline-finding")).toHaveCount(0);
+});
+
+test("advances to the next file after accepting its last finding", async ({ page }) => {
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        findings: [
+          state.findings[0],
+          {
+            ...state.findings[0],
+            id: "finding-2",
+            file: "src/query-contract.ts",
+            line: 1,
+            ruleTitle: "Verify the page size",
+            relatedFiles: ["src/query-contract.ts"],
+            code: { focus: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 35 } },
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: /Review this unbounded query\. Bound database queries/u }).click();
+  await page.getByRole("textbox", { name: "Reason or requested change" }).fill("The input has a finite bound.");
+  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  const card = page.locator("#finding-finding-2");
+  await expect(card).toHaveClass(/inline-finding--selected/u);
+  await expect(card.getByRole("heading", { name: "Verify the page size" })).toBeFocused();
+  await expect(page.locator(".code__file")).toHaveText("src/query-contract.ts");
+  await expect(page.locator("#finding-finding-1")).toHaveCount(0);
+});
+
+test("shows every line of a modified related file when its changes are no longer highlighted", async ({ page }) => {
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        sources: {
+          ...state.sources,
+          "src/query-contract.ts": Array.from({ length: 80 }, (_, i) => `export const limit${i + 1} = ${i + 1};`).join(
+            "\n",
+          ),
+        },
+        changes: {
+          "src/query-contract.ts": {
+            status: "modified",
+            previousPath: null,
+            hunks: [
+              {
+                oldStart: 40,
+                newStart: 40,
+                lines: [
+                  { kind: "deletion", content: "export const limit40 = 0;" },
+                  { kind: "addition", content: "export const limit40 = 40;" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("complementary", { name: "Files to review together" })
+    .getByRole("button", { name: "query-contract.ts M" })
+    .click();
+  await expect(page.locator(".line--addition .line__c")).toHaveText("export const limit40 = 40;");
+  await expect(page.getByText("export const limit20 = 20;", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Full file · 80 lines" }).click();
+  await expect(page.locator(".line__c")).toHaveCount(80);
+  await expect(page.locator(".line--addition, .line--deletion, .code-fold")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Expand all code", exact: true })).toHaveCount(0);
 });
 
 test("keeps a finding outside diff hunks visible in both code views", async ({ page }) => {
@@ -502,3 +626,67 @@ test("folds a long added hunk around the finding instead of showing the entire f
   await expect(page.getByText("const item20 = 20;", { exact: true })).toHaveCount(0);
   await expect(page.getByText("const item80 = 80;", { exact: true })).toHaveCount(0);
 });
+
+for (const width of [1280, 900, 390, 320]) {
+  test(`keeps long file toolbar actions contained at ${width}px`, async ({ page }) => {
+    const file = "packages/persistence/migrations/20261008011759_takedown_metrics/migration.sql";
+    const source = Array.from({ length: 100 }, (_, i) => `SELECT ${i + 1};`);
+    await page.setViewportSize({ width, height: 844 });
+    await page.route("**/api/state", (route) =>
+      route.fulfill({
+        json: {
+          ...state,
+          sources: { [file]: source.join("\n") },
+          changes: {
+            [file]: {
+              status: "added",
+              previousPath: null,
+              hunks: [{ oldStart: 0, newStart: 1, lines: source.map((content) => ({ kind: "addition", content })) }],
+            },
+          },
+          findings: [
+            {
+              ...state.findings[0],
+              file,
+              line: 50,
+              relatedFiles: [file],
+              code: { focus: { startLine: 50, startColumn: 1, endLine: 50, endColumn: 10 } },
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto("/");
+    await page.getByRole("button", { name: "Expand all code", exact: true }).click();
+    const checkToolbar = async () => {
+      await expect(page.locator(".code__toggle")).toHaveCount(2);
+      const bounds = await page.locator(".code__bar").evaluate((bar) => {
+        const header = bar.getBoundingClientRect();
+        return Array.from(bar.querySelectorAll("button"), (button) => {
+          const box = button.getBoundingClientRect();
+          const text = document.createRange();
+          text.selectNodeContents(button);
+          const textBox = text.getBoundingClientRect();
+          return {
+            lines: text.getClientRects().length,
+            contained:
+              textBox.top >= box.top &&
+              textBox.bottom <= box.bottom &&
+              box.left >= header.left &&
+              box.right <= header.right &&
+              box.top >= header.top &&
+              box.bottom <= header.bottom,
+          };
+        });
+      });
+      expect(bounds).toEqual([
+        { lines: 1, contained: true },
+        { lines: 1, contained: true },
+      ]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    };
+    await checkToolbar();
+    await page.getByRole("button", { name: "Full file · 100 lines" }).click();
+    await checkToolbar();
+  });
+}
