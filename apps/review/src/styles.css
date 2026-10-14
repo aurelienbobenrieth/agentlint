@@ -1215,22 +1215,25 @@ pre {
 
 .code__bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 36px;
-  padding: 0 6px 0 10px;
+  min-height: 36px;
+  padding: 5px 6px 5px 10px;
   border-bottom: 1px solid var(--line);
 }
 
 .code__file {
   display: inline-flex;
+  flex: 1 1 160px;
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-2);
   min-width: 0;
+  max-width: 100%;
 }
 
 .code__file span {
@@ -1256,8 +1259,11 @@ pre {
   color: var(--text);
 }
 
-.code__spacer {
-  flex: 1;
+.code__status,
+.code__hint,
+.code__toggle {
+  flex: none;
+  white-space: nowrap;
 }
 
 .code__status {
@@ -1314,6 +1320,10 @@ pre {
 
 .inline-finding--selected {
   border-color: var(--accent-ring);
+}
+
+.detail__body > .inline-finding {
+  margin: 12px 0 0;
 }
 
 .inline-finding__head {
@@ -1386,9 +1396,6 @@ pre {
     margin-inline: 8px;
   }
   .code__bar {
-    flex-wrap: wrap;
-    height: auto;
-    min-height: 36px;
     padding-block: 6px;
   }
   .code__file {

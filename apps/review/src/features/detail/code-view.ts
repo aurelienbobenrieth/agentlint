@@ -58,7 +58,7 @@ export const fileCode = ({
       code.focus === null ? [] : [{ start: code.focus.startLine, end: code.focus.endLine }],
     ),
     // Keep hunk boundaries visible without forcing a whole added file open.
-    ...(change?.hunks ?? []).flatMap((hunk) => {
+    ...(diff ? change.hunks : []).flatMap((hunk) => {
       const start = Math.max(1, hunk.newStart);
       const end = Math.max(start, hunk.newStart + hunk.lines.filter((line) => line.kind !== "deletion").length - 1);
       return [
@@ -69,6 +69,7 @@ export const fileCode = ({
   ];
   const expanded = (model.expandedCode[`${file}:all`] ?? 0) > 0;
   const segments = codeSegments({ length: allLines.length, ranges });
+  const collapsible = segments.some((segment) => segment.kind === "gap");
   const anchors = new Map<number, ReviewFindingPayload[]>();
   for (const finding of findings) {
     const line = finding.code.focus === null ? 0 : Math.max(1, Math.min(allLines.length, finding.code.focus.endLine));
@@ -148,15 +149,18 @@ export const fileCode = ({
           ...(change === undefined
             ? []
             : [h.span([h.Class(`code__status code__status--${change.status}`)], [change.status])]),
-          h.span([h.Class("code__spacer")], []),
-          h.button(
-            [
-              h.Type("button"),
-              h.Class("code__toggle"),
-              h.OnClick(Message.ExpandedCode({ key: `${file}:all`, count: expanded ? 0 : 1 })),
-            ],
-            [expanded ? "Collapse unchanged code" : "Expand all code"],
-          ),
+          ...(collapsible
+            ? [
+                h.button(
+                  [
+                    h.Type("button"),
+                    h.Class("code__toggle"),
+                    h.OnClick(Message.ExpandedCode({ key: `${file}:all`, count: expanded ? 0 : 1 })),
+                  ],
+                  [expanded ? "Collapse unchanged code" : "Expand all code"],
+                ),
+              ]
+            : []),
           change === undefined || change.hunks.length === 0
             ? h.span([h.Class("code__hint")], [`${allLines.length} lines`])
             : h.button(

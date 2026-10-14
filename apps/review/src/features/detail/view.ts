@@ -729,6 +729,7 @@ export const detail = ({
       h.div(
         [h.Class("detail__body")],
         [
+          ...(viewed === finding.file ? [] : [inlineFinding({ finding, state, model, derived, h })]),
           fileCode({
             file: viewed,
             source: state.sources[viewed] ?? "",
@@ -738,7 +739,6 @@ export const detail = ({
             card: (item) => inlineFinding({ finding: item, state, model, derived, h }),
             h,
           }),
-          ...(viewed === finding.file ? [] : [inlineFinding({ finding, state, model, derived, h })]),
         ],
       ),
     ],

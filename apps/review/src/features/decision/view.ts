@@ -211,16 +211,15 @@ export const decisionForm = ({
           tip({
             label: "Accept",
             keys: ["A"],
-            trigger: button({
-              label: acceptLabel,
-              message: Message.ClickedAccept({ findingId: finding.id }),
-              variant: "primary",
-              h,
-              options: {
-                size: "sm",
-                disabled: accepting || empty || model.finishing,
-              },
-            }),
+            trigger: h.button(
+              [
+                h.Type("button"),
+                h.OnClick(Message.ClickedAccept({ findingId: finding.id }), { propagation: "Stop" }),
+                h.Class("btn btn--primary btn--sm"),
+                h.Disabled(accepting || empty || model.finishing),
+              ],
+              [h.span([], [acceptLabel])],
+            ),
             h,
           }),
           tip({

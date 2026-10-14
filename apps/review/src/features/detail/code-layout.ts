@@ -1,6 +1,7 @@
 export type CodeSegment = { readonly kind: "lines" | "gap"; readonly start: number; readonly end: number };
 /**
- * Three context lines per range; gaps of eight lines or fewer stay readable.
+ * Files up to 30 lines and files without highlights stay open. Longer files keep three context lines per range; gaps of
+ * eight lines or fewer stay readable.
  */
 export const codeSegments = ({
   length,
@@ -10,7 +11,8 @@ export const codeSegments = ({
   readonly ranges: ReadonlyArray<{ readonly start: number; readonly end: number }>;
 }): ReadonlyArray<CodeSegment> => {
   if (length === 0) return [];
-  const windows = (ranges.length === 0 ? [{ start: 1, end: 1 }] : ranges)
+  if (length <= 30 || ranges.length === 0) return [{ kind: "lines", start: 1, end: length }];
+  const windows = ranges
     .map(({ start, end }) => ({
       start: Math.max(1, Math.min(length, start) - 3),
       end: Math.min(length, Math.max(start, end) + 3),

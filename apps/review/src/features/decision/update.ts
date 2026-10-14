@@ -5,7 +5,8 @@ import type { ReviewActionRequest, ReviewFindingPayload } from "@aurelienbbn/age
 import { type Draft, type Model, Screen } from "../../shared/model";
 import { deriveReview, draftFor, duplicateFindingId, findingById } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
-import { reconcileSelection } from "../list/selection";
+import { reconcileSelection, selectFinding } from "../list/selection";
+import { RevealFinding, SettleSelection } from "../list/command";
 import { persist, persistLater, rejectDuplicateIds } from "../session/update";
 import { MarkDirty } from "../session/command";
 import { enqueueToast } from "../toasts/update";
@@ -113,6 +114,34 @@ const keepDecision = ({
   });
 };
 
+const advanceAcceptance = ({
+  before,
+  after,
+  findingId,
+}: {
+  readonly before: Model;
+  readonly after: Model;
+  readonly findingId: string;
+}): UpdateReturn => {
+  if (before.screen._tag !== "Reviewing" || after.screen._tag !== "Reviewing" || after.view !== "queue")
+    return reconcileSelection({ before, after });
+  const previous = deriveReview({ state: before.screen.state, model: before }).visible;
+  const current = deriveReview({ state: after.screen.state, model: after });
+  const unresolved = new Set(
+    current.visible.filter(({ id }) => current.statusOf.get(id) === "unresolved").map(({ id }) => id),
+  );
+  const index = previous.findIndex(({ id }) => id === findingId);
+  const next =
+    previous.slice(index + 1).find(({ id }) => unresolved.has(id)) ??
+    previous.slice(0, Math.max(0, index)).find(({ id }) => unresolved.has(id));
+  if (next === undefined) return reconcileSelection({ before, after });
+  const selected = modifyFields(selectFinding({ model: after, findingId: next.id }), { selectionSettled: () => false });
+  return {
+    model: selected,
+    commands: [RevealFinding({ findingId: next.id }), SettleSelection({ version: selected.selectionVersion })],
+  };
+};
+
 /**
  * Attached acceptances leave the queue immediately, while their immutable requests await server confirmation.
  */
@@ -160,10 +189,11 @@ export const submit = ({
     }),
   });
   if (model.screen.state.transport === "detached") {
-    const moved = reconcileSelection({
-      before: model,
-      after: keepDecision({ before: model, model: decided, findingId }),
-    });
+    const kept = keepDecision({ before: model, model: decided, findingId });
+    const moved =
+      kind === "accept"
+        ? advanceAcceptance({ before: model, after: kept, findingId })
+        : reconcileSelection({ before: model, after: kept });
     const notified = enqueueToast({
       model: moved.model,
       message: kind === "withdraw" ? "Decision withdrawn." : "Decision saved in this browser.",
@@ -179,9 +209,10 @@ export const submit = ({
       pendingAcceptances: (acceptances) => [...acceptances, { findingId, reason: request.reason }],
       busyFindingId: (busy) => busy ?? findingId,
     });
-    const moved = reconcileSelection({
+    const moved = advanceAcceptance({
       before: model,
       after: keepDecision({ before: model, model: pending, findingId }),
+      findingId,
     });
     return appendCommands({
       result: persist(moved.model),
