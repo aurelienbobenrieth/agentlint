@@ -1,7 +1,7 @@
 import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
-import { deriveReview } from "../../shared/selectors";
+import { deriveReview, findingNeighbours } from "../../shared/selectors";
 import type { UpdateReturn } from "../../shared/update";
 import { SettleSelection } from "./command";
 
@@ -51,12 +51,17 @@ export const reconcileSelection = ({
   )
     return { model: after };
   const remaining = new Set(listed.map(({ id }) => id));
-  const previous =
-    before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }).visible : [];
+  const previousReview =
+    before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }) : undefined;
+  const previous = previousReview?.visible ?? [];
   const index = previous.findIndex(({ id }) => id === before.selectedFindingId);
+  const retainedNeighbours =
+    previousReview !== undefined && before.retainedFindingIds.includes(before.selectedFindingId ?? "")
+      ? findingNeighbours({ ...previousReview, visible: listed, selectedIndex: -1 })
+      : undefined;
   const neighbour =
     index < 0
-      ? undefined
+      ? (retainedNeighbours?.next ?? retainedNeighbours?.previous)
       : (previous.slice(index + 1).find(({ id }) => remaining.has(id)) ??
         previous.slice(0, index).findLast(({ id }) => remaining.has(id)));
   const next = neighbour?.id ?? listed[0]?.id ?? null;
