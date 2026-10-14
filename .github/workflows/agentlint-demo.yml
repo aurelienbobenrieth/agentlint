@@ -1,0 +1,44 @@
+name: agentlint 0.9 review demo
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: agentlint-demo-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    if: >-
+      github.head_ref == 'demo/github-review-0.9'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Validate the demo rules and prepare agent proposals
+        env:
+          AGENTLINT_ACTOR: agent:demo
+        run: |
+          mkdir -p .agentlint
+          cp examples/pr-review-qa/config.ts .agentlint/config.ts
+          npx --yes @aurelienbbn/agentlint@0.9.0 rules test
+          npx --yes @aurelienbbn/agentlint@0.9.0 propose examples/pr-review-qa/delete-customer.js:3 --summary "Changed: adds permanent account deletion. Holds: the selected customer ID is passed explicitly. Check: confirm the deletion request and recovery plan. Recommendation: request changes until recovery is documented."
+          npx --yes @aurelienbbn/agentlint@0.9.0 propose examples/pr-review-qa/email-customers.js:3 --summary "Changed: sends the release email to every customer. Holds: one message is passed to the delivery service. Check: review the email preview and confirm the audience. Recommendation: send a preview before approving."
+      - name: Publish real GitHub review threads
+        uses: aurelienbobenrieth/agentlint/action@v0.9.0
+        with:
+          version: "0.9.0"
