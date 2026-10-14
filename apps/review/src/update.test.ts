@@ -88,6 +88,7 @@ const model = (mode: "calibration" | "review"): Model => ({
   selectionVersion: 0,
   drafts: {},
   busyFindingId: null,
+  pendingAcceptances: [],
   finishing: false,
   refreshFailed: false,
   pendingExports: [],
@@ -645,6 +646,70 @@ const queue = ({
 const commandNames = (result: ReturnType<typeof update>): ReadonlyArray<string> =>
   (result.commands ?? []).map(({ name }) => name);
 
+describe("optimistic attached acceptances", () => {
+  it("advances immediately, queues another acceptance and rolls a rejection back", () => {
+    const current = { ...queue({ transport: "attached", ids: ["f1", "f2", "f3"] }), selectedFindingId: "f1" };
+    const first = update({ model: current, message: Message.ClickedAccept({ findingId: "f1" }) });
+    expect(first.model.selectedFindingId).toBe("f2");
+    expect(deriveReview({ state: reviewing(first.model), model: first.model }).visible.map(({ id }) => id)).toEqual([
+      "f2",
+      "f3",
+    ]);
+    expect(commandNames(first)).toContain("SubmitAction");
+    const second = update({ model: first.model, message: Message.ClickedAccept({ findingId: "f2" }) });
+    expect(second.model.selectedFindingId).toBe("f3");
+    expect(commandNames(second)).not.toContain("SubmitAction");
+    expect(update({ model: second.model, message: Message.ClickedFinish() }).commands ?? []).toEqual([]);
+    expect(update({ model: second.model, message: Message.ClickedAccept({ findingId: "f2" }) }).model).toBe(
+      second.model,
+    );
+    const rejected = update({
+      model: second.model,
+      message: Message.FailedAction({ findingId: "f1", message: "The finding changed." }),
+    });
+    expect(
+      deriveReview({ state: reviewing(rejected.model), model: rejected.model }).visible.map(({ id }) => id),
+    ).toEqual(["f1", "f3"]);
+    expect(rejected.model.selectedFindingId).toBe("f3");
+    expect(rejected.model.toasts.at(-1)).toMatchObject({ tone: "danger", message: "The finding changed." });
+    expect(commandNames(rejected)).toContain("SubmitAction");
+    expect(rejected.model.busyFindingId).toBe("f2");
+  });
+
+  it("keeps queued acceptances visible as decisions across an earlier server snapshot", () => {
+    const current = queue({ transport: "attached", ids: ["f1", "f2"] });
+    const first = send({ current, message: Message.ClickedAccept({ findingId: "f1" }) });
+    const second = send({ current: first, message: Message.ClickedAccept({ findingId: "f2" }) });
+    const confirmed = update({
+      model: second,
+      message: Message.CompletedAction({
+        findingId: "f1",
+        state: {
+          ...reviewing(current),
+          findings: reviewing(current).findings.map((finding) => ({
+            ...finding,
+            status: finding.id === "f1" ? "accepted" : "unresolved",
+          })),
+        },
+        message: "Saved",
+      }),
+    });
+    expect(deriveReview({ state: reviewing(confirmed.model), model: confirmed.model }).visible).toEqual([]);
+    expect(confirmed.model.busyFindingId).toBe("f2");
+    expect(commandNames(confirmed)).toContain("SubmitAction");
+    const rejected = send({
+      current: confirmed.model,
+      message: Message.FailedAction({ findingId: "f2", message: "Rejected" }),
+    });
+    expect(rejected.selectedFindingId).toBe("f2");
+    expect(rejected.busyFindingId).toBeNull();
+    expect(deriveReview({ state: reviewing(rejected), model: rejected }).visible.map(({ id }) => id)).toEqual(["f2"]);
+    const saved = decodeSavedReview(encodeJson(persistedReview(second)));
+    const restored = loaded({ payload: reviewing(current), saved }).model;
+    expect(deriveReview({ state: reviewing(restored), model: restored }).decisionsCount).toBe(0);
+  });
+});
+
 type CommandArguments = NonNullable<ReturnType<typeof update>["commands"]>[number]["args"];
 
 const commandArgs = ({
@@ -722,13 +787,13 @@ describe("selection after a decision", () => {
     expect(pressed.commands ?? []).toEqual([]);
   });
 
-  it("advances after the server confirms an attached decision, also when it dropped the finding", () => {
+  it("advances before the server confirms an attached acceptance, also when it drops the finding", () => {
     const pending = send({
       current: queue({ transport: "attached", ids: ["f1", "f2", "f3"] }),
       message: Message.PressedShortcut({ action: "accept" }),
     });
     expect(pending.busyFindingId).toBe("f2");
-    expect(pending.selectedFindingId).toBe("f2");
+    expect(pending.selectedFindingId).toBe("f3");
     const remaining = reviewing(pending).findings.filter(({ id }) => id !== "f2");
     const confirmed = update({
       model: pending,
@@ -742,7 +807,7 @@ describe("selection after a decision", () => {
     expect(confirmed.model.drafts["f2"]?.disposition).toBe("none");
     expect(confirmed.model.selectedFindingId).toBe("f3");
     expect(confirmed.model.selectionSettled).toBe(false);
-    expect(commandNames(confirmed)).toContain("SettleSelection");
+    expect(commandNames(confirmed)).not.toContain("SettleSelection");
   });
 
   it("keeps the sort and the groups when only the selection moves", () => {
