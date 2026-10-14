@@ -51,7 +51,7 @@ describe("propose", () => {
     const finding = EffectArray.getUnsafe((await run(check)).findings, 0);
 
     const result = await run(propose({ selector: "1", summary: "  Wrapped the call in the sandbox.  ", diff: "+x" }));
-    expect(result).toMatchObject({ exitCode: 0, message: expect.stringContaining("src/demo.ts:1") });
+    expect(result).toMatchObject({ exitCode: 0, message: expect.stringContaining("src/demo.ts:1 as agent:test.") });
 
     const stored = findProposal({ records: await run(proposals), finding });
     expect(stored).toMatchObject({ summary: "Wrapped the call in the sandbox.", diff: "+x", actor: "agent:test" });

@@ -31,7 +31,7 @@ export const proposeHandler = Effect.fn("proposeHandler")(function* (command: Pr
     }),
   );
   return new ProposeResult({
-    message: `Recorded a proposal for ${finding.ruleId} at ${finding.file}:${finding.line}. A human decides in agentlint review.`,
+    message: `Recorded a proposal for ${finding.ruleId} at ${finding.file}:${finding.line} as ${env.actor}. A human decides in agentlint review.`,
     exitCode: 0,
   });
 });

@@ -40,7 +40,7 @@ flowchart LR
 | Command    | Records                                  | Exit `2` when                                                         |
 | ---------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | `accept`   | agent acceptance                         | binding needs `human`. Points to `approve` or `review`.               |
-| `approve`  | human acceptance                         | actor is not `human:*` (for example inside a detected agent session)  |
+| `approve`  | human acceptance                         | actor is not `human:*`, or is assumed outside a terminal              |
 | review SPA | human acceptance as `human:local-review` | no actor check; the process actor is not used                         |
 | `propose`  | `.agentlint/proposals.jsonl`             | never opens the gate. One per finding identity, with summary and diff |
 
@@ -49,7 +49,9 @@ Every acceptance needs a reason. `authority` names who may accept, not the findi
 ## Local human review is a workflow boundary, not security
 
 - Anyone with write access can run `approve` or edit the acceptance file or config. Git makes it visible.
-- `actor` is audit data, never identity proof: `AGENTLINT_ACTOR`, else `agent:codex` / `agent:claude` when detected, else `human:<username>`.
+- `actor` is audit data, never identity proof, and never part of matching. It is declared by `AGENTLINT_ACTOR`, else detected (Codex and Claude Code markers, then `AI_AGENT`) as `agent:<name>`, else assumed as `human:<username>`.
+- An assumed human only means no agent was detected, so `approve` refuses it outside a terminal, where an undetected agent looks the same. A declared actor, as in the GitHub action, is taken as declared.
+- Actor text is `principal[?details]`: the principal before the first `?`, then URL query parameters. A detected agent records `user` (the account it runs for) and `session` (its thread id, when the runtime exposes one) to trace a decision back to its transcript. Every string parses; older records are bare principals, and readers keep keys they do not know.
 - Protected branches, required reviews, CODEOWNERS, and provider identities are the strong boundary. A provider adapter can add verified authority later without changing the gate rule.
 
 ## Exact match or nothing
@@ -138,5 +140,6 @@ agentlint acceptances list | clean [--base ref] | import <decisions.jsonl> [--ba
 - 2026-08-28: Condensed and aligned with the 0.2 implementation.
 - 2026-09-05: Requesting changes revokes an existing acceptance. Detached imports can carry conditional revocations of the reviewed decision. Revocations are operations, not another stored outcome. Exclusive transactions and atomic replacement protect concurrent decisions.
 - 2026-09-23: Reformatted for scanning. Recorded the optional `reviewEpoch` source field, the human-actor check in `approve`, the reviewed-source check on import, and the outcome store. Decision unchanged.
+- 2026-10-12: Actor text gains `?details` (`user`, `session`); detection covers full-access Codex and `AI_AGENT`; `approve` refuses an assumed human outside a terminal ([#74](https://github.com/aurelienbobenrieth/agentlint/issues/74)). Decision unchanged.
 
 </details>

@@ -41,5 +41,6 @@ export const safeExternalHref = (href: string | null): string | null => {
   }
 };
 
-export const actorLabel = (actor: string): string => actor.replace(/^(agent|human):/u, "");
+// Actor text is `principal[?details]`; the label shows the principal and the title keeps the details.
+export const actorLabel = (actor: string): string => (actor.split("?", 1)[0] ?? actor).replace(/^(agent|human):/u, "");
 export const actorKind = (actor: string): "agent" | "human" => (actor.startsWith("agent") ? "agent" : "human");

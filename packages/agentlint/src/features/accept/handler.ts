@@ -5,6 +5,7 @@
 import { Clock, Effect } from "effect";
 import { Env } from "../../config/env.js";
 import { AcceptanceRecord, authoritySatisfies } from "../../domain/acceptance.js";
+import { isHumanActor } from "../../domain/actor.js";
 import { findingKey } from "../../domain/finding.js";
 import { AcceptanceStore } from "../../shared/infrastructure/acceptance-store.js";
 import { SelectorCache } from "../../shared/infrastructure/selector-cache.js";
@@ -52,10 +53,18 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
   const env = yield* Env;
   const store = yield* AcceptanceStore;
   const actor = input.actor ?? env.actor;
-  if (input.authority === "human" && !actor.startsWith("human:")) {
+  if (input.authority === "human" && !isHumanActor(actor)) {
     return new AcceptResult({
       message:
         "Human approval requires a human actor. Open agentlint review or run agentlint approve outside an agent session.",
+      exitCode: 2,
+    });
+  }
+  // An assumed human only means no agent was detected. Outside a terminal, an undetected agent looks the same.
+  if (input.authority === "human" && input.actor === undefined && env.actorSource === "assumed" && !env.isTTY) {
+    return new AcceptResult({
+      message:
+        "agentlint approve needs a terminal to assume a human actor. Run it in a terminal, open agentlint review, or declare the approver with AGENTLINT_ACTOR=human:<name>.",
       exitCode: 2,
     });
   }
@@ -77,7 +86,7 @@ export const acceptFinding = Effect.fn("acceptFinding")(function* (
   });
   yield* store.reconcile({ stale: "none", current: [finding], accepted: [record] });
   return new AcceptResult({
-    message: `Accepted ${finding.ruleId} at ${finding.file}:${finding.line}.`,
+    message: `Accepted ${finding.ruleId} at ${finding.file}:${finding.line} as ${actor}.`,
     exitCode: 0,
   });
 });
