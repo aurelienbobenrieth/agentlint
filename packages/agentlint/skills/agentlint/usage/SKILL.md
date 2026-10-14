@@ -21,11 +21,11 @@ Resolve `<agentlint-cmd>` from the repository package manager: `pnpm agentlint`,
 3. Prefer changing the evidence so the standard is clearly satisfied.
 4. For an `agent` authority finding that is already permitted, run `<agentlint-cmd> accept <selector> --reason "..."` with the concrete fact that satisfies the standard. Do not use a generic reason.
 5. Never create human authority. For a `human` finding, do the work you can, then run `<agentlint-cmd> propose <selector> --summary "..." [--diff-file path]` so the reviewer sees your change or your reason for not changing it next to the evidence. Then ask the user to run the review UI or `approve` command.
-   The summary sits beside the rule and the code, so never restate them. Write three lines, one short sentence each: `Changed:` what changed, in plain words; `Holds:` the one fact that shows the standard still holds (a file and line, a test, a refusal path), or why it does not; `Check:` what only the reviewer can confirm. Name files and symbols, not internal shorthand. For example:
+   Evaluate the standard and inspect the evidence as you would for an agent-authority finding. Write two or three short lines for the inline review: `Flagged:` why this code needs judgment; `Suggest:` the action you recommend and the concrete fact supporting it (a caller, test, or refusal path); optionally `Check:` what only the reviewer can confirm. If you changed the code, say what changed in the suggestion. Name files and symbols, not internal shorthand. For example:
 
    ```text
-   Changed: new access-signing-keys.ts loads the team's JWKS (10 min cache, 3 s timeout).
-   Holds: a token no key verifies is refused at staff-access.ts:42; staff-access.test.ts covers it.
+   Flagged: access-signing-keys.ts loads signing keys from a remote URL.
+   Suggest: keep the loader; staff-access.ts:42 refuses tokens no key verifies, covered by staff-access.test.ts.
    Check: the JWKS URL uses the stage's own team.
    ```
 

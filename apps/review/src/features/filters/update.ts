@@ -17,7 +17,10 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => {
     readonly change: (model: Model) => Model;
     readonly save?: (model: Model) => UpdateReturn;
   }): UpdateReturn => {
-    const reconciled = reconcileSelection({ before: model, after: change(model) });
+    const reconciled = reconcileSelection({
+      before: model,
+      after: change(modifyFields(model, { retainedFindingIds: () => [] })),
+    });
     return appendCommands({ result: save(reconciled.model), commands: reconciled.commands ?? [] });
   };
   return {

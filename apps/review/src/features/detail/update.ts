@@ -11,6 +11,35 @@ import type { fields } from "./messages";
 import { findingContext } from "./selectors";
 
 export const cases = (model: Model): Handlers<keyof typeof fields> => ({
+  SetFindingGuidance: ({ findingId, open }) => ({
+    model: modifyFields(model, {
+      guidanceFindingIds: (ids) => (open ? [...new Set([...ids, findingId])] : ids.filter((id) => id !== findingId)),
+    }),
+  }),
+  ExpandedCode: ({ key, count }) => ({
+    model: modifyFields(model, {
+      expandedCode: (expanded) => ({
+        ...(key.endsWith(":all") && count === 0
+          ? Object.fromEntries(Object.entries(expanded).filter(([item]) => !item.startsWith(key.slice(0, -3))))
+          : expanded),
+        [key]: count,
+      }),
+    }),
+  }),
+  EditedDecision: ({ findingId }) => ({
+    model: modifyFields(model, {
+      selectedFindingId: () => findingId,
+      editingDecisionIds: (ids) => [...new Set([...ids, findingId])],
+      drafts: (drafts) => {
+        const finding =
+          model.screen._tag === "Reviewing" ? findingById({ state: model.screen.state, findingId }) : undefined;
+        const draft = draftFor({ model, findingId });
+        return finding?.acceptance === null || finding?.acceptance === undefined || draft.reason.trim().length > 0
+          ? drafts
+          : { ...drafts, [findingId]: { ...draft, reason: finding.acceptance.reason } };
+      },
+    }),
+  }),
   ToggledIndependentReview: () => ({
     model: modifyFields(model, {
       independentReview: (active) => !active,
@@ -60,8 +89,16 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
   },
   SelectedCodeView: ({ codeView }) =>
     persistChange({ model, change: (current) => modifyFields(current, { codeView: () => codeView }) }),
-  ToggledGuidance: () =>
-    persistChange({ model, change: (current) => modifyFields(current, { guidanceOpen: (open) => !open }) }),
+  ToggledGuidance: () => ({
+    model: modifyFields(model, {
+      guidanceFindingIds: (ids) =>
+        model.selectedFindingId === null
+          ? ids
+          : ids.includes(model.selectedFindingId)
+            ? ids.filter((id) => id !== model.selectedFindingId)
+            : [...ids, model.selectedFindingId],
+    }),
+  }),
   SetGuidanceOpen: ({ open }) =>
     open === model.guidanceOpen
       ? { model }

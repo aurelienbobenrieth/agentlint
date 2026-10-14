@@ -1,15 +1,10 @@
 import { independentHidden } from "./selectors";
-import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html";
+import { type Html, type HtmlBuilder } from "foldkit/html";
 
-import type {
-  EditorApplication,
-  ReviewChange,
-  ReviewFindingPayload,
-  ReviewStatePayload,
-} from "@aurelienbbn/agentlint/contract";
+import type { ReviewFindingPayload, ReviewStatePayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
-import type { CodeView, Model } from "../../shared/model";
-import { type ReviewDerivation, statusFor } from "../../shared/selectors";
+import type { Model } from "../../shared/model";
+import { findingNeighbours, type ReviewDerivation, statusFor } from "../../shared/selectors";
 import { button, iconButton, kbd, tip } from "../../shared/ui/controls";
 import { agentLabel, agentMarkFor, agentMarkIcon } from "../../shared/ui/agents";
 import { appIcon, icon } from "../../shared/ui/icons";
@@ -17,140 +12,7 @@ import { actorKind, actorLabel, lifecycleLabel, relativeTime, safeExternalHref }
 import { decisionForm } from "../decision/view";
 import { directoryPaths, fileTree, type FileTreeNode } from "./files";
 import { highlightedLine, highlightedLines } from "./syntax";
-
-type CodeLine = {
-  readonly number: number | null;
-  readonly kind: "context" | "addition" | "deletion" | "gap";
-  readonly markup: string;
-};
-
-/**
- * The rows of a change, numbered by the new file. A deleted line keeps its old number, shown dimmed.
- */
-const changeLines = ({ change, file }: { readonly change: ReviewChange; readonly file: string }): CodeLine[] =>
-  change.hunks.flatMap((hunk, index) => {
-    const numbers = { old: hunk.oldStart, new: hunk.newStart };
-    const gap: CodeLine[] =
-      index > 0 || hunk.newStart > 1 ? [{ number: null, kind: "gap", markup: `⋯ line ${hunk.newStart}` }] : [];
-    return [
-      ...gap,
-      ...hunk.lines.map((line): CodeLine => {
-        const number = line.kind === "deletion" ? numbers.old++ : numbers.new++;
-        if (line.kind === "context") numbers.old++;
-        return {
-          number,
-          kind: line.kind,
-          markup: highlightedLine({ source: line.content.length === 0 ? " " : line.content, file }),
-        };
-      }),
-    ];
-  });
-
-const renderCodePanel = ({
-  finding,
-  file,
-  source,
-  change,
-  codeView,
-  canOpen,
-  preferred,
-  h,
-}: {
-  readonly finding: ReviewFindingPayload;
-  readonly file: string;
-  readonly source: string;
-  readonly change: ReviewChange | undefined;
-  readonly codeView: CodeView;
-  readonly canOpen: boolean;
-  readonly preferred: EditorApplication | undefined;
-  readonly h: HtmlBuilder<Message>;
-}): Html => {
-  const allLines = highlightedLines({ source, file });
-  const focus = file === finding.file ? finding.code.focus : null;
-  const start = focus === null ? 0 : Math.max(1, focus.startLine);
-  const end = focus === null ? -1 : Math.max(start, focus.endLine);
-  const hasChange = change !== undefined && change.hunks.length > 0;
-  // "focused" reads as the narrow view: the change when there is one, else the lines around the finding.
-  const narrow = codeView === "focused" && (hasChange || focus !== null);
-  const lines: ReadonlyArray<CodeLine> =
-    narrow && hasChange
-      ? changeLines({ change, file })
-      : (() => {
-          const first = narrow ? Math.max(1, start - 3) : 1;
-          const last = narrow ? Math.min(allLines.length, end + 3) : allLines.length;
-          return allLines
-            .slice(first - 1, last)
-            .map((markup, index): CodeLine => ({ number: first + index, kind: "context", markup }));
-        })();
-  const location = focus === null ? file : `${file}:${focus.startLine}`;
-  const label = [icon({ name: "file", h }), h.span([], [location])];
-  return h.section(
-    [h.Class("code")],
-    [
-      h.div(
-        [h.Class("code__bar")],
-        [
-          canOpen && file === finding.file
-            ? h.button(
-                [
-                  h.Type("button"),
-                  h.Class("code__file code__file--link"),
-                  ...(preferred === undefined
-                    ? [h.Popovertarget("editor-menu")]
-                    : [h.OnClick(Message.ClickedOpenFinding({ findingId: finding.id }))]),
-                  h.Title(preferred === undefined ? "Open in…" : `Open in ${preferred.label}`),
-                ],
-                [...label, icon({ name: "external", h })],
-              )
-            : h.span([h.Class("code__file")], label),
-          ...(change === undefined
-            ? []
-            : [h.span([h.Class(`code__status code__status--${change.status}`)], [change.status])]),
-          h.span([h.Class("code__spacer")], []),
-          ...(hasChange || focus !== null
-            ? [
-                h.button(
-                  [
-                    h.Type("button"),
-                    h.Class("code__toggle"),
-                    h.OnClick(Message.SelectedCodeView({ codeView: narrow ? "full" : "focused" })),
-                  ],
-                  [narrow ? `Full file · ${allLines.length} lines` : hasChange ? "Changes only" : "Focus"],
-                ),
-              ]
-            : [h.span([h.Class("code__hint")], [`Whole file · ${allLines.length} lines`])]),
-        ],
-      ),
-      h.keyed("pre")(
-        `${finding.id}:${file}`,
-        [h.Class("code__lines")],
-        lines.map((line) => {
-          const focused =
-            line.kind !== "deletion" && line.number !== null && line.number >= start && line.number <= end;
-          return line.kind === "gap"
-            ? h.code(
-                [h.Class("line line--gap")],
-                [h.span([h.Class("line__n")], []), h.keyed("span")("gap", [h.Class("line__c")], [line.markup])],
-              )
-            : h.code(
-                [h.Class(`line line--${line.kind}${focused ? " line--focus" : ""}`)],
-                [
-                  h.span([h.Class("line__n")], [line.number === null ? "" : String(line.number)]),
-                  // Text children and InnerHTML need distinct nodes: writing InnerHTML removes tracked children.
-                  h.keyed("span")("source", [h.Class("line__c"), h.InnerHTML(line.markup)], []),
-                ],
-              );
-        }),
-      ),
-    ],
-  );
-};
-
-/**
- * One slot per finding: the panel only re-renders when that finding, the viewed file, the code view, or the editor
- * changes.
- */
-const codePanel = createKeyedLazy();
+import { fileCode } from "./code-view";
 
 const fileRows = ({
   nodes,
@@ -454,24 +316,6 @@ const proposalRow = ({
   );
 };
 
-/**
- * One card a reviewer reads before the code: what to check, then what the agent says, each under a one-line heading.
- */
-const brief = ({
-  finding,
-  state,
-  hidden,
-  h,
-}: {
-  readonly finding: ReviewFindingPayload;
-  readonly state: ReviewStatePayload;
-  readonly hidden: boolean;
-  readonly h: HtmlBuilder<Message>;
-}): Html => {
-  const proposal = hidden ? null : proposalRow({ finding, state, h });
-  return h.section([h.Class("brief")], [criteriaRow({ finding, state, h }), ...(proposal === null ? [] : [proposal])]);
-};
-
 const acceptanceCard = ({
   finding,
   state,
@@ -542,19 +386,23 @@ const guidance = ({
 }): Html => {
   // The checklist, or the standard when there is none, already leads the finding as "Accept if".
   const { standard, checks, examples, references } = finding.guidance;
-  if (checks.length === 0 && examples.length === 0 && references.length === 0) return h.span([], []);
   return h.details(
     [
       h.Class("guidance"),
-      h.Open(model.guidanceOpen),
-      h.OnToggle((isOpen) => Message.SetGuidanceOpen({ open: isOpen })),
+      h.Open(model.guidanceFindingIds.includes(finding.id)),
+      h.OnToggle((isOpen) => Message.SetFindingGuidance({ findingId: finding.id, open: isOpen })),
     ],
     [
       h.summary(
-        [h.Class("guidance__summary")],
+        [
+          h.Class("guidance__summary"),
+          h.OnClick(
+            Message.SetFindingGuidance({ findingId: finding.id, open: !model.guidanceFindingIds.includes(finding.id) }),
+          ),
+        ],
         [
           h.span([h.Class("guidance__chevron")], [icon({ name: "chevron", h })]),
-          h.span([], ["Rule guidance"]),
+          h.span([], ["Details"]),
           ...kbd({ keys: ["G"], h }),
           h.code([], [finding.ruleId]),
         ],
@@ -562,6 +410,7 @@ const guidance = ({
       h.div(
         [h.Class("guidance__body")],
         [
+          ...(model.screen._tag !== "Reviewing" ? [] : [criteriaRow({ finding, state: model.screen.state, h })]),
           ...(checks.length === 0 ? [] : [h.p([h.Class("guidance__standard")], [standard])]),
           ...(examples.length === 0
             ? []
@@ -660,14 +509,16 @@ const detailBar = ({
   readonly derived: ReviewDerivation;
   readonly h: HtmlBuilder<Message>;
 }): Html => {
-  const previous = derived.selectedIndex > 0 ? derived.visible[derived.selectedIndex - 1] : undefined;
-  const next = derived.visible[derived.selectedIndex + 1];
+  const { previous, next } = findingNeighbours(derived);
   const canOpen = finding.editor !== null && state.applications.length > 0;
   const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
   return h.div(
     [h.Class("detail__bar")],
     [
-      h.span([h.Class("detail__position")], [`${derived.selectedIndex + 1} / ${derived.visible.length}`]),
+      h.span(
+        [h.Class("detail__position")],
+        [derived.selectedIndex < 0 ? "Decision saved" : `${derived.selectedIndex + 1} / ${derived.visible.length}`],
+      ),
       h.div(
         [h.Class("detail__nav")],
         [
@@ -778,6 +629,81 @@ const detailBar = ({
   );
 };
 
+const inlineFinding = ({
+  finding,
+  state,
+  model,
+  derived,
+  h,
+}: {
+  readonly finding: ReviewFindingPayload;
+  readonly state: ReviewStatePayload;
+  readonly model: Model;
+  readonly derived: ReviewDerivation;
+  readonly h: HtmlBuilder<Message>;
+}): Html => {
+  const status = statusFor({ derived, finding });
+  const hidden = independentHidden({ model, findingId: finding.id });
+  const closed =
+    state.mode === "review" && !hidden && status !== "unresolved" && !model.editingDecisionIds.includes(finding.id);
+  const proposal = hidden ? null : proposalRow({ finding, state, h });
+  const acceptance = hidden ? null : acceptanceCard({ finding, state, h });
+  return h.keyed("section")(
+    finding.id,
+    [
+      h.Id(`finding-${finding.id}`),
+      h.OnFocusEnter(Message.FocusedFinding({ findingId: finding.id })),
+      h.OnClick(Message.FocusedFinding({ findingId: finding.id })),
+      h.Class(`inline-finding${derived.selected?.id === finding.id ? " inline-finding--selected" : ""}`),
+      h.AriaLabel(`${finding.ruleTitle} at line ${finding.line}`),
+    ],
+    [
+      h.div(
+        [h.Class("inline-finding__head")],
+        [
+          h.h2([h.Class("inline-finding__title"), h.Tabindex(-1)], [finding.ruleTitle]),
+          h.span([h.Class("badge")], [lifecycleLabel(finding.lifecycle)]),
+          ...(finding.authority === "human"
+            ? [h.span([h.Class("badge badge--human")], [icon({ name: "user", h }), "Human decision"])]
+            : []),
+          ...(closed
+            ? [
+                h.span(
+                  [h.Class(`decision__status decision__status--${status}`)],
+                  [
+                    icon({ name: status === "accepted" ? "check" : "x", h }),
+                    status === "accepted" ? "Accepted" : "Changes requested",
+                  ],
+                ),
+                button({
+                  label: "Edit decision",
+                  message: Message.EditedDecision({ findingId: finding.id }),
+                  variant: "secondary",
+                  h,
+                  options: { size: "sm" },
+                }),
+              ]
+            : []),
+        ],
+      ),
+      ...(closed
+        ? []
+        : [
+            ...(proposal === null ? [h.p([h.Class("inline-finding__message")], [finding.message])] : [proposal]),
+            decisionForm({ state, finding, model, derived, h }),
+            guidance({ finding, model, h }),
+            ...(acceptance === null ? [] : [acceptance]),
+            ...(hidden || finding.lineageReason === null
+              ? []
+              : [lineageCard({ reason: finding.lineageReason, invalidationReasons: finding.invalidationReasons, h })]),
+            ...(model.independentReview && !hidden
+              ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
+              : []),
+          ]),
+    ],
+  );
+};
+
 export const detail = ({
   state,
   model,
@@ -790,16 +716,12 @@ export const detail = ({
   readonly h: HtmlBuilder<Message>;
 }): Html => {
   const finding = derived.selected;
-  if (finding === undefined) {
-    return h.main([h.Class("detail detail--empty")], [h.p([], ["Select a finding."])]);
-  }
-  const status = statusFor({ derived, finding });
-  const canOpen = finding.editor !== null && state.applications.length > 0;
-  const preferred = state.applications.find(({ id }) => id === model.preferredApplication);
-  const hidden = independentHidden({ model, findingId: finding.id });
+  if (finding === undefined) return h.main([h.Class("detail detail--empty")], [h.p([], ["Select a finding."])]);
   const viewed = viewedFileOf({ model, finding });
-  const acceptance =
-    !hidden && (status === "accepted" || finding.acceptance !== null) ? acceptanceCard({ finding, state, h }) : null;
+  const ids = new Set([...derived.visible.map(({ id }) => id), ...model.retainedFindingIds]);
+  const findings = state.findings
+    .filter((item) => item.file === viewed && ids.has(item.id))
+    .toSorted((a, b) => a.line - b.line || a.column - b.column);
   return h.main(
     [h.Class("detail")],
     [
@@ -807,77 +729,16 @@ export const detail = ({
       h.div(
         [h.Class("detail__body")],
         [
-          h.div(
-            [h.Class("detail__content")],
-            [
-              h.header(
-                [h.Class("detail__head")],
-                [
-                  h.div(
-                    [h.Class("detail__badges")],
-                    [
-                      ...(finding.authority === "human"
-                        ? [h.span([h.Class("badge badge--human")], [icon({ name: "user", h }), "Human decision"])]
-                        : []),
-                      h.span([h.Class("badge")], [lifecycleLabel(finding.lifecycle)]),
-                      ...(status === "changes_requested"
-                        ? [h.span([h.Class("badge badge--danger")], ["Changes requested"])]
-                        : []),
-                    ],
-                  ),
-                  // Keyed and focusable: keyboard navigation focuses the heading, and a fresh element per finding
-                  // makes a screen reader announce it even when two findings share a rule title.
-                  h.keyed("h1")(finding.id, [h.Tabindex(-1)], [finding.ruleTitle]),
-                  h.p([h.Class("detail__lead")], [finding.message]),
-                  brief({ finding, state, hidden, h }),
-                ],
-              ),
-              codePanel(
-                finding.id,
-                (
-                  panelFinding: ReviewFindingPayload,
-                  file: string,
-                  source: string,
-                  change: ReviewChange | undefined,
-                  codeView: CodeView,
-                  panelCanOpen: boolean,
-                  panelPreferred: EditorApplication | undefined,
-                  builder: HtmlBuilder<Message>,
-                ) =>
-                  renderCodePanel({
-                    finding: panelFinding,
-                    file,
-                    source,
-                    change,
-                    codeView,
-                    canOpen: panelCanOpen,
-                    preferred: panelPreferred,
-                    h: builder,
-                  }),
-                [
-                  finding,
-                  viewed,
-                  state.sources[viewed] ?? "",
-                  state.changes[viewed],
-                  model.codeView,
-                  canOpen,
-                  preferred,
-                  h,
-                ],
-              ),
-              ...(acceptance === null ? [] : [acceptance]),
-              ...(hidden || finding.lineageReason === null
-                ? []
-                : [
-                    lineageCard({ reason: finding.lineageReason, invalidationReasons: finding.invalidationReasons, h }),
-                  ]),
-              ...(model.independentReview && !hidden
-                ? [h.p([h.Class("card__text")], ["Independent assessment: ", model.independentNotes[finding.id] ?? ""])]
-                : []),
-              decisionForm({ state, finding, model, derived, h }),
-              guidance({ finding, model, h }),
-            ],
-          ),
+          fileCode({
+            file: viewed,
+            source: state.sources[viewed] ?? "",
+            change: state.changes[viewed],
+            findings,
+            model,
+            card: (item) => inlineFinding({ finding: item, state, model, derived, h }),
+            h,
+          }),
+          ...(viewed === finding.file ? [] : [inlineFinding({ finding, state, model, derived, h })]),
         ],
       ),
     ],

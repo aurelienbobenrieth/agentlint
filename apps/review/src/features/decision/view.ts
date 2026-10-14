@@ -10,7 +10,7 @@ import { icon } from "../../shared/ui/icons";
 import { statusLabel } from "../../shared/ui/labels";
 
 /**
- * Only the selected finding renders a decision form, so keyboard focus can target `.decision textarea`.
+ * Each inline card owns its draft and form. Keyboard focus follows the selected card.
  */
 export const decisionForm = ({
   state,
@@ -68,6 +68,7 @@ export const decisionForm = ({
           variant: "secondary",
           h,
           options: {
+            size: "sm",
             disabled: !model.independentNotes[finding.id]?.trim(),
           },
         }),
@@ -141,6 +142,7 @@ export const decisionForm = ({
               variant: "primary",
               h,
               options: {
+                size: "sm",
                 disabled:
                   busy ||
                   draft.calibration === "unreviewed" ||
@@ -168,6 +170,7 @@ export const decisionForm = ({
               variant: "danger",
               h,
               options: {
+                size: "sm",
                 disabled: busy,
               },
             }),
@@ -186,16 +189,22 @@ export const decisionForm = ({
         ? "Accept"
         : "Accept proposal";
   const changesLabel = detached && draft.disposition === "request_changes" ? "Update request" : "Request changes";
+  const reason = reasonInput({
+    placeholder:
+      finding.proposal === null
+        ? "Why is this acceptable? (required to accept)"
+        : "Accepting records the proposal unless you enter a reason",
+    label: "Reason or requested change",
+  });
   return h.section(
     [h.Class("decision")],
     [
-      reasonInput({
-        placeholder:
-          finding.proposal === null
-            ? "Why is this acceptable? (required to accept)"
-            : "Optional note — accepting records the proposal as the reason",
-        label: "Reason or requested change",
-      }),
+      finding.proposal === null
+        ? reason
+        : h.details(
+            [h.Class("decision__note"), ...(draft.reason.trim().length > 0 ? [h.Open(true)] : [])],
+            [h.summary([], ["Add a note or change the reason"]), reason],
+          ),
       h.div(
         [h.Class("decision__actions")],
         [
@@ -208,6 +217,7 @@ export const decisionForm = ({
               variant: "primary",
               h,
               options: {
+                size: "sm",
                 disabled: accepting || empty || model.finishing,
               },
             }),
@@ -222,6 +232,7 @@ export const decisionForm = ({
               variant: "danger",
               h,
               options: {
+                size: "sm",
                 disabled: busy,
               },
             }),

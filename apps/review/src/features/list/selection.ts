@@ -1,7 +1,7 @@
 import { modifyFields } from "foldkit/struct";
 
 import type { Model } from "../../shared/model";
-import { deriveReview } from "../../shared/selectors";
+import { deriveReview, findingNeighbours } from "../../shared/selectors";
 import type { UpdateReturn } from "../../shared/update";
 import { SettleSelection } from "./command";
 
@@ -16,6 +16,15 @@ export const selectFinding = ({
   readonly findingId: string | null;
 }): Model =>
   modifyFields(model, {
+    retainedFindingIds: (ids) => {
+      if (model.screen._tag !== "Reviewing") return [];
+      const findings = model.screen.state.findings;
+      return findings.find(({ id }) => id === model.selectedFindingId)?.file ===
+        findings.find(({ id }) => id === findingId)?.file
+        ? ids
+        : [];
+    },
+    viewedFile: () => null,
     selectedFindingId: () => findingId,
     selectionSettled: () => true,
     selectionVersion: (version) => version + 1,
@@ -35,14 +44,24 @@ export const reconcileSelection = ({
 }): UpdateReturn => {
   if (after.screen._tag !== "Reviewing") return { model: after };
   const listed = deriveReview({ state: after.screen.state, model: after }).visible;
-  if (listed.some(({ id }) => id === after.selectedFindingId)) return { model: after };
+  if (
+    listed.some(({ id }) => id === after.selectedFindingId) ||
+    (after.retainedFindingIds.includes(after.selectedFindingId ?? "") &&
+      after.screen.state.findings.some(({ id }) => id === after.selectedFindingId))
+  )
+    return { model: after };
   const remaining = new Set(listed.map(({ id }) => id));
-  const previous =
-    before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }).visible : [];
+  const previousReview =
+    before.screen._tag === "Reviewing" ? deriveReview({ state: before.screen.state, model: before }) : undefined;
+  const previous = previousReview?.visible ?? [];
   const index = previous.findIndex(({ id }) => id === before.selectedFindingId);
+  const retainedNeighbours =
+    previousReview !== undefined && before.retainedFindingIds.includes(before.selectedFindingId ?? "")
+      ? findingNeighbours({ ...previousReview, visible: listed, selectedIndex: -1 })
+      : undefined;
   const neighbour =
     index < 0
-      ? undefined
+      ? (retainedNeighbours?.next ?? retainedNeighbours?.previous)
       : (previous.slice(index + 1).find(({ id }) => remaining.has(id)) ??
         previous.slice(0, index).findLast(({ id }) => remaining.has(id)));
   const next = neighbour?.id ?? listed[0]?.id ?? null;
