@@ -30,6 +30,7 @@ stateDiagram-v2
 - Every user and server event is a discriminated message. One update function handles all transitions. Side effects are named FoldKit commands.
 - Reason, calibration label, and note drafts belong to one finding. A detached decision stays a draft disposition until finish.
 - `mode` and `transport` come from the payload. Calibration mode never creates acceptances. Attached review posts to `/api/action` and refetches `/api/state`. Detached review keeps decisions in the browser and builds summary, agent instructions, and acceptance JSONL at finish.
+- Attached acceptances advance the queue immediately. Immutable requests validate in submission order in the background; a rejection restores the finding. Pending decisions are not persisted or treated as an open gate, and finish waits for confirmation.
 
 ## Reviewer features
 
@@ -38,7 +39,7 @@ Queue and Decisions views · filter by status, authority, lifecycle, rule, text 
 ## Drafts survive a reload
 
 - Drafts, filters, and layout save to `localStorage` under a key derived from the payload: at once on discrete actions, after a pause while typing.
-- The page warns on unload only while a detached review holds unexported decisions. Attached decisions are already on the server.
+- The page warns on unload while attached acceptances await confirmation or a detached review holds unexported decisions.
 - A saved state that fails to decode (such as another schema version) moves to `<key>:bak`, so the next save cannot overwrite unexported decisions.
 
 ## One wire contract, decoded at the edge
@@ -87,6 +88,8 @@ packages/agentlint/src/features/review/contract.ts    Effect Schemas, imports on
 
 <details>
 <summary>Revision history</summary>
+
+- 2026-10-14: Added optimistic attached acceptances with serialized background validation, rollback on rejection, and an unload warning until confirmation.
 
 - 2026-08-10: Selected FoldKit for the complete review SPA rewrite.
 - 2026-08-28: Condensed and aligned with 0.2. The SPA imports the shared contract subpath.

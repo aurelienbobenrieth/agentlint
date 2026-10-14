@@ -164,6 +164,10 @@ export const Model = S.Struct({
   selectionVersion: S.Number,
   drafts: S.Record(S.String, Draft),
   busyFindingId: S.NullOr(S.String),
+  /**
+   * Attached acceptances awaiting server confirmation, in submission order. Never persisted.
+   */
+  pendingAcceptances: S.Array(S.Struct({ findingId: S.String, reason: S.String })),
   finishing: S.Boolean,
   /**
    * A decision was recorded but the follow-up state fetch failed; the screen may lag the server.

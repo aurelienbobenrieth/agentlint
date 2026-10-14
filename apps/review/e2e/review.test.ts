@@ -63,6 +63,93 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({ json: state }));
 });
 
+test("accepts an attached finding without reloading the page", async ({ page }) => {
+  let accepted = false;
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        transport: "attached",
+        detached: null,
+        findings: state.findings.map((finding) => ({
+          ...finding,
+          status: accepted ? "accepted" : "unresolved",
+          acceptance: accepted
+            ? {
+                reason: "The tenant has a verified finite bound.",
+                actor: "human:local-review",
+                authority: "human",
+                at: "2026-10-14T12:00:00.000Z",
+              }
+            : null,
+        })),
+      },
+    }),
+  );
+  await page.route("**/api/action", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      type: "accept",
+      findingId: "finding-1",
+      reason: "The tenant has a verified finite bound.",
+    });
+    accepted = true;
+    await route.fulfill({ json: { ok: true, message: "Accepted the query." } });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("textbox", { name: "Reason or requested change" })
+    .fill("The tenant has a verified finite bound.");
+  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saving…", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Accepted the query.", { exact: true })).toBeVisible();
+});
+
+test("keeps a pending card in place while another card is actionable and restores a rejection", async ({ page }) => {
+  let release!: () => void;
+  const response = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        transport: "attached",
+        detached: null,
+        findings: [
+          state.findings[0],
+          { ...state.findings[0], id: "finding-2", line: 5, message: "Second query to review." },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/action", async (route) => {
+    await response;
+    await route.fulfill({ status: 409, json: { ok: false, message: "The finding changed. Refresh the review." } });
+  });
+  await page.goto("/");
+  const first = page.locator("#finding-finding-1");
+  const second = page.locator("#finding-finding-2");
+  await first.getByRole("textbox", { name: "Reason or requested change" }).fill("A verified finite bound.");
+  const posted = page.waitForRequest("**/api/action");
+  await first.getByRole("button", { name: "Accept", exact: true }).click();
+  await posted;
+  try {
+    await expect(page.getByRole("main").getByText("Second query to review.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Saving…", exact: true })).toHaveCount(0);
+    await expect(first.getByText("Accepted", { exact: true })).toBeVisible();
+    await second.getByRole("textbox", { name: "Reason or requested change" }).fill("Another verified bound.");
+    await expect(second.getByRole("button", { name: "Accept", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Finish", exact: true })).toBeDisabled();
+  } finally {
+    release();
+  }
+  await expect(
+    page.getByText("Decision rejected: The finding changed. Refresh the review.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Review this unbounded query/ })).toBeVisible();
+  await expect(first.getByRole("button", { name: "Accept", exact: true })).toBeEnabled();
+});
+
 test("switches repeatedly between changed lines and the full file", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

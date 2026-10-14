@@ -27,6 +27,9 @@ export const decisionForm = ({
 }): Html => {
   const draft = draftFor({ model, findingId: finding.id });
   const busy = model.busyFindingId !== null;
+  const accepting =
+    model.pendingAcceptances.some(({ findingId }) => findingId === finding.id) ||
+    (busy && model.pendingAcceptances.length === 0);
   const status = statusFor({ derived, finding });
   const reasonId = `reason-${finding.id}`;
   const empty = draft.reason.trim().length === 0 && finding.proposal === null;
@@ -178,7 +181,7 @@ export const decisionForm = ({
   }
 
   const detached = state.transport === "detached";
-  const acceptLabel = busy
+  const acceptLabel = accepting
     ? "Saving…"
     : detached && draft.disposition === "accept"
       ? "Update acceptance"
@@ -215,7 +218,7 @@ export const decisionForm = ({
               h,
               options: {
                 size: "sm",
-                disabled: busy || empty,
+                disabled: accepting || empty || model.finishing,
               },
             }),
             h,

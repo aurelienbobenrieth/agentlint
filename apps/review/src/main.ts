@@ -30,6 +30,7 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     selectionVersion: 0,
     drafts: {},
     busyFindingId: null,
+    pendingAcceptances: [],
     finishing: false,
     refreshFailed: false,
     pendingExports: [],
