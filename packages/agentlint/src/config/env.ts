@@ -15,6 +15,7 @@
 
 import { Context, Layer } from "effect";
 import { userInfo } from "node:os";
+import { resolveActor, type ActorSource } from "../domain/actor.js";
 
 /**
  * Read-only snapshot of the runtime environment.
@@ -37,6 +38,10 @@ export class Env extends Context.Service<
      * Actor inferred for acceptance records.
      */
     readonly actor: string;
+    /**
+     * How `actor` was chosen. Absent means declared.
+     */
+    readonly actorSource?: ActorSource | undefined;
     /**
      * `AGENTLINT_BASE`: the change base for one run or one shell, over the config's. Blank means unset.
      */
@@ -82,19 +87,13 @@ export class Env extends Context.Service<
         return "unknown";
       }
     };
-    // A blank override is treated as unset: actors are non-empty in every persisted record.
-    const actor =
-      rawEnv["AGENTLINT_ACTOR"]?.trim() ||
-      (rawEnv["CODEX_SANDBOX"] || rawEnv["CODEX_ENV_PWD"]
-        ? "agent:codex"
-        : rawEnv["CLAUDECODE"] || rawEnv["CLAUDE_CODE"]
-          ? "agent:claude"
-          : `human:${username()}`);
+    const { actor, source: actorSource } = resolveActor({ variables: rawEnv, username });
 
     return Env.of({
       cwd: process.cwd(),
       argv: process.argv.slice(2),
       actor,
+      actorSource,
       base: rawEnv["AGENTLINT_BASE"]?.trim() || undefined,
       variables: { ...rawEnv },
       platform: process.platform,

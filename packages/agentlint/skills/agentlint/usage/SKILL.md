@@ -55,4 +55,6 @@ Related groups organize navigation only. Independent review hides prior justific
 
 The local and CI gates are equal. `--all` changes state scan completeness, not strictness. The review UI is a human connector; an agent should not invoke `approve` or import a fabricated detached acceptance.
 
+`accept` and `propose` end with the recorded actor (`... as agent:codex?session=...`). If it starts with `human:`, agentlint did not detect your runtime and recorded your work as a person's. Tell the user, and suggest declaring you in the agent's environment config: `AGENTLINT_ACTOR=agent:<name>`, plus `?session=<thread id>` when your runtime exposes one.
+
 Acceptance records attribute a declared decision and its reason to exact evidence. They do not authenticate local identity or prove the judgment correct. When a prior decision becomes incompatible, inspect the reported compatibility changes and the actual supporting code. An acceptance recorded under an older fingerprint version requires new review.

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, Layer } from "effect";
 import { Env } from "../config/env.js";
+import type { ActorSource } from "../domain/actor.js";
 import { normalizeConfig } from "../domain/config.js";
 import { defineRule, type AgentlintRule, type RuleAuthority } from "../domain/rule/model.js";
 import { AcceptanceStore } from "../shared/infrastructure/acceptance-store.js";
@@ -35,11 +36,15 @@ export const featureTestLayer = ({
   cwd,
   rules,
   actor = "agent:test",
+  actorSource,
+  isTTY = false,
   git = {},
 }: {
   readonly cwd: string;
   readonly rules: ReadonlyArray<AgentlintRule>;
   readonly actor?: string;
+  readonly actorSource?: ActorSource;
+  readonly isTTY?: boolean;
   readonly git?: Partial<Git["Service"]>;
 }) =>
   Layer.mergeAll(
@@ -66,7 +71,7 @@ export const featureTestLayer = ({
         NodeServices.layer,
         Layer.succeed(
           Env,
-          Env.of({ cwd, argv: [], actor, platform: "test", noColor: true, isTTY: false, setExitCode: () => {} }),
+          Env.of({ cwd, argv: [], actor, actorSource, platform: "test", noColor: true, isTTY, setExitCode: () => {} }),
         ),
       ),
     ),
