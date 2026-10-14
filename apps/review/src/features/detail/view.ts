@@ -130,13 +130,14 @@ const renderCodePanel = ({
           return line.kind === "gap"
             ? h.code(
                 [h.Class("line line--gap")],
-                [h.span([h.Class("line__n")], []), h.span([h.Class("line__c")], [line.markup])],
+                [h.span([h.Class("line__n")], []), h.keyed("span")("gap", [h.Class("line__c")], [line.markup])],
               )
             : h.code(
                 [h.Class(`line line--${line.kind}${focused ? " line--focus" : ""}`)],
                 [
                   h.span([h.Class("line__n")], [line.number === null ? "" : String(line.number)]),
-                  h.span([h.Class("line__c"), h.InnerHTML(line.markup)], []),
+                  // Text children and InnerHTML need distinct nodes: writing InnerHTML removes tracked children.
+                  h.keyed("span")("source", [h.Class("line__c"), h.InnerHTML(line.markup)], []),
                 ],
               );
         }),
