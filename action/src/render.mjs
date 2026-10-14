@@ -275,31 +275,41 @@ export function renderSummary(input) {
     lines.push("");
   };
   if (open.length > 0) {
-    lines.push("| Rule | Location | Authority | Message | Record the decision |", "| --- | --- | --- | --- | --- |");
+    lines.push("| Finding | Location | Needs |", "| --- | --- | --- |");
     pushWithinBudget({
       items: open,
       render: (finding) => {
         const url = `${server}/${input.repository}/blob/${input.headSha}/${urlPath(finding.file)}#L${finding.line}`;
         const location = `[${cell({ text: finding.file, limit: 300 })}:${finding.line}](${url})`;
-        return `| ${cell({ text: finding.ruleTitle, limit: 200 })} | ${location} | ${finding.authority} | ${cell({ text: finding.message, limit: 300 })} | \`${acceptCommand(finding)}\` |`;
+        const outside = input.inlineDigests.has(finding.digest) ? "" : " (outside diff)";
+        return `| ${cell({ text: finding.ruleTitle, limit: 200 })} | ${location}${outside} | ${finding.authority === "human" ? "Your review" : "Agent acceptance"} |`;
       },
       noun: "findings",
     });
   }
-  const outside = open.filter((finding) => !input.inlineDigests.has(finding.digest));
-  if (outside.length > 0) {
-    lines.push("Not inside this pull request's diff, so only listed here:", "");
-    pushWithinBudget({
-      items: outside,
-      render: (finding) =>
-        `- ${codeSpan(`${clip({ value: finding.file, limit: 300 })}:${finding.line}`)} ${cell({ text: finding.ruleTitle, limit: 200 })} (${finding.authority})`,
-      noun: "findings outside the diff",
-    });
+  if (open.length === 0) {
+    lines.push(input.gate === "open" ? "No decisions remaining." : "Scan failed. See the job log.");
+    return lines.join("\n");
   }
+  if (counts.human > 0) {
+    lines.push(
+      "Reply `/agentlint approve <reason>` in a finding's thread to accept. To request changes, reply with what needs fixing; the finding stays unresolved.",
+      "",
+    );
+  }
+  lines.push("<details><summary>Commands and local review</summary>", "");
+  pushWithinBudget({
+    items: open,
+    render: (finding) =>
+      `- ${codeSpan(`${clip({ value: finding.file, limit: 300 })}:${finding.line}`)}: \`${acceptCommand(finding)}\``,
+    noun: "commands",
+  });
   lines.push(
-    'Human findings: comment `/agentlint approve <digest> --reason "..."` here, or reply `/agentlint approve <reason>` on the inline comment. ' +
-      'Agent findings: run `agentlint accept <digest> --reason "..."` locally and push. ' +
-      `Review everything locally with \`agentlint pr ${input.pullNumber}\`.`,
+    "Use `/agentlint approve` here for findings outside the diff. Run `agentlint accept` locally and push for agent findings.",
+    "",
+    `Review locally: \`agentlint pr ${input.pullNumber}\`.`,
+    "",
+    "</details>",
   );
   return lines.join("\n");
 }
@@ -327,15 +337,6 @@ export function renderInlineBody(finding) {
     clip({ value: plain(finding.message), limit: 2_000 }),
     "",
   ];
-  // Every part is clipped, so the body stays under BODY_BUDGET without ever cutting through a fence.
-  lines.push("**Standard**", "", clip({ value: plain(finding.guidance.standard), limit: 6_000 }), "");
-  if (finding.guidance.checks.length > 0) {
-    const checks = finding.guidance.checks.slice(0, INLINE_CHECKS);
-    for (const check of checks) lines.push(`- ${cell({ text: check, limit: 500 })}`);
-    const hidden = finding.guidance.checks.length - checks.length;
-    if (hidden > 0) lines.push(`- … and ${hidden} more checks — ${MORE}.`);
-    lines.push("");
-  }
   if (finding.proposal) {
     lines.push("**Agent proposal**", "", clip({ value: proposalLines(finding.proposal.summary), limit: 4_000 }), "");
     if (finding.proposal.diff) {
@@ -349,9 +350,24 @@ export function renderInlineBody(finding) {
       );
     }
   }
+  // Every part is clipped, so the body stays under BODY_BUDGET without ever cutting through a fence.
+  lines.push(
+    "<details><summary>Standard and checks</summary>",
+    "",
+    clip({ value: plain(finding.guidance.standard), limit: 6_000 }),
+    "",
+  );
+  if (finding.guidance.checks.length > 0) {
+    const checks = finding.guidance.checks.slice(0, INLINE_CHECKS);
+    for (const check of checks) lines.push(`- ${cell({ text: check, limit: 500 })}`);
+    const hidden = finding.guidance.checks.length - checks.length;
+    if (hidden > 0) lines.push(`- … and ${hidden} more checks — ${MORE}.`);
+    lines.push("");
+  }
   if (finding.lineageReason) {
     lines.push(`**Prior judgment (context only):** ${clip({ value: plain(finding.lineageReason), limit: 2_000 })}`, "");
   }
+  lines.push("</details>", "");
   if (finding.authority === "human") {
     lines.push('Reply "/agentlint approve <reason>" to accept.');
   } else {

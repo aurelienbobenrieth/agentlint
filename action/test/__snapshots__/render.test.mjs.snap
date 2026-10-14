@@ -9,13 +9,6 @@ exports[`hostile and oversized content > fences a diff that contains a fence, an
 @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
 \\# Heading
 
-**Standard**
-
-@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
-\\# Heading
-
-- @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading
-
 **Agent proposal**
 
 @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)  
@@ -34,8 +27,17 @@ exports[`hostile and oversized content > fences a diff that contains a fence, an
 
 </details>
 
+<details><summary>Standard and checks</summary>
+
+@​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
+\\# Heading
+
+- @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading
+
 **Prior judgment (context only):** @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example)
 \\# Heading
+
+</details>
 
 Reply "/agentlint approve <reason>" to accept."
 `;
@@ -47,15 +49,21 @@ exports[`hostile and oversized content > keeps finding text inert in the summary
 
 1 unresolved (1 human, 0 agent), 0 accepted. Head \`aaaaaaa\`.
 
-| Rule | Location | Authority | Message | Record the decision |
-| --- | --- | --- | --- | --- |
-| @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading | [src/we\\|rd\\\`(x).ts:3](https://github.com/o/r/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/we%7Crd%60%28x%29.ts#L3) | human | @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading | \`/agentlint approve dd03e1e41c97 --reason "..."\` |
+| Finding | Location | Needs |
+| --- | --- | --- |
+| @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading | [src/we\\|rd\\\`(x).ts:3](https://github.com/o/r/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/we%7Crd%60%28x%29.ts#L3) (outside diff) | Your review |
 
-Not inside this pull request's diff, so only listed here:
+Reply \`/agentlint approve <reason>\` in a finding's thread to accept. To request changes, reply with what needs fixing; the finding stays unresolved.
 
-- \`\` src/we\\|rd\`(x).ts:3 \`\` @​everyone see &lt;img src="https://tracker.example/p.png"&gt; \\| x \\\`code\\\` \\[click\\](https://evil.example) # Heading (human)
+<details><summary>Commands and local review</summary>
 
-Human findings: comment \`/agentlint approve <digest> --reason "..."\` here, or reply \`/agentlint approve <reason>\` on the inline comment. Agent findings: run \`agentlint accept <digest> --reason "..."\` locally and push. Review everything locally with \`agentlint pr 1\`."
+- \`\` src/we\\|rd\`(x).ts:3 \`\`: \`/agentlint approve dd03e1e41c97 --reason "..."\`
+
+Use \`/agentlint approve\` here for findings outside the diff. Run \`agentlint accept\` locally and push for agent findings.
+
+Review locally: \`agentlint pr 1\`.
+
+</details>"
 `;
 
 exports[`render > renders inline bodies with the marker first and the right reply instruction 1`] = `
@@ -65,13 +73,6 @@ exports[`render > renders inline bodies with the marker first and the right repl
 **needs human approval**
 
 Runtime input reaches dynamic code execution.
-
-**Standard**
-
-Code that evaluates strings at runtime names the trust boundary the string crossed.
-
-- Where does the evaluated string come from?
-- Is there an allowlist or a constrained evaluator instead?
 
 **Agent proposal**
 
@@ -92,6 +93,15 @@ Not fixed. This file is vendored from formula-parser@​1.x and the eval is its 
 
 </details>
 
+<details><summary>Standard and checks</summary>
+
+Code that evaluates strings at runtime names the trust boundary the string crossed.
+
+- Where does the evaluated string come from?
+- Is there an allowlist or a constrained evaluator instead?
+
+</details>
+
 Reply "/agentlint approve <reason>" to accept."
 `;
 
@@ -102,15 +112,23 @@ exports[`render > renders the sticky summary with links, commands, and out-of-di
 
 3 unresolved (2 human, 1 agent), 0 accepted. Head \`abcdef1\`.
 
-| Rule | Location | Authority | Message | Record the decision |
-| --- | --- | --- | --- | --- |
-| Dynamic code execution has an explicit trust boundary | [src/vendor/legacy-parser.js:3](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3) | human | Runtime input reaches dynamic code execution. | \`/agentlint approve dd03e1e41c97 --reason "..."\` |
-| Destructive migrations ship with a rollback | [src/migrations/2026-07-drop-legacy-users.ts:4](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/migrations/2026-07-drop-legacy-users.ts#L4) | human | This change drops a table. | \`/agentlint approve 8b1164038383 --reason "..."\` |
-| Payment captures are safe to retry | [src/payments/capture-order.ts:6](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/payments/capture-order.ts#L6) | agent | Payment capture has no explicit idempotency key. | \`agentlint accept 103d435f608a --reason "..."\` |
+| Finding | Location | Needs |
+| --- | --- | --- |
+| Dynamic code execution has an explicit trust boundary | [src/vendor/legacy-parser.js:3](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/vendor/legacy-parser.js#L3) | Your review |
+| Destructive migrations ship with a rollback | [src/migrations/2026-07-drop-legacy-users.ts:4](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/migrations/2026-07-drop-legacy-users.ts#L4) (outside diff) | Your review |
+| Payment captures are safe to retry | [src/payments/capture-order.ts:6](https://github.com/aurelienbobenrieth/agentlint/blob/abcdef1234567890abcdef1234567890abcdef12/src/payments/capture-order.ts#L6) | Agent acceptance |
 
-Not inside this pull request's diff, so only listed here:
+Reply \`/agentlint approve <reason>\` in a finding's thread to accept. To request changes, reply with what needs fixing; the finding stays unresolved.
 
-- \`src/migrations/2026-07-drop-legacy-users.ts:4\` Destructive migrations ship with a rollback (human)
+<details><summary>Commands and local review</summary>
 
-Human findings: comment \`/agentlint approve <digest> --reason "..."\` here, or reply \`/agentlint approve <reason>\` on the inline comment. Agent findings: run \`agentlint accept <digest> --reason "..."\` locally and push. Review everything locally with \`agentlint pr 42\`."
+- \`src/vendor/legacy-parser.js:3\`: \`/agentlint approve dd03e1e41c97 --reason "..."\`
+- \`src/migrations/2026-07-drop-legacy-users.ts:4\`: \`/agentlint approve 8b1164038383 --reason "..."\`
+- \`src/payments/capture-order.ts:6\`: \`agentlint accept 103d435f608a --reason "..."\`
+
+Use \`/agentlint approve\` here for findings outside the diff. Run \`agentlint accept\` locally and push for agent findings.
+
+Review locally: \`agentlint pr 42\`.
+
+</details>"
 `;

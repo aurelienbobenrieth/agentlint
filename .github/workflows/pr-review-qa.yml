@@ -1,0 +1,47 @@
+name: PR review QA (unpublished action)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: pr-review-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    if: >-
+      github.head_ref == 'qa/compact-pr-review'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Attach proposals to the two synthetic findings
+        env:
+          AGENTLINT_ACTOR: agent:qa-demo
+        run: |
+          mkdir -p .agentlint
+          cp examples/pr-review-qa/config.ts .agentlint/config.ts
+          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/formula.js:3 --summary "Not fixed. This is a QA-only fixture, never imported by the application. Suggested decision: accept this synthetic exception with a reason."
+          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/formula.js:7 --summary "Not fixed. This second synthetic finding lets us test partial progress. Request a change in its thread, or accept it with a reason."
+      - name: Publish real review comments with the branch's action
+        uses: ./action # zizmor: ignore[self-repository] disposable branch-local QA
+        with:
+          version: file:packages/agentlint
