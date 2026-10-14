@@ -42,7 +42,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## tree-sitter-typescript 0.20
 
-Compiled into `dist/wasm/tree-sitter-typescript.wasm` by tree-sitter-wasms.
+Compiled into `dist/wasm/tree-sitter-typescript.wasm` and `dist/wasm/tree-sitter-tsx-0.20.wasm` by tree-sitter-wasms.
 
 The MIT License (MIT)
 
@@ -56,7 +56,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## tree-sitter-typescript 0.23.2
 
-Ships `dist/wasm/tree-sitter-tsx.wasm`, copied from its package.
+Ships `dist/wasm/tree-sitter-tsx.wasm` and `dist/wasm/tree-sitter-typescript-0.23.wasm`, copied from its package.
 
 The MIT License (MIT)
 

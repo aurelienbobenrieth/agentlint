@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.0
+
+### Minor Changes
+
+- [#87](https://github.com/aurelienbobenrieth/agentlint/pull/87) [`cc8f79f`](https://github.com/aurelienbobenrieth/agentlint/commit/cc8f79f6236ceb73090b06824efff0f9ab6ce584) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - A detector that reports unusable evidence now fails with a `DetectorContractError` that says what is wrong and where, instead of `Cannot create fingerprint: the value is not canonical JSON data` ([#75](https://github.com/aurelienbobenrieth/agentlint/issues/75)). A change detector without `evidence` fails with `reported invalid evidence: change detectors must report evidence`, and evidence that is not plain JSON names the value and its path, e.g. `only plain objects can be canonicalized: Date at $.createdAt`.
+
+  `DetectorContractError` gains the `invalid_evidence` reason. Code that switches over every reason needs a case for it. Fingerprints are unchanged.
+
+### Patch Changes
+
+- [#89](https://github.com/aurelienbobenrieth/agentlint/pull/89) [`01fa029`](https://github.com/aurelienbobenrieth/agentlint/commit/01fa0293b044f9161a9eb9a299ca95fa1e4144a2) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - A `match.pattern` now requires the operators and keywords it spells out. `$A === $B` matched `a <= b`, `a !== b`, and `a == b`; `let $X = $V` matched `const`; and `typeof $X`, `await $X`, or `!$X` matched every identifier. Punctuation a formatter changes (commas, semicolons, parentheses, quote style) still never matters.
+
+  Rules built on such patterns report fewer findings. A pattern led by a keyword, such as `const $X = $V`, now reports the whole declaration instead of its declarator, so its accepted findings reopen once under a new fingerprint.
+
+## 0.7.2
+
+### Patch Changes
+
+- [#83](https://github.com/aurelienbobenrieth/agentlint/pull/83) [`128a8f0`](https://github.com/aurelienbobenrieth/agentlint/commit/128a8f0559b2cead1a8e98386b576ce3f435cdda) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - A TypeScript or TSX file that its grammar rejects is parsed again with the other bundled build of tree-sitter-typescript, and the check fails only when both reject it. Before, a `.ts` file holding a regex that starts with `<!--` (`/<!--/`) or a `.tsx` file holding a tagged template with an object type argument (`` sql<{ id: string }>`…` ``) failed the whole check with "Parse failed: syntax is incomplete or unsupported by the grammar". Files that parsed before keep their syntax tree, so their fingerprints and acceptances do not change.
+
+## 0.7.1
+
+### Patch Changes
+
+- [#82](https://github.com/aurelienbobenrieth/agentlint/pull/82) [`02673a0`](https://github.com/aurelienbobenrieth/agentlint/commit/02673a0b2bc63c14a6d14b23c9ca73f0508fc41a) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Build the bundled review UI with foldkit 0.166.0. Effect stays on 4.0.0, the release foldkit 0.166.0 requires.
+
 ## 0.7.0
 
 ### Minor Changes

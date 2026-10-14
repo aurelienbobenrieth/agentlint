@@ -1,8 +1,9 @@
 import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import { defineConfig } from "tsdown";
+import { GRAMMAR_SOURCES, packagedGrammarFile } from "./src/shared/infrastructure/grammars.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PackageJson = Schema.Struct({
@@ -37,19 +38,10 @@ export default defineConfig({
         cpSync(treeSitterWasm, resolve(wasmDir, "tree-sitter.wasm"));
       } else throw new Error(`Required parser asset is missing: ${treeSitterWasm}`);
 
-      // Copy language grammars. TSX from tree-sitter-typescript 0.23.2, since the 0.20 build in tree-sitter-wasms rejects
-      // `&` in JSX string attributes; the rest from tree-sitter-wasms, since TypeScript 0.23.2 rejects a tagged template
-      // with an object type argument (see Parser)
-      const grammars = [
-        "tree-sitter-wasms/out/tree-sitter-typescript.wasm",
-        "tree-sitter-typescript/tree-sitter-tsx.wasm",
-        "tree-sitter-wasms/out/tree-sitter-javascript.wasm",
-        "tree-sitter-wasms/out/tree-sitter-json.wasm",
-      ];
-      for (const grammar of grammars) {
-        const src = resolve(__dirname, `node_modules/${grammar}`);
+      for (const [grammar, source] of Object.entries(GRAMMAR_SOURCES)) {
+        const src = resolve(__dirname, "node_modules", source);
         if (existsSync(src)) {
-          cpSync(src, resolve(wasmDir, basename(grammar)));
+          cpSync(src, resolve(wasmDir, packagedGrammarFile(grammar)));
         } else throw new Error(`Required grammar asset is missing: ${src}`);
       }
 

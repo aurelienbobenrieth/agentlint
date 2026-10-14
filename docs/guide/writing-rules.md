@@ -76,6 +76,7 @@ export default defineConfig({ rules: [boundedReads] });
 | `$NAME` / `$_`                     | One node, captured / not captured                                              |
 | `$$$ARGS`                          | Zero or more remaining sibling nodes                                           |
 | `$A === $A`                        | Repeats must capture the same code: matches `x === x`, not `x === y`           |
+| `typeof $X`, `let $X = $V`         | Operators and keywords are code: `$A === $B` never matches `a <= b`            |
 | `where`                            | Searches inside the matched code                                               |
 | `take: $_`                         | Also matches shorthand `{ take }`; never looks inside another property's value |
 | `query` + `@match`                 | Raw tree-sitter query; `@match` names the reported node                        |
@@ -149,16 +150,16 @@ Without `--base <ref>`, agentlint detects an upstream or conventional main branc
 
 Repository-authored imperative detectors run as trusted code. They must report synchronously and keep their findings stable.
 
-| Contract                           | Rule                                                                                                      |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Scan unit (state)                  | Repository scan by default. A detector independent for each file can declare `scan: "file"`.              |
-| Node wrappers                      | Valid only during their file visitor. In `after()`, keep captured plain data, not syntax nodes.           |
-| `context.report({ key })`          | Unique, stable, non-empty                                                                                 |
-| `context.report({ evidence })`     | Optional material JSON. Changing it invalidates acceptance; change detectors own their material evidence. |
-| `context.report({ relatedFiles })` | State: drawn from declared `binding.dependencies`. Change: drawn from the normalized change set.          |
-| Hooks                              | Return synchronously. A returned promise fails the rule.                                                  |
+| Contract                           | Rule                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Scan unit (state)                  | Repository scan by default. A detector independent for each file can declare `scan: "file"`.                    |
+| Node wrappers                      | Valid only during their file visitor. In `after()`, keep captured plain data, not syntax nodes.                 |
+| `context.report({ key })`          | Unique, stable, non-empty                                                                                       |
+| `context.report({ evidence })`     | Material JSON: required for change detectors, optional for state detectors. Changing it invalidates acceptance. |
+| `context.report({ relatedFiles })` | State: drawn from declared `binding.dependencies`. Change: drawn from the normalized change set.                |
+| Hooks                              | Return synchronously. A returned promise fails the rule.                                                        |
 
-Breaking the reporting contract (duplicate or empty key, evidence outside the change set, undeclared related context) or returning a promise from a hook fails the rule with a `DetectorContractError` cause.
+Breaking the reporting contract (duplicate or empty key, evidence outside the change set, missing change evidence or evidence that is not plain JSON, undeclared related context) or returning a promise from a hook fails the rule with a `DetectorContractError` cause.
 
 Related sources travel with review artifacts as collapsible reading context. They aren't material unless the detector also reports them in `evidence`.
 
