@@ -39,8 +39,8 @@ jobs:
         run: |
           mkdir -p .agentlint
           cp examples/pr-review-qa/config.ts .agentlint/config.ts
-          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/formula.js:3 --summary "Not fixed. This is a QA-only fixture, never imported by the application. Suggested decision: accept this synthetic exception with a reason."
-          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/formula.js:7 --summary "Not fixed. This second synthetic finding lets us test partial progress. Request a change in its thread, or accept it with a reason."
+          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/delete-customer.js:3 --summary "Not fixed. This permanently deletes the selected customer's data. Suggested change: archive the account first so a mistaken deletion can be undone."
+          node packages/agentlint/dist/bin.mjs propose examples/pr-review-qa/email-customers.js:3 --summary "Not fixed. This emails every customer. Suggested change: send a preview to the team and require a human to confirm the audience before the full send."
       - name: Publish real review comments with the branch's action
         uses: ./action # zizmor: ignore[self-repository] disposable branch-local QA
         with:
