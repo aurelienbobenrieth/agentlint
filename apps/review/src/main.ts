@@ -10,6 +10,10 @@ import { view } from "./view";
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: {
+    retainedFindingIds: [],
+    editingDecisionIds: [],
+    guidanceFindingIds: [],
+    expandedCode: {},
     screen: Screen.Loading({ progress: null }),
     view: "queue",
     facets: { statuses: [], authorities: [], lifecycles: [], ruleIds: [] },

@@ -290,7 +290,12 @@ const compute = ({ state, model }: { readonly state: ReviewStatePayload; readonl
 const cache: {
   last: { readonly inputs: Inputs; readonly result: Derived } | undefined;
   selection:
-    | { readonly derived: Derived; readonly selectedFindingId: string | null; readonly result: ReviewDerivation }
+    | {
+        readonly derived: Derived;
+        readonly selectedFindingId: string | null;
+        readonly retained: Model["retainedFindingIds"];
+        readonly result: ReviewDerivation;
+      }
     | undefined;
 } = { last: undefined, selection: undefined };
 
@@ -319,13 +324,24 @@ export const deriveReview = ({
     cache.last = { inputs, result: compute({ state, model }) };
   }
   const derived = cache.last.result;
-  if (cache.selection?.derived === derived && cache.selection.selectedFindingId === model.selectedFindingId) {
+  if (
+    cache.selection?.derived === derived &&
+    cache.selection.selectedFindingId === model.selectedFindingId &&
+    cache.selection.retained === model.retainedFindingIds
+  ) {
     return cache.selection.result;
   }
   const selectedIndex = derived.visible.findIndex((finding) => finding.id === model.selectedFindingId);
-  const selected = selectedIndex >= 0 ? derived.visible[selectedIndex] : derived.visible[0];
-  const result = { ...derived, selected, selectedIndex: selected === undefined ? -1 : Math.max(0, selectedIndex) };
-  cache.selection = { derived, selectedFindingId: model.selectedFindingId, result };
+  const retained = model.retainedFindingIds.includes(model.selectedFindingId ?? "")
+    ? state.findings.find(({ id }) => id === model.selectedFindingId)
+    : undefined;
+  const selected = selectedIndex >= 0 ? derived.visible[selectedIndex] : (retained ?? derived.visible[0]);
+  const result = {
+    ...derived,
+    selected,
+    selectedIndex: selected === undefined || retained !== undefined ? selectedIndex : Math.max(0, selectedIndex),
+  };
+  cache.selection = { derived, selectedFindingId: model.selectedFindingId, retained: model.retainedFindingIds, result };
   return result;
 };
 
@@ -336,3 +352,28 @@ export const statusFor = ({
   readonly derived: ReviewDerivation;
   readonly finding: ReviewFindingPayload;
 }): FindingStatus => derived.statusOf.get(finding.id) ?? finding.status;
+
+/**
+ * A retained decision has left the queue; navigate from its location in the file.
+ */
+export const findingNeighbours = ({
+  visible,
+  selected,
+  selectedIndex,
+}: ReviewDerivation): {
+  readonly previous: ReviewFindingPayload | undefined;
+  readonly next: ReviewFindingPayload | undefined;
+} =>
+  selectedIndex >= 0 || selected === undefined
+    ? {
+        previous: visible[selectedIndex - 1],
+        next: visible[selectedIndex + 1],
+      }
+    : {
+        previous: visible.findLast(
+          (finding) => finding.file < selected.file || (finding.file === selected.file && finding.line < selected.line),
+        ),
+        next: visible.find(
+          (finding) => finding.file > selected.file || (finding.file === selected.file && finding.line > selected.line),
+        ),
+      };

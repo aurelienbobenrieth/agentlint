@@ -4,6 +4,9 @@ import { EditorApplicationId } from "@aurelienbbn/agentlint/contract";
 import { CodeView } from "../../shared/model";
 
 export const fields = {
+  ExpandedCode: { key: S.String, count: S.Number },
+  EditedDecision: { findingId: S.String },
+  SetFindingGuidance: { findingId: S.String, open: S.Boolean },
   SelectedCodeView: { codeView: CodeView },
   SelectedFile: { findingId: S.String, file: S.String },
   ToggledFileDirectory: { path: S.String },

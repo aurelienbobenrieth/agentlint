@@ -14,6 +14,8 @@ export const FocusElement = Command.define("FocusElement", {
     Effect.sync(() => {
       requestAnimationFrame(() => {
         const element = document.querySelector<HTMLElement>(selector);
+        const disclosure = element?.closest("details");
+        if (disclosure instanceof HTMLDetailsElement) disclosure.open = true;
         element?.focus();
         if (element instanceof HTMLTextAreaElement)
           element.setSelectionRange(element.value.length, element.value.length);

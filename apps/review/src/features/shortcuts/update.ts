@@ -3,11 +3,12 @@ import { modifyFields } from "foldkit/struct";
 import type { ReviewFindingPayload } from "@aurelienbbn/agentlint/contract";
 import { Message } from "../../message";
 import type { Model, Shortcut } from "../../shared/model";
-import { deriveReview, draftFor } from "../../shared/selectors";
+import { deriveReview, draftFor, findingNeighbours } from "../../shared/selectors";
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { effectiveReason } from "../decision/selectors";
 import { submit } from "../decision/update";
 import { selectFinding } from "../list/selection";
+import { RevealFinding } from "../list/command";
 import { persistChange } from "../session/update";
 import { dismissToast } from "../toasts/update";
 import { BlurActive, FocusElement, RevealSelectedRow, ShowHelp, TogglePopover } from "./command";
@@ -15,7 +16,6 @@ import type { fields } from "./messages";
 
 type Update = (input: { readonly model: Model; readonly message: Message }) => UpdateReturn;
 
-const DETAIL_HEADING = ".detail__head h1";
 const HELP_TRIGGER = "#help-trigger";
 
 /**
@@ -38,7 +38,9 @@ const pressedShortcut = ({
   if (action === "help") return update({ model, message: Message.ToggledHelp() });
   if (model.screen._tag !== "Reviewing" || model.helpOpen) return { model };
   const state = model.screen.state;
-  const { visible, selected, selectedIndex } = deriveReview({ state, model });
+  const derived = deriveReview({ state, model });
+  const { visible, selected } = derived;
+  const neighbours = findingNeighbours(derived);
   const select = (finding: ReviewFindingPayload | undefined): UpdateReturn =>
     finding === undefined
       ? { model }
@@ -48,25 +50,31 @@ const pressedShortcut = ({
             model,
             change: (current) => selectFinding({ model: current, findingId: finding.id }),
           }),
-          commands: [RevealSelectedRow(), FocusElement({ selector: DETAIL_HEADING })],
+          commands: [RevealSelectedRow(), RevealFinding({ findingId: finding.id })],
         });
   const decide = (kind: "accept" | "request_changes"): UpdateReturn => {
     if (selected === undefined || state.mode === "calibration") return { model };
     // A decision key acts only on the finding the reviewer selected, never on the first-row fallback,
     // and not while the selection has just moved on its own: a double tap must not decide the next one.
     if (selected.id !== model.selectedFindingId || !model.selectionSettled) return { model };
+    if (
+      (deriveReview({ state, model }).statusOf.get(selected.id) ?? selected.status) !== "unresolved" &&
+      !model.editingDecisionIds.includes(selected.id)
+    )
+      return { model };
     const reason =
       kind === "accept"
         ? effectiveReason({ model, finding: selected })
         : draftFor({ model, findingId: selected.id }).reason.trim();
-    if (reason.length === 0) return { model, commands: [FocusElement({ selector: ".decision textarea" })] };
+    if (reason.length === 0)
+      return { model, commands: [FocusElement({ selector: ".inline-finding--selected .decision textarea" })] };
     return submit({ model, kind, findingId: selected.id });
   };
   switch (action) {
     case "next":
-      return select(visible[selectedIndex + 1] ?? visible[0]);
+      return select(neighbours.next ?? visible[0]);
     case "previous":
-      return select(selectedIndex > 0 ? visible[selectedIndex - 1] : visible.at(-1));
+      return select(neighbours.previous ?? visible.at(-1));
     case "accept":
       return decide("accept");
     case "request_changes":
