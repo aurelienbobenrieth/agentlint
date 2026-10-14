@@ -42,7 +42,11 @@ describe("render", () => {
     expect(summary).toContain('/agentlint approve dd03e1e41c97 --reason "..."');
     expect(summary).toContain('agentlint accept 103d435f608a --reason "..."');
     expect(summary).toContain("agentlint pr 42");
-    expect(summary).toContain("`src/migrations/2026-07-drop-legacy-users.ts:4`");
+    expect(summary).toContain("src/migrations/2026-07-drop-legacy-users.ts:4");
+    expect(summary).toContain("(outside diff)");
+    expect(summary).toContain("| Finding | Location | Needs |");
+    expect(summary).not.toContain("| Message |");
+    expect(summary.split("<details>")[0]).not.toContain("--reason");
     expect(summary).toMatchSnapshot();
   });
 
@@ -58,7 +62,44 @@ describe("render", () => {
 
     expect(renderInlineBody(withLineage)).toContain("Prior judgment (context only)");
     expect(renderInlineBody(agent)).toContain('agentlint accept 103d435f608a --reason "..."');
-    expect(renderInlineBody(agent)).not.toContain("<details>");
+    expect(renderInlineBody(agent)).toContain("<details><summary>Standard and checks</summary>");
+  });
+
+  it("keeps the proposal visible and folds the supporting standard", async () => {
+    const [first] = await findings();
+    if (!first?.proposal) throw new Error("fixture");
+    const body = renderInlineBody(first);
+    const visible = body.split("<details>")[0];
+    expect(visible).toContain("Needs a product decision.");
+    expect(visible).not.toContain(first.guidance.standard);
+    expect(body).toContain("<details><summary>Standard and checks</summary>");
+    expect(body).toContain(first.guidance.standard);
+  });
+
+  it("shows progress and removes accepted findings from the decision queue", async () => {
+    const [first, second] = await findings();
+    if (!first || !second) throw new Error("fixture");
+    const summary = renderSummary({
+      repository: "o/r",
+      headSha: "a".repeat(40),
+      pullNumber: 1,
+      gate: "closed",
+      findings: [{ ...first, status: "accepted" }, second],
+      inlineDigests: new Set([second.digest]),
+    });
+    expect(summary).toContain("1 unresolved (1 human, 0 agent), 1 accepted.");
+    expect(summary).not.toContain(first.ruleTitle);
+    expect(summary).toContain(second.ruleTitle);
+    const done = renderSummary({
+      repository: "o/r",
+      headSha: "b".repeat(40),
+      pullNumber: 1,
+      gate: "open",
+      findings: [{ ...first, status: "accepted" }],
+      inlineDigests: new Set(),
+    });
+    expect(done).toContain("No decisions remaining.");
+    expect(done).not.toContain("/agentlint approve");
   });
 
   it("renders annotations, check output, and counts", async () => {
@@ -135,9 +176,9 @@ describe("hostile and oversized content", () => {
     expect(summary).not.toMatch(/^# Heading/m);
     expect(summary).toContain("&lt;img");
     expect(summary).toContain("/blob/" + "a".repeat(40) + "/src/we%7Crd%60%28x%29.ts#L3");
-    // Every table row still has exactly the five unescaped column separators plus the two edges.
+    // Three columns and the two edges, even with hostile content.
     const row = summary.split("\n").find((line) => line.startsWith("| @"));
-    expect(row?.replace(/\\\|/g, "").split("|")).toHaveLength(7);
+    expect(row?.replace(/\\\|/g, "").split("|")).toHaveLength(5);
     expect(summary).toMatchSnapshot();
   });
 

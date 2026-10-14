@@ -138,6 +138,10 @@ On `pull_request` the step exits with the gate code, so the job fails while the 
 
 ## Commands
 
+The summary shows remaining decisions and the accepted count. Inline threads keep the agent's proposal visible; standards, checks, and proposed diffs are collapsed. Commands for findings outside the diff are under **Commands and local review** in the summary.
+
+Reply with the changes you want to request in the finding's thread. It stays unresolved until the code is fixed or an acceptance is recorded. After a successful approval job, the same summary updates and the thread resolves with the approver and reason.
+
 | Where                                | Command                                                                                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Pull request conversation            | `/agentlint approve <digest> --reason "why it satisfies the standard"`: `<digest>` is 7+ hex characters of the fingerprint, or `path:line` |
