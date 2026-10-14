@@ -146,6 +146,57 @@ test("advances while acceptance is pending and restores a rejected finding", asy
   await expect(page.getByRole("button", { name: /Review this unbounded query/ })).toBeVisible();
 });
 
+test("switches repeatedly between changed lines and the full file", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...state,
+        changes: {
+          "src/query.ts": {
+            status: "modified",
+            previousPath: null,
+            hunks: [
+              {
+                oldStart: 3,
+                newStart: 3,
+                lines: [
+                  { kind: "context", content: "export const users = () =>" },
+                  { kind: "deletion", content: "  db.user.findMany({ take: 100 });" },
+                  { kind: "addition", content: "  db.user.findMany();" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const code = page.locator(".code__lines");
+  const toggleViews = async () => {
+    await expect(code.locator(".line--gap")).toHaveText("⋯ line 3");
+    await expect(code.locator(".line--deletion .line__c")).toHaveText("  db.user.findMany({ take: 100 });");
+    await expect(code.locator(".line--addition .line__c")).toHaveText("  db.user.findMany();");
+    await page.getByRole("button", { name: "Full file · 5 lines" }).click();
+    await expect(code.locator(".line__c")).toHaveText([
+      "import { db } from './db';",
+      " ",
+      "export const users = () =>",
+      "  db.user.findMany();",
+      " ",
+    ]);
+    await expect(code.locator(".line--gap, .line--deletion, .line--addition")).toHaveCount(0);
+    await page.getByRole("button", { name: "Changes only", exact: true }).click();
+  };
+  await toggleViews();
+  await toggleViews();
+  await toggleViews();
+  await expect(page.getByRole("heading", { name: "Bound database queries" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("loads a review, supports keyboard help, and remains contained on mobile", async ({ page }) => {
   await page.goto("/");
 
