@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1
+
+### Patch Changes
+
+- [#98](https://github.com/aurelienbobenrieth/agentlint/pull/98) [`d00ce27`](https://github.com/aurelienbobenrieth/agentlint/commit/d00ce27c89a7fecd5145830c931a0dbfaa5c759f) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Advance to the next unresolved finding after acceptance. Keep files of up to 30 lines and files without highlighted evidence fully visible, and show the selected rule above related files at the full code-panel width.
+
+  Keep file toolbar action labels on one line, truncate long paths, and let narrow panels wrap controls without clipping them.
+
 ## 0.9.0
 
 ### Minor Changes
