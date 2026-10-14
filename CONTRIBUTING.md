@@ -23,6 +23,8 @@ npx skills update -p                 # refresh the Harness skills in .agents/ski
 
 ## Maintainer rules
 
+Name every test file `*.test.ts`, including browser tests.
+
 1. Keep parsing, Git evidence, persistence, application handlers, CLI formatting, and the browser UI apart. A feature is `packages/agentlint/src/features/<name>/` with a `request.ts` and a `handler.ts`.
 2. Effect services for infrastructure; Effect Schema for anything public or persisted.
 3. Product rules live in consumer repositories or rule packages, never in the core.
