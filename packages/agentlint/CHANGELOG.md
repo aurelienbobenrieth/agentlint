@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0
+
+### Minor Changes
+
+- [#86](https://github.com/aurelienbobenrieth/agentlint/pull/86) [`8c3d50b`](https://github.com/aurelienbobenrieth/agentlint/commit/8c3d50b966f8f0ac52b92fc00bea01bed8bbcba5) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Codex with full filesystem access is recorded as `agent:codex`, no longer as the account's human, so it can no longer run `approve` ([#74](https://github.com/aurelienbobenrieth/agentlint/issues/74)). Any runtime that sets `AI_AGENT` is recorded as `agent:<value>`.
+
+  A detected agent's actor now names the account it runs for and its session, so a decision leads back to its transcript: `agent:codex?session=<thread id>&user=<account>`. The text after `?` is URL query parameters; records written before stay valid as they are. `accept` and `propose` print the recorded actor.
+
+  `approve` refuses an assumed human outside a terminal, where an undetected agent looks the same. Run it in a terminal, use `agentlint review`, or declare the approver with `AGENTLINT_ACTOR=human:<name>`, as the GitHub action already does.
+
+### Patch Changes
+
+- [#95](https://github.com/aurelienbobenrieth/agentlint/pull/95) [`4f835fb`](https://github.com/aurelienbobenrieth/agentlint/commit/4f835fb513390aefaf461a5baccbd594220abf9c) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Review findings inline in a shared file view, with unchanged context collapsed and rule details available on demand. Saved decisions stay visible and editable while reviewing the file. Guide agents to prepare a short explanation and recommendation for human decisions.
+
+- [#94](https://github.com/aurelienbobenrieth/agentlint/pull/94) [`b693822`](https://github.com/aurelienbobenrieth/agentlint/commit/b693822b0060de5822b361c5a5ed8cb87c405ecb) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Advance the attached review queue immediately when accepting a finding. Validate queued acceptances in the background, restore rejected findings, and keep the gate pending until the server confirms each decision.
+
+- [#92](https://github.com/aurelienbobenrieth/agentlint/pull/92) [`cb29988`](https://github.com/aurelienbobenrieth/agentlint/commit/cb299887054ab1789dd24036461e0fa71ae4ff8c) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Fix the review UI crashing when switching between changed lines and the full file for a diff with omitted lines.
+
+- [#96](https://github.com/aurelienbobenrieth/agentlint/pull/96) [`60720f1`](https://github.com/aurelienbobenrieth/agentlint/commit/60720f1a861ef63af7f63825ae662c9ccb96297a) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Make GitHub PR reviews easier to scan: keep proposals visible, collapse standards and commands, and show only remaining decisions in a compact summary.
+
 ## 0.8.0
 
 ### Minor Changes
