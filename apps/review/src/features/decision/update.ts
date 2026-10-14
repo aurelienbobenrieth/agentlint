@@ -7,6 +7,7 @@ import { draftFor, duplicateFindingId, findingById } from "../../shared/selector
 import { appendCommands, type Handlers, type UpdateReturn } from "../../shared/update";
 import { reconcileSelection } from "../list/selection";
 import { persist, persistLater, rejectDuplicateIds } from "../session/update";
+import { MarkDirty } from "../session/command";
 import { enqueueToast } from "../toasts/update";
 import { SubmitAction } from "./command";
 import type { fields } from "./messages";
@@ -85,7 +86,7 @@ const dispositions: Record<DecisionKind, Draft["disposition"]> = {
 const dispositionFor = (kind: DecisionKind): Draft["disposition"] => dispositions[kind];
 
 /**
- * Detached decisions live in the draft. Attached decisions enter the draft only after server confirmation.
+ * Attached acceptances leave the queue immediately, while their immutable requests await server confirmation.
  */
 export const submit = ({
   model,
@@ -96,10 +97,13 @@ export const submit = ({
   readonly kind: DecisionKind;
   readonly findingId: string;
 }): UpdateReturn => {
-  if (model.screen._tag !== "Reviewing" || model.busyFindingId !== null) return { model };
+  if (model.screen._tag !== "Reviewing" || model.finishing) return { model };
+  if (model.pendingAcceptances.some((pending) => pending.findingId === findingId)) return { model };
+  if (model.busyFindingId !== null && (kind !== "accept" || model.pendingAcceptances.length === 0)) return { model };
   const finding = findingById({ state: model.screen.state, findingId });
   if (!finding || (model.screen.state.mode === "review" && independentHidden({ model, findingId }))) return { model };
   const request = requestFor({ model, kind, findingId, finding });
+  if (request.type === "accept" && request.reason.trim().length === 0) return { model };
   if (
     request.type === "calibrate" &&
     (draftFor({ model, findingId }).calibration === "unreviewed" ||
@@ -139,10 +143,42 @@ export const submit = ({
       commands: [...(moved.commands ?? []), ...(notified.commands ?? [])],
     });
   }
+  if (request.type === "accept") {
+    const pending = modifyFields(model, {
+      pendingAcceptances: (acceptances) => [...acceptances, { findingId, reason: request.reason }],
+      busyFindingId: (busy) => busy ?? findingId,
+    });
+    const moved = reconcileSelection({ before: model, after: pending });
+    return appendCommands({
+      result: persist(moved.model),
+      commands: [...(moved.commands ?? []), ...(model.busyFindingId === null ? [SubmitAction({ request })] : [])],
+    });
+  }
   return appendCommands({
     result: persist(modifyFields(model, { busyFindingId: () => findingId })),
     commands: [SubmitAction({ request })],
   });
+};
+
+/**
+ * Serialize writes and refetches so an older response cannot replace a newer decision.
+ */
+const settleAcceptance = ({
+  model,
+  findingId,
+}: {
+  readonly model: Model;
+  readonly findingId: string;
+}): UpdateReturn => {
+  const remaining = model.pendingAcceptances.filter((pending) => pending.findingId !== findingId);
+  const next = remaining[0];
+  return {
+    model: modifyFields(model, { pendingAcceptances: () => remaining, busyFindingId: () => next?.findingId ?? null }),
+    commands: [
+      MarkDirty({ dirty: remaining.length > 0 }),
+      ...(next === undefined ? [] : [SubmitAction({ request: { type: "accept", ...next } })]),
+    ],
+  };
 };
 
 /**
@@ -205,20 +241,33 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       }),
       { screen: () => Screen.Reviewing({ state }), busyFindingId: () => null, refreshFailed: () => false },
     );
-    const moved = reconcileSelection({ before: model, after: confirmed });
+    const settled = settleAcceptance({ model: confirmed, findingId });
+    const moved = reconcileSelection({ before: model, after: settled.model });
     return appendCommands({
       result: enqueueToast({ model: moved.model, message, tone: "success" }),
-      commands: moved.commands ?? [],
+      commands: [...(settled.commands ?? []), ...(moved.commands ?? [])],
     });
   },
   // The decision is on disk. Only the screen is behind, so this is not an error toast; the top bar
   // offers the reload.
-  RecordedActionRefreshFailed: () =>
-    enqueueToast({
-      model: modifyFields(model, { busyFindingId: () => null, refreshFailed: () => true }),
-      message: "Decision saved; reload to refresh.",
-      tone: "neutral",
-    }),
-  FailedAction: ({ message }) =>
-    enqueueToast({ model: modifyFields(model, { busyFindingId: () => null }), message, tone: "danger" }),
+  RecordedActionRefreshFailed: ({ findingId }) => {
+    const settled = settleAcceptance({ model, findingId });
+    const moved = reconcileSelection({ before: model, after: settled.model });
+    return appendCommands({
+      result: enqueueToast({
+        model: modifyFields(moved.model, { refreshFailed: () => true }),
+        message: "Decision saved; reload to refresh.",
+        tone: "neutral",
+      }),
+      commands: [...(settled.commands ?? []), ...(moved.commands ?? [])],
+    });
+  },
+  FailedAction: ({ findingId, message }) => {
+    const settled = settleAcceptance({ model, findingId });
+    const moved = reconcileSelection({ before: model, after: settled.model });
+    return appendCommands({
+      result: enqueueToast({ model: moved.model, message, tone: "danger" }),
+      commands: [...(settled.commands ?? []), ...(moved.commands ?? [])],
+    });
+  },
 });

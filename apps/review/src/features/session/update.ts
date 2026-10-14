@@ -12,13 +12,13 @@ import type { fields } from "./messages";
 const encodePersistedReview = Schema.encodeUnknownSync(Schema.fromJsonString(PersistedReview));
 
 /**
- * Leaving loses work only when a detached review holds a decision that was not exported yet. Attached reviews never do:
- * the server persists each decision.
+ * Warn before leaving with queued attached acceptances or unexported detached decisions.
  */
-const hasUnexportedDecisions = (model: Model): boolean =>
-  model.screen._tag === "Reviewing" &&
-  model.screen.state.transport === "detached" &&
-  Object.values(model.drafts).some((draft) => draft.disposition !== "none");
+const hasUnsavedDecisions = (model: Model): boolean =>
+  model.pendingAcceptances.length > 0 ||
+  (model.screen._tag === "Reviewing" &&
+    model.screen.state.transport === "detached" &&
+    Object.values(model.drafts).some((draft) => draft.disposition !== "none"));
 
 /**
  * Write the review to localStorage now. Discrete actions (clicks, toggles, decisions) use this.
@@ -31,7 +31,7 @@ export const persist = (model: Model): UpdateReturn => {
       PersistReview({
         key: reviewStorageKey(model.screen.state),
         content: encodePersistedReview(persistedReview(model)),
-        dirty: hasUnexportedDecisions(model),
+        dirty: hasUnsavedDecisions(model),
       }),
     ],
   };
@@ -65,6 +65,7 @@ export const rejectDuplicateIds = ({ model, id }: { readonly model: Model; reado
         message: `This review lists the finding id "${id}" more than once, so a decision could not be tied to one finding. Generate the review again.`,
       }),
     busyFindingId: () => null,
+    pendingAcceptances: () => [],
   }),
 });
 
@@ -88,6 +89,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
       selectedFindingId: () => saved?.selectedFindingId ?? null,
       drafts: () => saved?.drafts ?? model.drafts,
       busyFindingId: () => null,
+      pendingAcceptances: () => [],
       refreshFailed: () => false,
       toasts: () => [],
     });
@@ -95,7 +97,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     const selected = modifyFields(reconcileSelection({ before: restored, after: restored }).model, {
       selectionSettled: () => true,
     });
-    const commands = [MarkDirty({ dirty: hasUnexportedDecisions(selected) })];
+    const commands = [MarkDirty({ dirty: hasUnsavedDecisions(selected) })];
     if (savedError !== null)
       return appendCommands({
         result: enqueueToast({
@@ -120,7 +122,7 @@ export const cases = (model: Model): Handlers<keyof typeof fields> => ({
     model.screen._tag === "Reviewing"
       ? enqueueToast({ model, message: `Reload failed: ${message}`, tone: "danger" })
       : { model: modifyFields(model, { screen: () => Screen.LoadFailed({ message }) }) },
-  ClickedReloadReview: () => ({ model, commands: [LoadReview()] }),
+  ClickedReloadReview: () => (model.busyFindingId === null ? { model, commands: [LoadReview()] } : { model }),
   // Polling stops once the review is on screen or failed to load.
   ReceivedProgress: ({ progress }) =>
     model.screen._tag === "Loading"

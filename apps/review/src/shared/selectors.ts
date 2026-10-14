@@ -59,9 +59,9 @@ export const effectiveFindingStatus = ({
   const draft = draftFor({ model, findingId: finding.id });
   if (state.mode === "calibration")
     return state.transport === "attached" ? finding.status : draft.disposition === "accept" ? "accepted" : "unresolved";
-  // Attached sessions refetch server state after every action, so the server is the
-  // truth there; a stale local draft must not paint a decision the server no longer holds.
-  if (state.transport === "attached") return finding.status;
+  // Only in-flight acceptances override attached state. Persisted drafts cannot open the gate.
+  if (state.transport === "attached")
+    return model.pendingAcceptances.some(({ findingId }) => findingId === finding.id) ? "accepted" : finding.status;
   if (draft.disposition === "accept") return "accepted";
   if (draft.disposition === "request_changes") return "changes_requested";
   return finding.status;
@@ -128,7 +128,15 @@ export interface ReviewDerivation {
   readonly rules: ReadonlyArray<readonly [string, string]>;
 }
 
-type Inputs = readonly [ReviewStatePayload, Model["drafts"], View, Facets, GroupBy, string];
+type Inputs = readonly [
+  ReviewStatePayload,
+  Model["drafts"],
+  Model["pendingAcceptances"],
+  View,
+  Facets,
+  GroupBy,
+  string,
+];
 
 const increment = <K>({ counts, key }: { readonly counts: Map<K, number>; readonly key: K }): void => {
   counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -298,7 +306,15 @@ export const deriveReview = ({
   readonly state: ReviewStatePayload;
   readonly model: Model;
 }): ReviewDerivation => {
-  const inputs: Inputs = [state, model.drafts, model.view, model.facets, model.groupBy, model.query];
+  const inputs: Inputs = [
+    state,
+    model.drafts,
+    model.pendingAcceptances,
+    model.view,
+    model.facets,
+    model.groupBy,
+    model.query,
+  ];
   if (cache.last === undefined || !cache.last.inputs.every((input, index) => input === inputs[index])) {
     cache.last = { inputs, result: compute({ state, model }) };
   }

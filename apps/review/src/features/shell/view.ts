@@ -61,15 +61,21 @@ const topbar = ({
         : []),
       h.span([h.Class("topbar__spacer")], []),
       h.span(
-        [h.Class(`gate${openCount === 0 && state.mode === "review" ? " gate--open" : ""}`)],
         [
-          state.mode === "calibration"
-            ? `${openCount} to calibrate`
-            : openCount === 0
-              ? state.transport === "detached"
-                ? "Decisions prepared"
-                : "Gate open"
-              : `${openCount} unresolved`,
+          h.Class(
+            `gate${openCount === 0 && state.mode === "review" && model.pendingAcceptances.length === 0 ? " gate--open" : ""}`,
+          ),
+        ],
+        [
+          model.pendingAcceptances.length > 0
+            ? `Saving ${model.pendingAcceptances.length} decision(s)…`
+            : state.mode === "calibration"
+              ? `${openCount} to calibrate`
+              : openCount === 0
+                ? state.transport === "detached"
+                  ? "Decisions prepared"
+                  : "Gate open"
+                : `${openCount} unresolved`,
         ],
       ),
       ...(model.refreshFailed
@@ -79,7 +85,7 @@ const topbar = ({
               message: Message.ClickedReloadReview(),
               variant: "secondary",
               h,
-              options: { size: "sm" },
+              options: { size: "sm", disabled: model.busyFindingId !== null },
             }),
           ]
         : []),
