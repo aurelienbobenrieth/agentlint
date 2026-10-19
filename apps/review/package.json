@@ -24,7 +24,7 @@
     "@aurelienbbn/agentlint": "workspace:*",
     "@effect/vitest": "catalog:",
     "@foldkit/vite-plugin": "0.26.1",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.0",
     "typescript": "catalog:",
     "vite": "8.3.0",
     "vitest": "catalog:"
