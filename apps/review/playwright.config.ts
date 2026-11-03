@@ -10,7 +10,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5174",
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{ name: "chrome", use: { ...devices["Desktop Chrome"], channel: "chrome" } }],
   webServer: {
     command: "pnpm dev --host 127.0.0.1",
     url: "http://127.0.0.1:5174",

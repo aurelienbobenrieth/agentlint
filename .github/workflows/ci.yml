@@ -95,10 +95,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: pnpm --filter @agentlint/review exec playwright install --with-deps chromium
+      - name: Install Google Chrome stable
+        run: pnpm --filter @agentlint/review exec playwright install --with-deps chrome
 
-      - name: Test review UI in Chromium
+      - name: Test review UI in Google Chrome
         run: pnpm test:browser
 
   gate:

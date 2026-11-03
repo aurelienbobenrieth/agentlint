@@ -62,7 +62,7 @@ const url = await new Promise((resolveUrl, reject) => {
   server.on("exit", (code) => reject(new Error(`agentlint review exited with ${code}:\n${output}`)));
 });
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: "chrome" });
 try {
   const ui = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
   await ui.goto(url);
