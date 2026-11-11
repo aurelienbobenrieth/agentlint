@@ -1,14 +1,14 @@
 import { Effect, Schema as S, Stream } from "effect";
-import { Subscription } from "foldkit";
+import { Dom } from "foldkit";
 
 import { Message } from "../../message";
 import type { SubscriptionEntry } from "../../shared/subscription";
 
 const ended = (type: "pointerup" | "pointercancel") =>
-  Subscription.fromEvent({ target: () => window, type, mapEvent: () => Message.EndedSidebarResize() });
+  Dom.streamFromEvent({ target: () => window, type, mapEvent: () => Message.EndedSidebarResize() });
 
 const filesEnded = (type: "pointerup" | "pointercancel") =>
-  Subscription.fromEvent({ target: () => window, type, mapEvent: () => Message.EndedFilesResize() });
+  Dom.streamFromEvent({ target: () => window, type, mapEvent: () => Message.EndedFilesResize() });
 
 /**
  * Pointer tracking only runs while a resize drag is active. `pointercancel` (touch scroll takeover, a system gesture)
@@ -22,7 +22,7 @@ export const sidebarResize = (entry: SubscriptionEntry) =>
       dependenciesToStream: ({ resizing }) =>
         Stream.when(
           Stream.merge(
-            Subscription.fromEvent({
+            Dom.streamFromEvent({
               target: () => window,
               type: "pointermove",
               mapEvent: (event) => Message.ResizedSidebar({ width: event.clientX }),
@@ -45,7 +45,7 @@ export const filesResize = (entry: SubscriptionEntry) =>
       dependenciesToStream: ({ resizing }) =>
         Stream.when(
           Stream.merge(
-            Subscription.fromEvent({
+            Dom.streamFromEvent({
               target: () => window,
               type: "pointermove",
               mapEvent: (event) => Message.ResizedFiles({ width: window.innerWidth - event.clientX }),
