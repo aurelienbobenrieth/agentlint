@@ -42,7 +42,7 @@
         "action/src/inputs.mjs",
         "action/src/main.mjs",
         "action/test/**",
-        "packages/agentlint/skills/agentlint/setup/agentlint-gate.mjs"
+        "packages/agentlint/skills/agentlint-setup/agentlint-gate.mjs"
       ],
       "rules": {
         "agentlint/no-raw-json-parse": "off"
@@ -55,7 +55,7 @@
         "action/src/inputs.mjs",
         "action/src/main.mjs",
         "action/test/**",
-        "packages/agentlint/skills/agentlint/setup/agentlint-gate.mjs"
+        "packages/agentlint/skills/agentlint-setup/agentlint-gate.mjs"
       ],
       "rules": {
         "agentlint/no-direct-process-access": "off"

@@ -1,5 +1,5 @@
 ---
-name: usage
+name: agentlint-usage
 description: >
   Run the repository's agentlint gate after code changes, apply its standards,
   and finish only after every current finding is fixed or validly accepted.

@@ -16,11 +16,11 @@ flowchart LR
 Agent skills ship in `node_modules/@aurelienbbn/agentlint/skills`. [TanStack Intent](https://tanstack.com/intent) discovers them; any agent can read them.
 
 ```text
-Install @aurelienbbn/agentlint and follow its setup skill
-(node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/SKILL.md).
+Install @aurelienbbn/agentlint and follow its agentlint-setup skill
+(node_modules/@aurelienbbn/agentlint/skills/agentlint-setup/SKILL.md).
 ```
 
-The `setup` skill initializes the config, helps you express standards you already enforce, calibrates before enforcing, and installs the Claude Code or Codex [hook](ci.md#a-hook-makes-the-agent-stop-at-the-gate).
+The `agentlint-setup` skill initializes the config, helps you express standards you already enforce, calibrates before enforcing, and installs the Claude Code or Codex [hook](ci.md#a-hook-makes-the-agent-stop-at-the-gate).
 
 ## Or install by hand
 
@@ -41,10 +41,10 @@ Every command accepts `--help`. The full command list is in the [CLI reference](
 ## Your best first rule is a correction you've made twice
 
 ```text
-Use the agentlint rule-advisor skill. I keep correcting this in review: <the correction>.
+Use the agentlint-rule-advisor skill. I keep correcting this in review: <the correction>.
 ```
 
-`rule-advisor` first checks whether a linter, type, or test fits better. If judgment is needed, it writes the standard, a pattern detector, and activation and silence fixtures, then calibrates against your real code with `rules scan --review` before anything is enforced. A pattern rule is about twenty lines; review it like any code. [Writing rules](writing-rules.md) covers the format.
+`agentlint-rule-advisor` first checks whether a linter, type, or test fits better. If judgment is needed, it writes the standard, a pattern detector, and activation and silence fixtures, then calibrates against your real code with `rules scan --review` before anything is enforced. A pattern rule is about twenty lines; review it like any code. [Writing rules](writing-rules.md) covers the format.
 
 Keep a rule only while the review work it saves exceeds its interruptions and upkeep. [The pilot worksheet](../review-pilot.md) measures that for a small team, without telemetry or a central service.
 

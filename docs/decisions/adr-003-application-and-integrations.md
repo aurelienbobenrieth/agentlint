@@ -12,12 +12,12 @@
 ```mermaid
 flowchart LR
   GHA["GitHub action"] -. runs .-> CLI
-  Hook["setup skill hook"] -. runs .-> CLI
+  Hook["agentlint-setup skill hook"] -. runs .-> CLI
   CLI --> H["shared handlers"]
   SPA["review SPA"] --> HTTP["loopback server"] --> H
 ```
 
-Later adapters, the [GitHub action](./adr-008-github-action.md) and the setup skill's hook script, stay thin wrappers over the CLI.
+Later adapters, the [GitHub action](./adr-008-github-action.md) and the `agentlint-setup` skill's hook script, stay thin wrappers over the CLI.
 
 ## Context
 

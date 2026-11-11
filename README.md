@@ -59,7 +59,7 @@ pnpm agentlint rules test    # proves each detector against its fixtures
 pnpm agentlint check --all   # runs the gate
 ```
 
-Or have your coding agent install the package and follow its `setup` skill: it turns the standards your repository already enforces into rules, calibrates before enforcing, and installs the hook so a finished turn means an open gate.
+Or have your coding agent install the package and follow its `agentlint-setup` skill: it turns the standards your repository already enforces into rules, calibrates before enforcing, and installs the hook so a finished turn means an open gate.
 
 agentlint ships no rules. Your repository owns every standard, detector, and binding.
 
