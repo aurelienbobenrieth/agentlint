@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+### Minor Changes
+
+- [#110](https://github.com/aurelienbobenrieth/agentlint/pull/110) [`b5d8381`](https://github.com/aurelienbobenrieth/agentlint/commit/b5d8381e37452a1260fb96b41b21b3042caa83d1) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - The packaged skills are renamed so an installed skill shows which package it belongs to: `usage` is now `agentlint-usage`, `setup` is now `agentlint-setup`, and `rule-advisor` is now `agentlint-rule-advisor`. Their folders move with them, so the Stop hook adapter now ships at `skills/agentlint-setup/agentlint-gate.mjs`. Reinstall the skills to pick up the new names and remove the old `usage`, `setup`, and `rule-advisor` copies. An already copied `.agentlint/hooks/agentlint-gate.mjs` keeps working.
+
+### Patch Changes
+
+- [#109](https://github.com/aurelienbobenrieth/agentlint/pull/109) [`ec10ef6`](https://github.com/aurelienbobenrieth/agentlint/commit/ec10ef60942b62302d75732dc854b82fff7b53ee) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - The `setup` Stop hook (`agentlint-gate.mjs`) now decides whether to run the gate from the working tree instead of the agent transcript. It runs `check --all` whenever HEAD, `git status` (untracked files included), or the content of a changed file differs from the last state it judged, so files changed through a shell (`sed`, heredocs, scripts) are now gated. A stop over an unchanged tree reuses the recorded verdict silently, so a closed gate is reported once. The state lives in `.agentlint/.cache/gate-hook.json`. Without git the gate runs on every stop. Copy the new `agentlint-gate.mjs` over `.agentlint/hooks/agentlint-gate.mjs` to pick this up.
+
+- [#111](https://github.com/aurelienbobenrieth/agentlint/pull/111) [`2f32917`](https://github.com/aurelienbobenrieth/agentlint/commit/2f32917522762c65d39a361b6abe39e1992f7cc2) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Build the bundled review UI with foldkit 0.168.0. Effect stays on 4.0.0, the release foldkit 0.168.0 requires.
+
 ## 0.9.1
 
 ### Patch Changes
