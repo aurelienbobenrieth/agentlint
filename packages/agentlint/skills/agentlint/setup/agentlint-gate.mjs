@@ -9,11 +9,14 @@
 // that a hook already blocked once. The adapter owns no gate semantics.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const mode = process.argv[2] === "edit" ? "edit" : "stop";
 const root = resolve(import.meta.dirname, "../..");
+const stateDir = ".agentlint/.cache";
+const statePath = join(root, stateDir, "gate-hook.json");
 
 const readInput = () => {
   try {
@@ -33,55 +36,70 @@ const findFrom = (directory) => {
 
 const findBin = () => findFrom(root);
 
-const editTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"]);
-const callTypes = new Set(["tool_use", "function_call", "custom_tool_call"]);
-
-// Codex code mode routes every tool through `exec`; a patch shows only in its input.
-const isEditCall = (node) => {
-  if (Array.isArray(node)) return node.some(isEditCall);
-  if (node === null || typeof node !== "object") return false;
-  if (callTypes.has(node.type) && editTools.has(node.name)) return true;
-  if (callTypes.has(node.type) && `${node.input ?? node.arguments ?? ""}`.includes("*** Begin Patch")) return true;
-  return Object.values(node).some(isEditCall);
+const git = (args) => {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  return result.status === 0 ? result.stdout : undefined;
 };
 
-// Claude Code logs a typed prompt as a user message without tool results; hook
-// feedback, compaction summaries and task notifications are not prompts. Codex
-// logs each turn as `task_started` (older builds: `user_message`).
-const isTurnStart = (entry) => {
-  if (entry?.type === "event_msg") return ["task_started", "user_message"].includes(entry.payload?.type);
-  if (entry?.type !== "user" || entry.isMeta === true || entry.isCompactSummary === true) return false;
-  const content = entry.message?.content;
-  if (typeof content === "string") return !content.startsWith("<task-notification>");
-  return Array.isArray(content) && !content.some((block) => block?.type === "tool_result");
+const contentHash = (path) => {
+  try {
+    return createHash("sha256").update(readFileSync(path)).digest("hex");
+  } catch {
+    // REASON: a deleted path has no content; its status entry already records the deletion.
+    return "absent";
+  }
 };
 
-// Only a turn that called an edit tool is gated: a question, a review, or talk after
-// earlier coding changed nothing, so open findings (often another agent's work in
-// progress) must not hijack the reply. Edits made through a shell go unseen; CI
-// still gates them. Without a readable transcript the gate runs.
-const turnEdited = (transcriptPath) => {
-  if (typeof transcriptPath !== "string" || !existsSync(transcriptPath)) return true;
-  const entries = readFileSync(transcriptPath, "utf8")
-    .split("\n")
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line)];
-      } catch {
-        // REASON: a partially written last line holds no completed tool call.
-        return [];
-      }
-    });
-  return entries.slice(entries.findLastIndex(isTurnStart) + 1).some(isEditCall);
+// HEAD, every staged, unstaged and untracked change, and the content of each changed
+// file, so a second edit to an already changed file still counts. The hook's own state
+// is left out. Undefined when git cannot answer: the gate then runs.
+const treeFingerprint = () => {
+  const head = git(["rev-parse", "--show-toplevel", "HEAD"]);
+  const status = git(["status", "--porcelain", "-z", "--untracked-files=all", "--", ":/", `:(exclude)${stateDir}`]);
+  if (head === undefined || status === undefined) return undefined;
+  const top = head.split("\n")[0];
+  const fingerprint = createHash("sha256").update(head).update(status);
+  const entries = status.split("\0");
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry.length < 4) continue;
+    // A rename or copy is followed by its source path, which has no entry of its own.
+    if (/[RC]/.test(entry.slice(0, 2))) index += 1;
+    const path = entry.slice(3);
+    fingerprint.update(`${path}\0${contentHash(join(top, path))}\0`);
+  }
+  return fingerprint.digest("hex");
 };
 
-if (mode === "stop") {
-  const input = readInput();
-  // A stop that this hook already blocked continues, so a finding the agent cannot
-  // close (human authority) interrupts once instead of looping.
-  if (input.stop_hook_active === true) process.exit(0);
-  if (!turnEdited(input.transcript_path)) process.exit(0);
-}
+const readVerdict = () => {
+  try {
+    return JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {
+    // REASON: no readable record means the tree was never judged.
+    return undefined;
+  }
+};
+
+const recordVerdict = (fingerprint, verdict) => {
+  try {
+    mkdirSync(join(root, stateDir), { recursive: true });
+    writeFileSync(statePath, `${JSON.stringify({ fingerprint, verdict })}\n`);
+  } catch {
+    // REASON: without a record the next stop runs the gate again, which is the safe side.
+  }
+};
+
+const input = mode === "stop" ? readInput() : {};
+// A stop that this hook already blocked continues, so a finding the agent cannot
+// close (human authority) interrupts once instead of looping.
+if (input.stop_hook_active === true) process.exit(0);
+
+// The gate judges the work, not the turn: a stop over the same tree state as the last
+// judged one reuses that verdict silently, so a question asked after coding ends
+// normally and a closed gate is reported once. Any change to the tree, made by an edit
+// tool or a shell, runs the complete gate.
+const fingerprint = mode === "stop" ? treeFingerprint() : undefined;
+if (fingerprint !== undefined && readVerdict()?.fingerprint === fingerprint) process.exit(0);
 
 const bin = findBin();
 if (!bin) {
@@ -93,6 +111,9 @@ const result = spawnSync(process.execPath, [bin, "check", ...(mode === "stop" ? 
   cwd: root,
   encoding: "utf8",
 });
+if (fingerprint !== undefined && (result.status === 0 || result.status === 1)) {
+  recordVerdict(fingerprint, result.status === 0 ? "open" : "closed");
+}
 if (result.status === 0) process.exit(0);
 
 const output = `${result.stdout}${result.stderr}`.trim();
