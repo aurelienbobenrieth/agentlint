@@ -78,11 +78,11 @@ Open an uploaded artifact locally with `agentlint pr <number>` or `agentlint rev
 
 ## A hook makes the agent stop at the gate
 
-An instruction is a request; a hook is a checkpoint. Copy the adapter that ships with the `setup` skill and commit it:
+An instruction is a request; a hook is a checkpoint. Copy the adapter that ships with the `agentlint-setup` skill and commit it:
 
 ```bash
 mkdir -p .agentlint/hooks
-cp node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/agentlint-gate.mjs .agentlint/hooks/
+cp node_modules/@aurelienbbn/agentlint/skills/agentlint-setup/agentlint-gate.mjs .agentlint/hooks/
 ```
 
 Register it in Claude Code (`.claude/settings.json`) or Codex (`.codex/hooks.json`, in a trusted project). Both use the same shape:
@@ -102,12 +102,12 @@ Register it in Claude Code (`.claude/settings.json`) or Codex (`.codex/hooks.jso
 
 - The adapter is one short script over the CLI exit code and owns no gate semantics.
 - The gate runs only when the working tree changed since its last verdict, whether through an edit tool or a shell. A question or review ends normally even while findings are open, and a closed gate is reported once.
-- The `setup` skill also documents an optional per-edit `PostToolUse` hook.
+- The `agentlint-setup` skill also documents an optional per-edit `PostToolUse` hook.
 - Other agents: put one line in `AGENTS.md` telling them to run `agentlint check --all` before finishing.
 
 ## Integrations call the CLI; the engine stays small
 
-The engine contains no MCP server, harness protocol, GitHub bot, or provider SDK. Integrations, including the `setup` hook adapter, call the CLI and read its [exit code](cli.md#exit-codes).
+The engine contains no MCP server, harness protocol, GitHub bot, or provider SDK. Integrations, including the `agentlint-setup` hook adapter, call the CLI and read its [exit code](cli.md#exit-codes).
 
 - A harness may continue past a non-blocking `check` mid-loop but must report unresolved findings before finishing. Use `check --all` as the hard gate at checkpoints and in CI.
 - Provider adapters (pull request comments, ownership routing, signed human authority) live outside the engine and keep the same current-finding and acceptance semantics. They are added only when the CLI and artifact contract can't deliver the required experience.

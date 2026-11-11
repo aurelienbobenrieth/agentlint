@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const hookSource = resolve(import.meta.dirname, "../skills/agentlint/setup/agentlint-gate.mjs");
+const hookSource = resolve(import.meta.dirname, "../skills/agentlint-setup/agentlint-gate.mjs");
 const roots: Array<string> = [];
 
 // Git never searches above the fixture, and no GIT_* variable from an outer git

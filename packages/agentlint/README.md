@@ -41,8 +41,8 @@ agentlint ships no rules and prescribes no agent harness. Your repository and pl
 Let your agent do it: the package ships agent skills.
 
 ```text
-Install @aurelienbbn/agentlint and follow its setup skill
-(node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/SKILL.md).
+Install @aurelienbbn/agentlint and follow its agentlint-setup skill
+(node_modules/@aurelienbbn/agentlint/skills/agentlint-setup/SKILL.md).
 ```
 
 Or by hand:
@@ -97,7 +97,7 @@ Every command exits `2`, never `1`, on an internal error. Local and CI semantics
 
 | Goal                                   | Start with                          | Guide                                                                                                  |
 | -------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Turn a repeated correction into a rule | the `rule-advisor` skill            | [Get started](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/getting-started.md) |
+| Turn a repeated correction into a rule | the `agentlint-rule-advisor` skill  | [Get started](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/getting-started.md) |
 | Write state and change rules           | `defineRule`                        | [Write rules](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/writing-rules.md)   |
 | Close a finding                        | `agentlint accept 1 --reason "..."` | [Acceptance](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/acceptance.md)       |
 | Hand the agent its next finding        | `agentlint next --format json`      | [Acceptance](https://github.com/aurelienbobenrieth/agentlint/blob/main/docs/guide/acceptance.md)       |

@@ -1,5 +1,5 @@
 ---
-name: rule-advisor
+name: agentlint-rule-advisor
 description: >
   Decide whether recurring judgment belongs in agentlint and author a focused
   state or change rule with explicit identities, guidance, scope, authority,

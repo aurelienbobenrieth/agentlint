@@ -1,5 +1,5 @@
 ---
-name: setup
+name: agentlint-setup
 description: >
   Install agentlint in a repository: create the config, select repository-owned
   rules, adopt existing findings gradually, and wire the gate into Claude Code,
@@ -32,7 +32,7 @@ Do the steps in order. Show the user each file you create or change. Do not enfo
 
 The engine ships no rules. Offer both paths and let the user choose:
 
-- **A repeated correction.** Ask the user for one correction they have made more than once in review. Author it with the `rule-advisor` skill. This is the preferred start: one rule that the team already believes in.
+- **A repeated correction.** Ask the user for one correction they have made more than once in review. Author it with the `agentlint-rule-advisor` skill. This is the preferred start: one rule that the team already believes in.
 - **A rule-package preset.** Use a package only when it is already present in the workspace or you have verified its exact package name, export, and compatible agentlint peer range in the configured registry. Match its documented standards to the repository instead of inferring them from a framework dependency. Do not install a package without the user's selection.
 
 In a repository without a config, `init --preset "<package>#<preset-export>"` scaffolds the import and prints the install command. With an existing config, add the import and put the preset in `extends` yourself. Any package that exports `defineRule` values works the same way.
@@ -51,7 +51,7 @@ agentlint has no warning level. A finding is either a current obligation or not 
 
 ## 4. Wire the gate into the coding agent
 
-Copy `agentlint-gate.mjs` from this skill's directory (`node_modules/@aurelienbbn/agentlint/skills/agentlint/setup/agentlint-gate.mjs`) to `.agentlint/hooks/agentlint-gate.mjs` and commit it. It runs the local CLI, maps a closed gate to exit code 2 with the findings on stderr, lets a stop continue when `stop_hook_active` is set, so a human-authority finding interrupts once instead of looping, and runs the gate only when the working tree changed since the last verdict, so a question asked after earlier coding is never handed the open findings.
+Copy `agentlint-gate.mjs` from this skill's directory (`node_modules/@aurelienbbn/agentlint/skills/agentlint-setup/agentlint-gate.mjs`) to `.agentlint/hooks/agentlint-gate.mjs` and commit it. It runs the local CLI, maps a closed gate to exit code 2 with the findings on stderr, lets a stop continue when `stop_hook_active` is set, so a human-authority finding interrupts once instead of looping, and runs the gate only when the working tree changed since the last verdict, so a question asked after earlier coding is never handed the open findings.
 
 Merge into an existing hook file; do not replace other hooks.
 
