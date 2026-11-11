@@ -1,9 +1,8 @@
 import { Option } from "effect";
-import { Subscription } from "foldkit";
+import { Dom, Subscription } from "foldkit";
 
 import { Message } from "../../message";
 import type { Shortcut } from "../../shared/model";
-import type { SubscriptionEntry } from "../../shared/subscription";
 
 const isEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
@@ -52,27 +51,23 @@ export const shortcutFor = (event: {
   return shortcuts[event.key] ?? null;
 };
 
-export const keyboard = (entry: SubscriptionEntry) =>
-  entry(
-    {},
-    Subscription.persistent(
-      Subscription.fromEventFilterMap({
-        target: () => window,
-        type: "keydown",
-        filterMapEvent: (event) => {
-          if (event.isComposing || event.repeat) return Option.none();
-          const action = shortcutFor({
-            key: event.key,
-            ctrlKey: event.ctrlKey,
-            metaKey: event.metaKey,
-            altKey: event.altKey,
-            shiftKey: event.shiftKey,
-            editable: isEditable(event.target),
-          });
-          if (action === null) return Option.none();
-          if (action !== "escape") event.preventDefault();
-          return Option.some(Message.PressedShortcut({ action }));
-        },
-      }),
-    ),
-  );
+export const keyboard = Subscription.persistentEntry(
+  Dom.streamFromEventFilterMap({
+    target: () => window,
+    type: "keydown",
+    filterMapEvent: (event) => {
+      if (event.isComposing || event.repeat) return Option.none();
+      const action = shortcutFor({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        editable: isEditable(event.target),
+      });
+      if (action === null) return Option.none();
+      if (action !== "escape") event.preventDefault();
+      return Option.some(Message.PressedShortcut({ action }));
+    },
+  }),
+);

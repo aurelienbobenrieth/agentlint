@@ -57,7 +57,7 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
   sidebarResize: sidebarResize(entry),
   filesResize: filesResize(entry),
-  keyboard: keyboard(entry),
+  keyboard,
 }));
 
 export { Message, Model, update, view };
