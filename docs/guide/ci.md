@@ -101,7 +101,7 @@ Register it in Claude Code (`.claude/settings.json`) or Codex (`.codex/hooks.jso
 | human authority                                     | Interrupts once, then ends: the agent proposes its work and hands over to `agentlint review` instead of looping |
 
 - The adapter is one short script over the CLI exit code and owns no gate semantics.
-- Only a turn that edited files is gated; a question or review ends normally even while findings are open.
+- The gate runs only when the working tree changed since its last verdict, whether through an edit tool or a shell. A question or review ends normally even while findings are open, and a closed gate is reported once.
 - The `setup` skill also documents an optional per-edit `PostToolUse` hook.
 - Other agents: put one line in `AGENTS.md` telling them to run `agentlint check --all` before finishing.
 
