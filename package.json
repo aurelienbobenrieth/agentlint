@@ -37,10 +37,10 @@
     "@changesets/cli": "3.0.3",
     "@tanstack/intent": "catalog:",
     "effect": "catalog:",
-    "knip": "6.42.0",
-    "npm": "12.2.0",
-    "oxfmt": "0.73.0",
-    "oxlint": "1.88.0",
+    "knip": "6.45.0",
+    "npm": "12.2.2",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
     "publint": "0.3.25"
   },
   "engines": {
