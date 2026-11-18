@@ -33,24 +33,34 @@ const consumerRepo = ({ git }: { readonly git: boolean }) => {
   // The fixture leaves .agentlint/.cache/ unignored: the hook's own state must not count as a change.
   writeFileSync(join(root, ".gitignore"), "node_modules/\n");
   if (git) {
-    const run = (...args: Array<string>) =>
-      spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], {
-        cwd: root,
-        env: env(root, "open"),
-      });
-    run("init", "-q");
-    run("add", ".");
-    run("commit", "-qm", "init");
+    runGit(root, "init", "-q");
+    commitAll(root);
   }
   return root;
 };
 
-const stop = (root: string, gate: "open" | "closed", input: Record<string, unknown> = {}) =>
-  spawnSync(process.execPath, [join(root, ".agentlint/hooks/agentlint-gate.mjs"), "stop"], {
-    input: JSON.stringify(input),
-    encoding: "utf8",
-    env: env(root, gate),
+const runGit = (root: string, ...args: Array<string>) =>
+  spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], {
+    cwd: root,
+    env: env(root, "open"),
   });
+
+const commitAll = (root: string) => {
+  runGit(root, "add", ".");
+  runGit(root, "commit", "-qm", "change");
+};
+
+const hook =
+  (mode: "prompt" | "stop") =>
+  (root: string, gate: "open" | "closed", input: Record<string, unknown> = {}) =>
+    spawnSync(process.execPath, [join(root, ".agentlint/hooks/agentlint-gate.mjs"), mode], {
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      env: env(root, gate),
+    });
+
+const stop = hook("stop");
+const prompt = hook("prompt");
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -120,5 +130,61 @@ describe("agentlint-gate.mjs stop", () => {
 
   it("lets a stop that the hook already blocked end", () => {
     expect(stop(consumerRepo({ git: true }), "closed", { stop_hook_active: true }).status).toBe(0);
+  });
+});
+
+describe("agentlint-gate.mjs prompt", () => {
+  const session = { session_id: "conversation-a" };
+
+  it("records the turn's start silently, without running the gate", () => {
+    const result = prompt(consumerRepo({ git: true }), "closed", session);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
+  it("leaves out a commit and an edit made elsewhere between turns", () => {
+    const root = consumerRepo({ git: true });
+    expect(stop(root, "open", session).status).toBe(0);
+    writeFileSync(join(root, "src/app.ts"), "export const a = 2;\n");
+    commitAll(root);
+    writeFileSync(join(root, "src/other.ts"), "export const c = 3;\n");
+
+    expect(prompt(root, "closed", session).status).toBe(0);
+    const result = stop(root, "closed", session);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+  });
+
+  it.each([
+    ["edited a file", (root: string) => writeFileSync(join(root, "src/app.ts"), "export const a = 2;\n")],
+    [
+      "committed its edit",
+      (root: string) => {
+        writeFileSync(join(root, "src/app.ts"), "export const a = 2;\n");
+        commitAll(root);
+      },
+    ],
+  ])("runs the gate when the turn %s", (_, work) => {
+    const root = consumerRepo({ git: true });
+    expect(prompt(root, "closed", session).status).toBe(0);
+
+    work(root);
+
+    expect(stop(root, "closed", session).status).toBe(2);
+  });
+
+  it("keeps each conversation's start apart in a shared checkout", () => {
+    const root = consumerRepo({ git: true });
+    expect(prompt(root, "closed", session).status).toBe(0);
+    writeFileSync(join(root, "src/app.ts"), "export const a = 2;\n");
+
+    const other = { session_id: "conversation-b" };
+    expect(prompt(root, "closed", other).status).toBe(0);
+    expect(stop(root, "closed", other).status).toBe(0);
+
+    expect(stop(root, "closed", session).status).toBe(2);
   });
 });

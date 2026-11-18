@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 // Coding-agent hook adapter for the agentlint gate. Copy to .agentlint/hooks/agentlint-gate.mjs.
 //
-//   node .agentlint/hooks/agentlint-gate.mjs stop   Stop hook: complete gate (`check --all`)
-//   node .agentlint/hooks/agentlint-gate.mjs edit   PostToolUse hook: changed files (`check`)
+//   node .agentlint/hooks/agentlint-gate.mjs prompt  UserPromptSubmit hook: records the turn's starting state
+//   node .agentlint/hooks/agentlint-gate.mjs stop    Stop hook: complete gate (`check --all`)
+//   node .agentlint/hooks/agentlint-gate.mjs edit    PostToolUse hook: changed files (`check`)
 //
 // Claude Code and Codex share the contract used here: hook input is JSON on stdin,
-// exit code 2 hands stderr back to the agent, and `stop_hook_active` marks a stop
-// that a hook already blocked once. The adapter owns no gate semantics.
+// exit code 2 hands stderr back to the agent, `stop_hook_active` marks a stop that a
+// hook already blocked once, and `session_id` names the conversation. The adapter owns
+// no gate semantics.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const mode = process.argv[2] === "edit" ? "edit" : "stop";
+const mode = ["edit", "prompt"].includes(process.argv[2]) ? process.argv[2] : "stop";
 const root = resolve(import.meta.dirname, "../..");
 const stateDir = ".agentlint/.cache";
-const statePath = join(root, stateDir, "gate-hook.json");
 
 const readInput = () => {
   try {
@@ -71,35 +72,53 @@ const treeFingerprint = () => {
   return fingerprint.digest("hex");
 };
 
-const readVerdict = () => {
+// One baseline per conversation, so sessions sharing a checkout never overwrite each
+// other's. The id is hashed because hosts do not promise a filename-safe value.
+const baselinePath = (sessionId) => {
+  const key = typeof sessionId === "string" ? createHash("sha256").update(sessionId).digest("hex") : "default";
+  return join(root, stateDir, "gate-hook", `${key}.json`);
+};
+
+const readBaseline = (sessionId) => {
   try {
-    return JSON.parse(readFileSync(statePath, "utf8"));
+    return JSON.parse(readFileSync(baselinePath(sessionId), "utf8")).fingerprint;
   } catch {
-    // REASON: no readable record means the tree was never judged.
+    // REASON: no readable baseline means the tree was never seen: the gate runs.
     return undefined;
   }
 };
 
-const recordVerdict = (fingerprint, verdict) => {
+const recordBaseline = (sessionId, fingerprint) => {
   try {
-    mkdirSync(join(root, stateDir), { recursive: true });
-    writeFileSync(statePath, `${JSON.stringify({ fingerprint, verdict })}\n`);
+    mkdirSync(dirname(baselinePath(sessionId)), { recursive: true });
+    writeFileSync(baselinePath(sessionId), `${JSON.stringify({ fingerprint })}\n`);
   } catch {
-    // REASON: without a record the next stop runs the gate again, which is the safe side.
+    // REASON: without a baseline the next stop runs the gate, which is the safe side.
   }
 };
 
-const input = mode === "stop" ? readInput() : {};
+const input = mode === "edit" ? {} : readInput();
+
+// The gate judges what this conversation changed. A prompt records the tree as the turn
+// starts, so a pull, a commit or an edit made elsewhere between turns is not handed to
+// this turn. It prints nothing (a UserPromptSubmit hook's stdout reaches the model) and
+// never blocks the prompt.
+if (mode === "prompt") {
+  const fingerprint = treeFingerprint();
+  if (fingerprint !== undefined) recordBaseline(input.session_id, fingerprint);
+  process.exit(0);
+}
+
 // A stop that this hook already blocked continues, so a finding the agent cannot
 // close (human authority) interrupts once instead of looping.
 if (input.stop_hook_active === true) process.exit(0);
 
-// The gate judges the work, not the turn: a stop over the same tree state as the last
-// judged one reuses that verdict silently, so a question asked after coding ends
-// normally and a closed gate is reported once. Any change to the tree, made by an edit
-// tool or a shell, runs the complete gate.
+// A stop over the state the turn started from (without the prompt hook: the state the
+// last stop judged) ends silently, so a question changes nothing and a closed gate is
+// reported once. Any change during the turn, by an edit tool, a shell or a commit, runs
+// the complete gate.
 const fingerprint = mode === "stop" ? treeFingerprint() : undefined;
-if (fingerprint !== undefined && readVerdict()?.fingerprint === fingerprint) process.exit(0);
+if (fingerprint !== undefined && readBaseline(input.session_id) === fingerprint) process.exit(0);
 
 const bin = findBin();
 if (!bin) {
@@ -112,7 +131,7 @@ const result = spawnSync(process.execPath, [bin, "check", ...(mode === "stop" ? 
   encoding: "utf8",
 });
 if (fingerprint !== undefined && (result.status === 0 || result.status === 1)) {
-  recordVerdict(fingerprint, result.status === 0 ? "open" : "closed");
+  recordBaseline(input.session_id, fingerprint);
 }
 if (result.status === 0) process.exit(0);
 
