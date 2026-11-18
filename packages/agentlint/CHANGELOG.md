@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+### Patch Changes
+
+- [#117](https://github.com/aurelienbobenrieth/agentlint/pull/117) [`9696201`](https://github.com/aurelienbobenrieth/agentlint/commit/96962016a4a35243a417e5d3a13cf4faea121a62) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - Run on Effect 4.1.3: `effect`, `@effect/platform-node` and `@effect/platform-node-shared` move from 4.0.0. The bundled review UI is built with foldkit 0.170.0, which supports Effect 4.1.
+
 ## 0.10.0
 
 ### Minor Changes
