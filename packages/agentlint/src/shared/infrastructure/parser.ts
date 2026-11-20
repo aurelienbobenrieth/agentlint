@@ -23,6 +23,32 @@ interface WasmAsset {
 
 const CORE_WASM: WasmAsset = { file: "tree-sitter.wasm", source: "web-tree-sitter/tree-sitter.wasm" };
 
+/**
+ * The grammars that read JavaScript escapes.
+ */
+const ECMASCRIPT_GRAMMARS: ReadonlySet<string> = new Set([
+  "typescript",
+  "typescript-0.23",
+  "tsx",
+  "tsx-0.20",
+  "javascript",
+]);
+
+/**
+ * Each escape in turn, so `\\u` stays an escaped backslash; the capture is a `\u` or `\x` that starts no escape.
+ */
+const ESCAPE = /\\(?:u(?:[0-9a-fA-F]{4}|\{[0-9a-fA-F]+\})|x[0-9a-fA-F]{2}|([ux])|[\s\S])/g;
+
+/**
+ * The source with each `\u` or `\x` that starts no escape read as `\_`, at the same length.
+ *
+ * A tagged template may hold one (`` String.raw`C:\users` ``), but every bundled grammar rejects it. Anywhere else a
+ * backslash is opaque (comments, regexes, JSX text) or the escape was already an error, so a file that parses unmasked
+ * keeps its tree.
+ */
+const maskInvalidEscapes = (source: string): string =>
+  source.replace(ESCAPE, (escape, invalid: string | undefined) => (invalid === undefined ? escape : "\\_"));
+
 export function resolvePackagedWasmPath({
   path,
   dir,
@@ -151,8 +177,14 @@ export class Parser extends Context.Service<
             try: () => parser.setLanguage(lang),
             catch: (cause) => new ParserError({ reason: "load_failed", grammar, detail: errorDetail(cause) }),
           });
+          let input = ECMASCRIPT_GRAMMARS.has(grammar) ? maskInvalidEscapes(source) : source;
           const tree = yield* Effect.try({
-            try: () => parser.parse(source),
+            try: () => {
+              // Node text and query predicates read through this callback after parsing: point it back at the file.
+              const parsed = parser.parse((index) => input.slice(index));
+              input = source;
+              return parsed;
+            },
             catch: (cause) => new ParserError({ reason: "parse_failed", grammar, detail: errorDetail(cause) }),
           });
           if (!tree) return yield* new ParserError({ reason: "parse_failed", grammar });

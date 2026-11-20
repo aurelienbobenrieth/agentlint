@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { readFileSync } from "node:fs";
 import * as nodePath from "node:path";
 import { describe, expect, it } from "vitest";
+import { Query } from "web-tree-sitter";
 import { Env } from "../../config/env.js";
 import { Parser, resolvePackagedWasmPath } from "./parser.js";
 
@@ -84,6 +85,44 @@ describe("Parser", () => {
         });
 
         expect(tree.rootNode.hasError).toBe(false);
+      }),
+    );
+  });
+
+  // A tagged template may hold any escape (ES2018), so `String.raw` takes Windows paths; the bundled grammars reject
+  // a `\u` or `\x` that starts no valid escape.
+  const windowsPaths = "String.raw`C:\\users\\me\\x-trees\\x4`";
+
+  it.each(["typescript", "typescript-0.23", "tsx", "tsx-0.20", "javascript"])(
+    "parses a tagged template holding \\u and \\x that start no escape with the %s grammar",
+    async (grammar) => {
+      await runWithParser(
+        Effect.gen(function* () {
+          const parser = yield* Parser;
+          const tree = yield* parser.parse({ source: `const paths = ${windowsPaths};\n`, grammar });
+
+          expect(tree.rootNode.hasError).toBe(false);
+        }),
+      );
+    },
+  );
+
+  it("reports the file's own text for a template holding \\u and \\x that start no escape", async () => {
+    await runWithParser(
+      Effect.gen(function* () {
+        const parser = yield* Parser;
+        const source = `const paths = ${windowsPaths};\n`;
+        const tree = yield* parser.parse({ source, grammar: "typescript" });
+        const query = new Query(
+          yield* parser.language("typescript"),
+          `((template_string) @t (#eq? @t "\`C:\\\\users\\\\me\\\\x-trees\\\\x4\`"))`,
+        );
+
+        expect(tree.rootNode.descendantsOfType("template_string").map((node) => node?.text)).toEqual([
+          "`C:\\users\\me\\x-trees\\x4`",
+        ]);
+        expect(query.matches(tree.rootNode)).toHaveLength(1);
+        query.delete();
       }),
     );
   });
