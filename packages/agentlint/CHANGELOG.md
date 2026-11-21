@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2
+
+### Patch Changes
+
+- [#120](https://github.com/aurelienbobenrieth/agentlint/pull/120) [`d234e27`](https://github.com/aurelienbobenrieth/agentlint/commit/d234e27e26bedf452564b536e704665455bad805) Thanks [@aurelienbobenrieth](https://github.com/aurelienbobenrieth)! - A tagged template holding a `\u` or `\x` that starts no escape now parses, so `` String.raw`C:\users\me` `` no longer fails the whole check with "Parse failed: syntax is incomplete or unsupported by the grammar". Rules, patterns, and queries still read the file's own text. Files that parsed before keep their syntax tree, so their fingerprints and acceptances do not change.
+
 ## 0.10.1
 
 ### Patch Changes
